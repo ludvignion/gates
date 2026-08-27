@@ -1,0 +1,7 @@
+{
+  "name": "harness-plugin",
+  "version": "0.1.0",
+  "description": "Grill → plan gate → tests-first build → fresh-context verdict. Three skills, two human gates, hooks that enforce ticket scope, scripts that render the pages a human reads.",
+  "homepage": "https://github.com/ludvignion/harness-plugin",
+  "license": "MIT"
+}
