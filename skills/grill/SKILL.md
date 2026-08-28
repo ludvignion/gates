@@ -10,15 +10,15 @@ argument-hint: "<brief number>"
 
 # Grill
 
-Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/<n>.plan.md` (gate 1), then tickets
-`kanban/<n>.<m>.<slug>.md`, and `traces/grill/<n>.jsonl`.
+Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1), then tickets
+`kanban/tickets/<n>.<m>.<slug>.md`, and `traces/grill/<n>.jsonl`.
 
 ## Rules
 
 1. **Build a design tree from the brief.** Root = the outcome. Children = decisions that must be
    made to reach it. A question exists only to resolve a node. No question without a node.
 2. **Evidence before asking.** For every node, first search: `src/`, `tests/`, `docs/`, closed
-   tickets in `kanban/`, `traces/blind-spots.md`. If the answer is there, resolve it and cite the
+   tickets in `kanban/tickets/`, `traces/blind-spots.md`. If the answer is there, resolve it and cite the
    path. Facts are your job. Decisions are the human's.
 3. **Read `traces/blind-spots.md` first** if it exists. Those are categories the grill missed before.
    Check each against this brief explicitly.
@@ -47,5 +47,5 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/<n>.plan.md` (gate 1), the
 
 ## Child tickets
 
-A rejected verdict spawns `<n>.<m>.<p>.<slug>.md`. The rejection is the brief. Skip gate 1.
+A rejected verdict spawns `kanban/tickets/<n>.<m>.<p>.<slug>.md`. The rejection is the brief. Skip gate 1.
 Run rules 1–3 and 8 only; no human round unless a decision is genuinely open.

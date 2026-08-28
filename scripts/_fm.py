@@ -22,7 +22,7 @@ def read(path: Path) -> tuple[dict, str]:
 
 def tickets(kanban: Path) -> list[tuple[Path, dict, str]]:
     out = []
-    for p in sorted(kanban.glob("*.md")):
+    for p in sorted(kanban.rglob("*.md")):
         if p.name.endswith(".plan.md"):
             continue
         fm, body = read(p)

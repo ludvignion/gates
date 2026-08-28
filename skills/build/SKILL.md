@@ -10,7 +10,7 @@ argument-hint: "<ticket id, e.g. 1.2>"
 
 # Build
 
-Input: `kanban/<id>.<slug>.md`. Output: commits on a branch `ticket/<id>`, ticket `## Log` entries.
+Input: `kanban/tickets/<id>.<slug>.md`. Output: commits on a branch `ticket/<id>`, ticket `## Log` entries.
 
 ## Sequence
 

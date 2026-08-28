@@ -13,7 +13,7 @@ COLORS = {"ready": "#9aa", "in_progress": "#e8a33d", "in_review": "#4a90e2", "do
 
 def main(root: Path) -> None:
     rows = _fm.tickets(root / "kanban")
-    plans = {p.stem.split(".")[0]: _fm.read(p)[0] for p in (root / "kanban").glob("*.plan.md")}
+    plans = {p.stem.split(".")[0]: _fm.read(p)[0] for p in (root / "kanban").rglob("*.plan.md")}
     cols = {s: [] for s in STATUSES}
     edges = []
     for p, fm, body in rows:
