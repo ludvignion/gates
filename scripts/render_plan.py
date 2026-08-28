@@ -37,7 +37,9 @@ def md_to_html(md: str) -> str:
 
 
 def main(root: Path, n: str) -> None:
-    p = root / "kanban" / f"{n}.plan.md"
+    p = next((root / "kanban").rglob(f"{n}.plan.md"), None)
+    if p is None:
+        raise SystemExit(f"no plan {n}.plan.md under {root / 'kanban'}")
     fm, body = _fm.read(p)
     mods = re.findall(r"`(src/[^`]+)`", body)
     mermaid = "graph TD\n" + "\n".join(f'  m{i}["{m}"]' for i, m in enumerate(mods))

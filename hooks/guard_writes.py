@@ -45,7 +45,7 @@ def main() -> int:
     if not active.exists():
         return 0
     ticket_id = active.read_text().strip()
-    matches = list((cwd / "kanban").glob(f"{ticket_id}.*.md"))
+    matches = list((cwd / "kanban").rglob(f"{ticket_id}.*.md"))
     if not matches:
         return 0
     fm = frontmatter(matches[0].read_text())
