@@ -20,6 +20,13 @@ I want <X> so that <Y>.
 ## Modules
 - `src/<pkg>/<module>/` — <one sentence, no "and">
 
+## Dependencies
+| Capability | Provided by | Evidence |
+|-----------|-------------|----------|
+
+## Blocking risks
+- <capability nodes without evidence; empty means none>
+
 ## Assumptions I resolved myself
 | # | Assumption | Evidence |
 |---|-----------|----------|

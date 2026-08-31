@@ -15,8 +15,17 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
 
 ## Rules
 
-1. **Build a design tree from the brief.** Root = the outcome. Children = decisions that must be
-   made to reach it. A question exists only to resolve a node. No question without a node.
+1. **Build a typed design tree from the brief.** Root = the outcome. Children =
+   nodes that must close to reach it. Every node has a type, and the type decides what
+   closes it:
+   - `fact` — closes on an evidence path in the repo or domain pack.
+   - `capability` — a requirement on a tool, API, library, or data source. Closes only
+     on evidence that the named provider does the thing: documentation you fetched, or a
+     command you ran. A human naming the tool does not close it.
+   - `decision` — intent, trade-off, priority, scope. Closes on a human answer.
+   - `assumption` — could not be closed by evidence or one human answer. Never closes;
+     it goes into the plan's assumptions table.
+   A question exists only to close a `decision` node. No question without a node.
 2. **Evidence before asking.** For every node, first search: `src/`, `tests/`, `docs/`, closed
    tickets in `kanban/tickets/`, `traces/blind-spots.md`. If the answer is there, resolve it and cite the
    path. Facts are your job. Decisions are the human's.
@@ -27,19 +36,24 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    2 rounds. If more remain, the brief is too big — say so and propose a split.
 5. **Stop when the frontier is empty.** No question count. If a node cannot be resolved by
    evidence or one human answer, it becomes an explicit assumption.
-6. **Write back, then wait.** Produce `<n>.plan.md` from `templates/plan.md`:
+6. **Dependencies before the plan.** Every `capability` node becomes a row in the plan's
+   Dependencies table: `capability | provided by | evidence`. Rows whose node did not close
+   become **Blocking risks** in the plan.
+7. **Write back, then wait.** Produce `<n>.plan.md` from `templates/plan.md`:
    outcome, ACs (Given/When/Then, tagged behavioral / property / critical), out of scope,
    named modules, and the **assumptions list** — every node you resolved yourself, with its evidence.
    The human approves the plan, not the questions. Do not create tickets until they say so.
-7. **Success and failure lines.** If the brief has "Success looks like", it becomes at
+8. **Success and failure lines.** If the brief has "Success looks like", it becomes at
    least one AC in the plan. If it has "Not this", it becomes an out-of-scope line AND is
    written into the plan under "## Verdict must attack" so the verdict's adversarial pass
    targets it. If either section is missing, do not ask for it — proceed.
-8. **Then slice.** Vertical slices only — each ticket crosses every layer it touches and is
+9. **Then slice.** Vertical slices only — each ticket crosses every layer it touches and is
    demonstrable alone. Use `templates/ticket.md`. Declare `depends_on` and `writes`.
    The first ticket is the tracer bullet.
-9. **Trace.** Append one record per node to `traces/grill/<n>.jsonl`:
-   `{"brief": n, "node": "...", "resolved_by": "evidence|human|assumption", "evidence": "path or null", "question": "...", "answer": "..."}`.
+10. **Trace.** Append one record per node to `traces/grill/<n>.jsonl`:
+   `{"brief": n, "node": "...", "type": "fact|capability|decision|assumption",
+"resolved_by": "evidence|human|assumption|open", "evidence": "path|url|command|null",
+"question": "...", "answer": "..."}`.
 
 ## Do not
 
