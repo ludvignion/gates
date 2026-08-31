@@ -13,8 +13,11 @@ When the grill misses something important, the fix is a node type or a closing r
 ## Principle: Relied-on artifacts have sections and checks, not sentences
 
 Anything the harness relies on (dependencies, blocking risks, trace records) must have:
-1. A section in the artifact (plan.md, trace.jsonl)
-2. A script that checks it (lint_trace.py, render_plan.py)
+1.  A schema — one model per artifact, in scripts/schemas.py. It is the only
+   definition of the artefact's shape.
+2. A section in the artifact (plan.md, ticket.md, trace.jsonl).
+3. A script that checks it — by loading through the schema, never by parsing on its own.
+
 
 Never rely on a sentence in a skill file alone.
 
