@@ -3,14 +3,14 @@
   "owner": { "name": "ludvignion" },
   "metadata": {
     "description": "Agentic development harness: grill, build, verdict.",
-    "version": "0.2.0"
+    "version": "0.2.1"
   },
   "plugins": [
     {
       "name": "harness-plugin",
       "source": "./",
       "description": "Grill → plan gate → tests-first build → fresh-context verdict.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "category": "workflow",
       "keywords": ["grill", "tdd", "review", "kanban", "harness"]
     }

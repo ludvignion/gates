@@ -29,6 +29,9 @@ I want <X> so that <Y>.
 | # | Question | Answer |
 |---|----------|--------|
 
+## Verdict must attack
+- <failure modes carried over from the brief's "Not this">
+
 ## Decisions worth an ADR
 - ...
 

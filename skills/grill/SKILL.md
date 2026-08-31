@@ -31,10 +31,14 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    outcome, ACs (Given/When/Then, tagged behavioral / property / critical), out of scope,
    named modules, and the **assumptions list** — every node you resolved yourself, with its evidence.
    The human approves the plan, not the questions. Do not create tickets until they say so.
-7. **Then slice.** Vertical slices only — each ticket crosses every layer it touches and is
+7. **Success and failure lines.** If the brief has "Success looks like", it becomes at
+   least one AC in the plan. If it has "Not this", it becomes an out-of-scope line AND is
+   written into the plan under "## Verdict must attack" so the verdict's adversarial pass
+   targets it. If either section is missing, do not ask for it — proceed.
+8. **Then slice.** Vertical slices only — each ticket crosses every layer it touches and is
    demonstrable alone. Use `templates/ticket.md`. Declare `depends_on` and `writes`.
    The first ticket is the tracer bullet.
-8. **Trace.** Append one record per node to `traces/grill/<n>.jsonl`:
+9. **Trace.** Append one record per node to `traces/grill/<n>.jsonl`:
    `{"brief": n, "node": "...", "resolved_by": "evidence|human|assumption", "evidence": "path or null", "question": "...", "answer": "..."}`.
 
 ## Do not
@@ -48,4 +52,4 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
 ## Child tickets
 
 A rejected verdict spawns `kanban/tickets/<n>.<m>.<p>.<slug>.md`. The rejection is the brief. Skip gate 1.
-Run rules 1–3 and 8 only; no human round unless a decision is genuinely open.
+Run rules 1–3 and 9 only; no human round unless a decision is genuinely open.

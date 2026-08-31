@@ -22,6 +22,8 @@ uncovered edge cases · scale · hidden assumptions · partial failure · orderi
 data loss / duplication / silent coercion · retry safety · anything in `docs/domain-pack/` charter.
 For each: `{"attack": "...", "covered_by": "test path or null", "severity": "block|warn|note"}`.
 
+Every item under the plan's "## Verdict must attack" is a mandatory attack scenario.
+
 ## Phase B — quality
 
 Per file touched, yes/no:
