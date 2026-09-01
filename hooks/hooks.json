@@ -4,7 +4,10 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/guard_writes.py" }
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/guard_writes.py"
+          }
         ]
       }
     ],
@@ -12,7 +15,21 @@
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/trace_stop.py" }
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/trace_stop.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/reanchor.sh"
+          }
         ]
       }
     ]
