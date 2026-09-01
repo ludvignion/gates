@@ -35,11 +35,11 @@ ticket worktree `../<repo>-<id>`, plus ticket `## Log` entries.
    List them in `## Log` under `### [build] — close-out` with the AC each serves. Anything that
    traces to nothing: revert it, or log it as a finding. Set `status: in_review`. Clear `kanban/.active`.
 10. **Report.** Append the final Log entry:
-    `### [build] <timestamp> — status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED`
-    followed by one line of reason. DONE_WITH_CONCERNS = finished but doubtful about correctness
-    or scope, say what. NEEDS_CONTEXT = an AC is ambiguous and the ticket + domain pack don't
-    resolve it; name the AC and the question. BLOCKED = cannot finish; name why. On
-    NEEDS_CONTEXT or BLOCKED, stop immediately: do not commit implementation, do not guess.
+    `### [build] <timestamp> — status: DONE | NEEDS_CONTEXT | BLOCKED`
+    followed by one line of reason. NEEDS_CONTEXT = an AC is ambiguous and the ticket + domain
+    pack don't resolve it; the reason line must name the AC and the question — it feeds grill
+    tuning. BLOCKED = cannot finish for a reason outside the ticket (dependency, access, baseline).
+    On either, stop immediately: do not commit implementation, do not guess.
     Then print the worktree path, the commit list, and the one-line command to run the thing.
 
 ## After compaction
