@@ -1,29 +1,33 @@
 #!/usr/bin/env python3
 """Headless state machine for one ticket, run from the main checkout.
-Usage: python loop.py <ticket id> [--max-retries 2] [--cwd .]
-States: worktree → baseline → build → ci → verdict → (ship | critical→retry | non-critical→human)
+Usage: python loop.py <ticket id> [--max-retries 2] [--cwd .] [--build-model sonnet] [--verdict-model opus]
+States: worktree → baseline → build → status → ci → verdict → (ship | critical→retry | non-critical→human)
 Each state is a `claude -p` call or a shell command; transitions only on objective signals
-(exit codes, verdict.json decision and finding severities). The machine, not the model, owns the loop.
+(exit codes, build status line in the ticket Log, verdict.json decision and finding severities).
+The machine, not the model, owns the loop.
 Exit codes: 0 ship (human reviews and pushes from the worktree) · 1 red baseline or retry cap ·
-2 human gate (non-critical findings only: accept, or reject to a child ticket).
+2 human gate (non-critical findings only: accept, or reject to a child ticket) ·
+3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log).
 The worktree at ../<repo>-<id> is never removed here; `git worktree remove` after the human merges.
 Run in a container when unattended (see Dockerfile).
 """
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 CRITICAL = "critical"
+STATUS_RE = re.compile(r"^### \[build\] .*— status: (NEEDS_CONTEXT|BLOCKED|DONE)\b", re.M)
 
 
 def sh(args: list[str], cwd: Path) -> int:
     return subprocess.run(args, cwd=cwd).returncode
 
 
-def claude(prompt: str, cwd: Path) -> int:
-    return sh(["claude", "-p", prompt, "--permission-mode", "acceptEdits"], cwd)
+def claude(prompt: str, cwd: Path, model: str) -> int:
+    return sh(["claude", "-p", prompt, "--model", model, "--permission-mode", "acceptEdits"], cwd)
 
 
 def worktree(repo: Path, tid: str) -> tuple[Path, bool]:
@@ -48,12 +52,29 @@ def ci(cwd: Path) -> bool:
     return sh(["make", "ci"], cwd) == 0
 
 
-def verdict(cwd: Path, tid: str) -> tuple[str, set[str]]:
+def build_status(cwd: Path, tid: str) -> str:
+    """Last build status line in the ticket Log; DONE if the builder wrote none."""
+    tickets = sorted((cwd / "kanban" / "tickets").glob(f"{tid}.*.md"))
+    if not tickets:
+        return "DONE"
+    found = STATUS_RE.findall(tickets[0].read_text())
+    return found[-1] if found else "DONE"
+
+
+def log_grill_miss(cwd: Path, tid: str) -> None:
+    """NEEDS_CONTEXT means an AC was ambiguous and the domain pack didn't resolve it: a grill miss."""
+    p = cwd / "traces" / "grill-misses.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a") as f:
+        f.write(json.dumps({"ticket": tid, "source": "build", "status": "NEEDS_CONTEXT"}) + "\n")
+
+
+def verdict(cwd: Path, tid: str, model: str) -> tuple[str, set[str]]:
     """Returns (decision, severities). A missing severity defaults to critical, so a verdict
     skill that predates the field keeps the old always-retry behaviour."""
     p = cwd / "traces" / "verdict" / f"{tid}.json"
     p.unlink(missing_ok=True)  # never reread a stale verdict from a previous attempt
-    claude(f"/verdict {tid}", cwd)
+    claude(f"/verdict {tid}", cwd, model)
     if not p.exists():
         return "reject", {CRITICAL}  # no verdict written is a loop failure, treated as critical
     v = json.loads(p.read_text())
@@ -65,6 +86,8 @@ def main() -> int:
     ap.add_argument("ticket")
     ap.add_argument("--max-retries", type=int, default=2)
     ap.add_argument("--cwd", default=".")
+    ap.add_argument("--build-model", default="sonnet")
+    ap.add_argument("--verdict-model", default="opus")
     a = ap.parse_args()
     repo = Path(a.cwd).resolve()
 
@@ -76,11 +99,19 @@ def main() -> int:
 
     for attempt in range(1, a.max_retries + 1):
         print(f"[loop] {a.ticket} attempt {attempt}")
-        claude(f"/build {a.ticket}", wt)
+        claude(f"/build {a.ticket}", wt, a.build_model)
+        st = build_status(wt, a.ticket)
+        if st == "NEEDS_CONTEXT":
+            print("[loop] build needs context — grill miss logged; human needed")
+            log_grill_miss(wt, a.ticket)
+            return 3
+        if st == "BLOCKED":
+            print("[loop] build blocked — see ticket Log; human needed")
+            return 3
         if not ci(wt):
             print("[loop] ci red")
             continue
-        decision, severities = verdict(wt, a.ticket)
+        decision, severities = verdict(wt, a.ticket, a.verdict_model)
         print(f"[loop] verdict: {decision} {sorted(severities)}")
         if decision == "ship":
             print(f"[loop] ship — review and push from {wt}")
