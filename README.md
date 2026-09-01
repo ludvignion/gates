@@ -1,6 +1,6 @@
 # harness-plugin
 
-The operating system for agentic development. Three skills, two human gates, hooks that enforce
+The operating system for agentic development. Four skills, two human gates, hooks that enforce
 ticket scope, scripts that render the only pages a human reads.
 
 ```
@@ -23,6 +23,7 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `skills/grill` | brief → plan + tickets. Evidence first; human only for decisions. |
 | `skills/build` | tests-first, scope-bound implementation. CI is the authority. |
 | `skills/verdict` | fresh-context adversarial + quality review → verdict page. |
+| `skills/briefing` | opt-in response style: what changed, then lettered options. |
 | `hooks/guard_writes.py` | blocks writes outside the active ticket's `writes:`. |
 | `hooks/trace_stop.py` | one JSONL line per agent turn into `traces/sessions.jsonl`. |
 | `scripts/render_plan.py` | gate 1 page. |
