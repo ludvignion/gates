@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Headless state machine for one ticket, run from the main checkout.
 Usage: python loop.py <ticket id> [--max-retries 2] [--cwd .] [--build-model sonnet] [--verdict-model opus]
-States: worktree → baseline → build → status → ci → verdict → (ship | critical→retry | non-critical→human)
+States: worktree → baseline → build → status → ci → verdict → (ship | block→retry | child→human)
 Each state is a `claude -p` call or a shell command; transitions only on objective signals
-(exit codes, build status line in the ticket Log, verdict.json decision and finding severities).
+(exit codes, build status line in the ticket Log, verdict.json decision and findings).
 The machine, not the model, owns the loop.
 Exit codes: 0 ship (human reviews and pushes from the worktree) · 1 red baseline or retry cap ·
-2 human gate (non-critical findings only: accept, or reject to a child ticket) ·
+2 human gate (all blocking findings spawn child tickets) ·
 3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log).
 The worktree at ../<repo>-<id> is never removed here; `git worktree remove` after the human merges.
 Run in a container when unattended (see Dockerfile).
@@ -18,7 +18,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-CRITICAL = "critical"
 STATUS_RE = re.compile(r"^### \[build\] .*— status: (NEEDS_CONTEXT|BLOCKED|DONE)\b", re.M)
 
 
@@ -69,16 +68,20 @@ def log_grill_miss(cwd: Path, tid: str) -> None:
         f.write(json.dumps({"ticket": tid, "source": "build", "status": "NEEDS_CONTEXT"}) + "\n")
 
 
-def verdict(cwd: Path, tid: str, model: str) -> tuple[str, set[str]]:
-    """Returns (decision, severities). A missing severity defaults to critical, so a verdict
-    skill that predates the field keeps the old always-retry behaviour."""
+def verdict(cwd: Path, tid: str, model: str) -> tuple[str, bool]:
+    """Returns (decision, retryable). Retryable = at least one block finding the builder can fix
+    in this slice, i.e. not spawn_child. A missing verdict is a loop failure: reject, retryable."""
     p = cwd / "traces" / "verdict" / f"{tid}.json"
     p.unlink(missing_ok=True)  # never reread a stale verdict from a previous attempt
     claude(f"/verdict {tid}", cwd, model)
     if not p.exists():
-        return "reject", {CRITICAL}  # no verdict written is a loop failure, treated as critical
+        return "reject", True
     v = json.loads(p.read_text())
-    return v["decision"], {f.get("severity", CRITICAL) for f in v.get("findings", [])}
+    retryable = any(
+        f.get("severity") == "block" and not f.get("spawn_child", False)
+        for f in v.get("findings", [])
+    )
+    return v["decision"], retryable
 
 
 def main() -> int:
@@ -111,13 +114,13 @@ def main() -> int:
         if not ci(wt):
             print("[loop] ci red")
             continue
-        decision, severities = verdict(wt, a.ticket, a.verdict_model)
-        print(f"[loop] verdict: {decision} {sorted(severities)}")
+        decision, retryable = verdict(wt, a.ticket, a.verdict_model)
+        print(f"[loop] verdict: {decision}{' (retryable)' if retryable else ''}")
         if decision == "ship":
             print(f"[loop] ship — review and push from {wt}")
             return 0
-        if CRITICAL not in severities:
-            print("[loop] non-critical findings only — human gate: accept, or reject to a child ticket")
+        if not retryable:
+            print("[loop] blocking findings all spawn child tickets — human: create children, decide on this slice")
             return 2
     print("[loop] retry cap reached — human needed")
     return 1

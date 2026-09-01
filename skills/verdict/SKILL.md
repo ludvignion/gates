@@ -47,7 +47,9 @@ Write `traces/verdict/<id>.json`:
 ```
 Run `python ${CLAUDE_PLUGIN_ROOT}/scripts/render_verdict.py <id>`.
 `decision` is `reject` if any finding is `block` or CI is red. Set ticket `status` accordingly.
-Append `### [verdict] <timestamp> — <decision>` to `## Log`.
+Append to `## Log`:
+`### [verdict] <timestamp> — <decision>` followed by one line per finding:
+`- block: <text>` / `- warn: <text>`, suffixed ` → child` when `spawn_child` is true.
 
 ## Never
 

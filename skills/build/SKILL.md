@@ -18,9 +18,9 @@ ticket worktree `../<repo>-<id>`, plus ticket `## Log` entries.
    Never build on the main checkout — parallel tickets share it.
 2. **Gate check.** Open the parent `<n>.plan.md`. If it has no `approved:` line, stop and say so.
    Child tickets (`<n>.<m>.<p>`) skip this.
-3. **Retry check.** If `## Log` already has a `[verdict]` entry with `severity: critical` findings,
-   this is a retry. Those findings are your brief: address them and nothing else, then continue
-   from step 6.
+3. **Retry check.** If the last `[verdict]` entry in `## Log` has `- block:` lines without
+   `→ child`, this is a retry. Those lines are your brief: address them and nothing else, then
+   continue from step 6.
 4. **Scope.** Write the ticket id to `kanban/.active` (the write-guard and re-anchor hooks read it).
    Set `status: in_progress`. Append `### [build] <timestamp> — start` to `## Log`.
 5. **Plan.** Lay out steps with the todo tool: one line per AC, then integration, then close-out.
