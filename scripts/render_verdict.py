@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""traces/verdict/<id>.json → traces/verdict/<id>.html. Gate 2 page. Run: make verdict T=<id>"""
+"""traces/verdict/<id>.json → traces/verdict/<id>.html. Gate 2 page. Run: make verdict T=<id>
+
+Also archives <id>.json as <id>.prev.json so the next verdict on this ticket runs in retry mode.
+"""
 import html
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -72,6 +76,7 @@ li{{margin:.3rem 0;padding:.2rem .4rem;list-style:none}}ul{{padding-left:0}}
 {resolved_html}
 <h2>Quality</h2><table><tr><th>File</th><th>1 SRP</th><th>2 AC-trace</th><th>3 YAGNI</th><th>4 rule-of-3</th><th>5 ISP</th><th>6 DIP</th></tr>{quality}</table>"""
     (root / "traces" / "verdict" / f"{tid}.html").write_text(out, encoding="utf-8")
+    shutil.copyfile(root / "traces" / "verdict" / f"{tid}.json", root / "traces" / "verdict" / f"{tid}.prev.json")
     print(root / "traces" / "verdict" / f"{tid}.html")
 
 

@@ -146,3 +146,53 @@ class ClosedTicketDiff:
             elif a != b:
                 out.append(f"{label} changed")
         return cls(violations=tuple(sorted(out)))
+
+
+# --- Verdict inputs ----------------------------------------------------------------------
+_CHARTER_RE = re.compile(r"^## (?P<n>\d+)\.\s+(?P<title>.+?)\s*$", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class Attacks:
+    """The plan's ``## Verdict must attack`` items, mandatory for every verdict."""
+
+    items: tuple[str, ...] = ()
+
+    @classmethod
+    def parse(cls, plan_body: str) -> "Attacks":
+        items = tuple(
+            re.sub(r"^\s*(?:\d+\.|[-*])\s+", "", it).strip()
+            for it in _items(section(plan_body, "Verdict must attack"))
+        )
+        return cls(items=tuple(i for i in items if i and not i.startswith("<")))
+
+
+@dataclass(frozen=True)
+class Charter:
+    """``docs/domain-pack/charter.md``: numbered ``## <n>. <title>`` items."""
+
+    items: tuple[tuple[str, str], ...] = ()  # (n, title)
+
+    @classmethod
+    def parse(cls, body: str) -> "Charter":
+        return cls(items=tuple((m.group("n"), m.group("title")) for m in _CHARTER_RE.finditer(body)))
+
+
+@dataclass(frozen=True)
+class Ticket:
+    """What the verdict needs from a ticket body: nothing from the Log but human waivers."""
+
+    acs: tuple[str, ...] = ()
+    out_of_scope: tuple[str, ...] = ()
+    waivers: tuple[str, ...] = ()
+
+    @classmethod
+    def parse(cls, body: str) -> "Ticket":
+        acs = tuple(it[2:] for it in _items(section(body, "Acceptance criteria")) if _AC_LINE_RE.match(it))
+        oos = tuple(re.sub(r"^\s*[-*]\s+", "", it) for it in _items(section(body, "Out of scope")))
+        log = next((t for title, t in sections(body) if title.lower().startswith("log")), "")
+        waivers = tuple(
+            m.group(0).strip()
+            for m in re.finditer(r"^### \[human\][^\n]*\n(?:(?!###)[^\n]*\n?)*", log, re.MULTILINE)
+        )
+        return cls(acs=acs, out_of_scope=oos, waivers=waivers)

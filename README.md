@@ -22,12 +22,14 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 |---|---|
 | `skills/grill` | brief → plan + tickets. Evidence first; human only for decisions. |
 | `skills/build` | tests-first, scope-bound implementation. CI is the authority. |
-| `skills/verdict` | fresh-context adversarial + quality review → verdict page. |
+| `skills/verdict` | fresh-context review in one model call over a prepared input → verdict page. |
 | `skills/briefing` | opt-in response style: what changed, then lettered options. |
 | `hooks/guard_writes.py` | blocks writes to closed tickets, and outside the active ticket's `writes:`. |
 | `hooks/trace_stop.py` | one JSONL line per agent turn into `traces/sessions.jsonl`. |
 | `scripts/render_plan.py` | gate 1 page. |
-| `scripts/render_verdict.py` | gate 2 page. |
+| `scripts/verdict_prep.py` | one prepared input for the single-call verdict. |
+| `scripts/verdict_checks.py` | mechanical verdict findings, zero model tokens. |
+| `scripts/render_verdict.py` | gate 2 page; archives the previous verdict for retries. |
 | `scripts/render_board.py` | progress per plan, status columns, dependency graph. Runs on every Stop. |
 | `scripts/lint_kanban.py` | CI check: closed tickets only grow their append-only sections. |
 | `scripts/grill_digest.py` | grill-misses → blind-spots the grill reads. |

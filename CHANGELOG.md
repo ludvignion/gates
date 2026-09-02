@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0 — 2026-09-02
+
+Single-call verdict. The old skill explored a frontier over 14–23 model calls, each re-reading
+140k tokens of context and thinking 2k before acting: 12 minutes per verdict, 80% of output
+tokens thinking. Now scripts gather and check, the model judges once.
+
+- `scripts/verdict_prep.py` — new. Writes `traces/verdict/<id>.input.md`: ACs, Out of scope,
+  `writes:`, human waivers, the plan's "Verdict must attack" items, charter items, previous
+  blocks with repro commands, `make ci` result, mechanical findings, tests added on the branch
+  that name an AC, the diff. ~4 s, ~20k tokens on a real branch.
+- `scripts/verdict_checks.py` — new. Findings with zero model tokens: writes outside `writes:`
+  (block), CI red (block), ACs no added test names, new defs with ≤1 caller, new names missing
+  from the glossary, closed tickets edited.
+- `scripts/render_verdict.py` — archives `<id>.json` as `<id>.prev.json`, so retry mode is real.
+- `scripts/schemas.py` — `Attacks`, `Charter`, `Ticket` models; the scripts load through them.
+- `skills/verdict/SKILL.md` — three tool calls: prep, write JSON, close out. Blocks and warns
+  only, 20-word texts, `held` labels for what holds, no notes. Status: ship → done,
+  reject → in_progress.
+- `tests/` — 7 new tests.
+
+Consuming projects: nothing to change; `make verdict` and `runner.py` are unchanged.
+
 ## 0.4.2 — 2026-09-02
 
 Verdict cost. Six verdict runs measured 6–22 minutes, tracking output tokens (63k–192k) and
