@@ -1,35 +1,39 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: block file writes outside the active ticket's `writes:` paths.
+"""PreToolUse hook: two write rules.
 
-Reads the tool call from stdin (JSON). Looks for `kanban/.active` in the project
-(contents: a ticket id, e.g. `1.2`). If present, parses that ticket's frontmatter
-`writes:` list and refuses any write whose path is not under one of them.
+1. Closed tickets are immutable. A write to a ticket file whose frontmatter `status:` is one of
+   `schemas.CLOSED_STATUSES` (done, superseded) is refused, whether or not a ticket is active.
+   New work is a new ticket with `depends_on:`; a human reopens by changing the status by hand.
+2. Scope. If `kanban/.active` names a ticket with a `writes:` list, refuse any write outside it.
 
-Exit 0 = allow. Exit 2 = block (message on stderr is shown to the agent).
-No active ticket, or a ticket without `writes:` → allow. The gate is opt-in per ticket.
+Reads the tool call from stdin (JSON). Exit 0 = allow. Exit 2 = block (stderr goes to the
+agent). No active ticket, or a ticket without `writes:` → rule 2 is off. Rule 1 is always on.
 """
 import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+import _fm  # noqa: E402
+import schemas  # noqa: E402
+
 ALWAYS_ALLOWED = ("kanban/", "traces/", "docs/")
 
 
-def frontmatter(text: str) -> dict:
-    if not text.startswith("---"):
-        return {}
-    body = text.split("---", 2)[1]
-    out: dict = {}
-    for line in body.splitlines():
-        if ":" not in line:
-            continue
-        k, v = line.split(":", 1)
-        v = v.strip()
-        if v.startswith("[") and v.endswith("]"):
-            out[k.strip()] = [x.strip().strip("'\"") for x in v[1:-1].split(",") if x.strip()]
-        else:
-            out[k.strip()] = v
-    return out
+def closed_ticket(cwd: Path, target: Path) -> tuple[str, str] | None:
+    """(id, status) if `target` is an existing ticket file in a closed status, else None."""
+    try:
+        rel = target.resolve().relative_to(cwd)
+    except ValueError:
+        return None
+    if rel.parts[:1] != ("kanban",) or rel.suffix != ".md" or rel.name.endswith(".plan.md"):
+        return None
+    if not target.is_file():
+        return None
+    fm, _ = _fm.read(target)
+    if "id" in fm and fm.get("status") in schemas.CLOSED_STATUSES:
+        return fm["id"], fm["status"]
+    return None
 
 
 def main() -> int:
@@ -41,6 +45,15 @@ def main() -> int:
     target = (call.get("tool_input") or {}).get("file_path")
     if not target:
         return 0
+    closed = closed_ticket(cwd, Path(target))
+    if closed:
+        tid, status = closed
+        sys.stderr.write(
+            f"BLOCKED: ticket {tid} is {status}; closed tickets are immutable. "
+            f"Put new work in a new ticket with depends_on: [{tid}]. "
+            "A human reopens by changing status: by hand.\n"
+        )
+        return 2
     active = cwd / "kanban" / ".active"
     if not active.exists():
         return 0
@@ -48,7 +61,7 @@ def main() -> int:
     matches = list((cwd / "kanban").rglob(f"{ticket_id}.*.md"))
     if not matches:
         return 0
-    fm = frontmatter(matches[0].read_text())
+    fm, _ = _fm.read(matches[0])
     writes = fm.get("writes")
     if not writes:
         return 0

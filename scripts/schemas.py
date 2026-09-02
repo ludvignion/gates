@@ -97,3 +97,52 @@ class TicketCitations:
 
     def acs_for(self, plan: str) -> set[str]:
         return {ac for g in self.groups if g.plan == plan for ac in g.acs}
+
+
+# --- Ticket lifecycle -------------------------------------------------------------------
+# A ticket in one of these statuses is closed. Closed tickets are immutable: the write guard
+# refuses edits (hooks/guard_writes.py) and lint_kanban.py fails on any change outside the
+# append-only sections. New work is a new ticket with depends_on; a human reopens by hand.
+CLOSED_STATUSES = ("done", "superseded")
+APPEND_ONLY_SECTIONS = ("Findings", "Log")
+
+
+def sections(body: str) -> list[tuple[str, str]]:
+    """``[(title, text)]`` for every ``## `` heading, plus ``("", preamble)`` first."""
+    heads = list(_SECTION_RE.finditer(body))
+    out = [("", body[: heads[0].start()] if heads else body)]
+    for i, h in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
+        out.append((h.group("title").strip(), body[h.end():end]))
+    return out
+
+
+def _is_append_only(title: str) -> bool:
+    return any(title.lower().startswith(t.lower()) for t in APPEND_ONLY_SECTIONS)
+
+
+@dataclass(frozen=True)
+class ClosedTicketDiff:
+    """What changed on a closed ticket between two versions. Empty ``violations`` = legal."""
+
+    violations: tuple[str, ...]
+
+    @classmethod
+    def compare(cls, old: str, new: str) -> "ClosedTicketDiff":
+        out: list[str] = []
+        old_s, new_s = dict(sections(old)), dict(sections(new))
+        if old.split("---", 2)[:2] != new.split("---", 2)[:2]:
+            out.append("frontmatter changed")
+        for title in old_s.keys() | new_s.keys():
+            a, b = old_s.get(title), new_s.get(title)
+            label = f"## {title}" if title else "preamble"
+            if a is None:
+                out.append(f"{label} added")
+            elif b is None:
+                out.append(f"{label} removed")
+            elif _is_append_only(title):
+                if not b.startswith(a.rstrip()):
+                    out.append(f"{label} is append-only but earlier text changed")
+            elif a != b:
+                out.append(f"{label} changed")
+        return cls(violations=tuple(sorted(out)))

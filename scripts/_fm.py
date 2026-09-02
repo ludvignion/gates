@@ -3,7 +3,10 @@ from pathlib import Path
 
 
 def read(path: Path) -> tuple[dict, str]:
-    text = path.read_text()
+    return parse(path.read_text())
+
+
+def parse(text: str) -> tuple[dict, str]:
     if not text.startswith("---"):
         return {}, text
     _, head, body = text.split("---", 2)

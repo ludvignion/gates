@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.1 — 2026-09-02
+
+Closed tickets are immutable. Kanban practice, and the property an issue tracker gives for
+free that markdown files do not.
+
+- `scripts/schemas.py` — `CLOSED_STATUSES` (done, superseded), `APPEND_ONLY_SECTIONS`
+  (Findings, Log), and `ClosedTicketDiff`: what changed on a closed ticket between two versions.
+- `hooks/guard_writes.py` — refuses any Write/Edit to a ticket whose `status:` is closed, whether
+  or not a ticket is active. Message names the fix: a new ticket with `depends_on`, or a human
+  reopening by hand. Scope rule unchanged.
+- `scripts/lint_kanban.py` — new. Fails when a ticket that was closed at `<base>` differs now
+  outside its append-only sections, or was deleted. Default base `HEAD`; pass the merge base in
+  CI. Catches edits made outside a Claude session.
+- `scripts/_fm.py` — `parse(text)` split out of `read(path)`.
+- `tests/` — 13 new tests for both.
+
+Consuming projects: add `python3 $(SCRIPTS)/lint_kanban.py origin/main` to `make ci`.
+
 ## 0.4.0 — 2026-09-02
 
 Brief: `kanban/briefs/3-board-progress.md` — the board refreshes itself and shows how much of
