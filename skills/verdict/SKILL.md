@@ -59,7 +59,7 @@ Write `traces/verdict/<id>.json`:
     "text": "≤40 words: what breaks, where (file:line)."}
  ],
  "quality": {"file": {"q1": true, "q2": true, "q3": true, "q4": true, "q5": true, "q6": true}},
- "ci": {"green": true, "mutation_score": 0.0}}
+ "ci": {"green": true, "mutation_score": null}}
 ```
 `text` is at most 40 words. `repro` is a command, not a story. History lives in `id` and
 `status`, never in `text`.
