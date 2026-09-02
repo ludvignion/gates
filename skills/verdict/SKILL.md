@@ -26,18 +26,24 @@ reachable in this diff. Nothing else can block.
 You write to this ticket and `traces/verdict/` only. `home` carries cross-ticket items; the human
 propagates them at Gate 2.
 ## Retry mode
-If `<id>.prev.json` exists: verify every entry in it against the new diff first, and carry it
-forward with the same `id` and `status: resolved|open`. Only then add new entries — new blocks
-only under the Scope rule. A waiver is a `### [human]` Log entry; put its timestamp in
-`waived_by`, do not restate it.
+If `<id>.prev.json` exists, carry every entry forward with its `id`. Re-verify only:
+1. every `block`, open or resolved — re-run its `repro`; a resolved block that fails again is
+   `open`;
+2. any `warn` or `note` whose cited file (the `file:line` in `text`) is in the new diff.
+Every other warn and note carries forward as-is, status unchanged, unverified. Only then add new
+entries — new blocks only under the Scope rule.
+A waiver is a `### [human]` Log entry; put its timestamp in `waived_by`, do not restate it.
 ## Phase A — adversarial (first, in full)
-Generate ≥10 attack scenarios against the diff and tests, in this order:
+Attack the frontier, in this order, and stop when it is empty — no attack quota:
 1. every item under the plan's "## Verdict must attack" (mandatory);
 2. each AC, attempted to break;
 3. charter items reachable in this diff;
 4. uncovered edge cases · scale · hidden assumptions · partial failure · ordering ·
    data loss / duplication / silent coercion · retry safety.
-Each attack is one entry. An attack that holds is a `note` with `covered_by` set.
+An attack that breaks something is a finding. An attack that holds produces NO finding: append
+its label to the top-level `held` array (e.g. "AC-3", "charter-2", "retry-safety"), with a
+finding only if a future ticket must know the `covered_by` test. The frontier being small does
+not license skipping items on it; it being empty ends Phase A.
 ## Phase B — quality
 Per file touched, yes/no:
 1. Describable in one sentence without "and"?
@@ -47,11 +53,13 @@ Per file touched, yes/no:
 5. Any caller using less than half the interface it depends on?
 6. Any dependency on another module's internals?
 Then compare committed tests against the ACs verbatim. Drift = block, citing the AC.
-Then charter conformance from `docs/domain-pack/`, item by item, or waiver by Log reference.
+Then charter conformance from `docs/domain-pack/`, item by item: violations are findings,
+conformant items go to `held`.
 ## Output
 Write `traces/verdict/<id>.json`:
 ```json
 {"ticket": "<id>", "decision": "ship|reject",
+ "held": ["AC-2", "AC-3", "charter-1", "retry-safety"],
  "findings": [
    {"id": "F1", "severity": "block|warn|note", "status": "open|resolved",
     "ac": "AC-3", "charter": null, "home": null, "spawn_child": false,
@@ -62,9 +70,10 @@ Write `traces/verdict/<id>.json`:
  "ci": {"green": true, "mutation_score": null}}
 ```
 `text` is at most 40 words. `repro` is a command, not a story. History lives in `id` and
-`status`, never in `text`.
+`status`, never in `text`. What holds lives in `held`, never as findings.
 Run `python ${CLAUDE_PLUGIN_ROOT}/scripts/render_verdict.py <id>`.
-`decision` is `reject` iff any open `block`, or CI red. Set ticket `status` accordingly.
+`decision` is `reject` iff any open `block`, or CI red. Set ticket `status` from the decision:
+`ship` → `done`, `reject` → `in_progress` (rework pending). No other value exists.
 Append to `## Log`: `### [verdict] <timestamp> — <decision>`, then one line per open block or
 warn: `- <severity> <id> <ac|charter|->: <text>`, suffixed ` → child` when `spawn_child`.
 Notes are not logged on this ticket.
@@ -72,5 +81,6 @@ Notes are not logged on this ticket.
 - Fix code. Findings only.
 - Block without an `ac` or `charter` citation.
 - Edit any ticket, plan, or trace other than this ticket's.
-- Skip Phase A or shorten it because the diff looks simple.
+- Skip an item on the Phase A frontier because the diff looks simple.
 - Read the build session's transcript.
+- Continue into any other work after writing the verdict — the session ends there.

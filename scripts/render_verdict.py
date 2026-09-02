@@ -55,6 +55,8 @@ def main(root: Path, tid: str) -> None:
         quality += f"<tr><td>{esc(f)}</td>{cells}</tr>"
 
     ci = v.get("ci", {})
+    held = v.get("held", [])
+    held_html = f"<p class=meta>Held: {esc(', '.join(held))}</p>" if held else ""
     out = f"""<!doctype html><meta charset=utf-8><title>Verdict {tid}</title>
 <style>body{{font-family:system-ui;max-width:1000px;margin:2rem auto}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ccc;padding:.3rem .6rem;text-align:left}}
 .hero{{font-size:2rem;padding:1rem;color:#fff;background:{'#3cb371' if ship else '#c0392b'}}}
@@ -63,6 +65,7 @@ li{{margin:.3rem 0;padding:.2rem .4rem;list-style:none}}ul{{padding-left:0}}
 .meta{{color:#666;font-size:.85rem}}td.no{{background:#fdd}}details{{margin:.4rem 0}}</style>
 <div class=hero>{'SHIP' if ship else 'REJECT'} — {tid}</div>
 <p>CI: {'green' if ci.get('green') else 'RED'} · mutation: {ci.get('mutation_score','n/a')}</p>
+{held_html}
 <h2>Blocks ({len(blocks)})</h2><ul>{''.join(li(f) for f in blocks) or '<li>none</li>'}</ul>
 <h2>Warnings ({len(warns)})</h2><ul>{''.join(li(f) for f in warns) or '<li>none</li>'}</ul>
 <h2>Notes ({len(notes)})</h2>{notes_html or '<p class=meta>none</p>'}

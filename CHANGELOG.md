@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.2 — 2026-09-02
+
+Verdict cost. Six verdict runs measured 6–22 minutes, tracking output tokens (63k–192k) and
+context (110k–200k); the one retry cost three times a first run.
+
+- `skills/verdict/SKILL.md` — Phase A has no attack quota: attack the frontier until empty.
+  Attacks that hold go to a top-level `held` array instead of note findings. Retry mode
+  re-verifies only blocks (re-running `repro`; a resolved block that fails is open again) and
+  warns or notes whose cited file is in the new diff; everything else carries forward as-is.
+  Ticket status after a verdict is fixed: `ship` → `done`, `reject` → `in_progress`.
+- `scripts/render_verdict.py` — renders `held`.
+
+Not a schema yet: the verdict JSON is still parsed ad hoc by `render_verdict.py` and
+`runner.py`. Next time it changes shape it gets a model in `scripts/schemas.py`.
+
 ## 0.4.1 — 2026-09-02
 
 Closed tickets are immutable. Kanban practice, and the property an issue tracker gives for
