@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Headless state machine for one ticket, run from the main checkout.
-Usage: python loop.py <ticket id> [--max-retries 2] [--cwd .] [--build-model sonnet] [--verdict-model opus]
+Usage: python runner.py <ticket id> [--max-retries 2] [--cwd .] [--build-model sonnet] [--verdict-model opus]
 States: worktree → baseline → build → status → ci → verdict → (ship | block→retry | child→human)
 Each state is a `claude -p` call or a shell command; transitions only on objective signals
 (exit codes, build status line in the ticket Log, verdict.json decision and findings).
@@ -43,7 +43,7 @@ def worktree(repo: Path, tid: str) -> tuple[Path, bool]:
         else ["git", "worktree", "add", "-b", branch, str(path), "HEAD"]
     )
     if sh(cmd, repo) != 0:
-        raise SystemExit(f"[loop] worktree add failed for {tid}")
+        raise SystemExit(f"[runner] worktree add failed for {tid}")
     return path, True
 
 
@@ -106,37 +106,37 @@ def main() -> int:
     repo = Path(a.cwd).resolve()
 
     wt, created = worktree(repo, a.ticket)
-    print(f"[loop] worktree {wt} ({'new' if created else 'existing'})")
+    print(f"[runner] worktree {wt} ({'new' if created else 'existing'})")
     if created and not ci(wt):
-        print("[loop] baseline red in a fresh worktree — not this ticket's fault; fix main first")
+        print("[runner] baseline red in a fresh worktree — not this ticket's fault; fix main first")
         return 1
 
     for attempt in range(1, a.max_retries + 1):
-        print(f"[loop] {a.ticket} attempt {attempt}")
+        print(f"[runner] {a.ticket} attempt {attempt}")
         claude(f"/build {a.ticket}", wt, a.build_model)
         st = build_status(wt, a.ticket)
         if st == "NEEDS_CONTEXT":
-            print("[loop] build needs context — grill miss logged; human needed")
+            print("[runner] build needs context — grill miss logged; human needed")
             log_grill_miss(wt, a.ticket)
             return 3
         if st == "BLOCKED":
-            print("[loop] build blocked — see ticket Log; human needed")
+            print("[runner] build blocked — see ticket Log; human needed")
             return 3
         if not ci(wt):
-            print("[loop] ci red")
+            print("[runner] ci red")
             continue
         decision, retryable, progressed = verdict(wt, a.ticket, a.verdict_model)
-        print(f"[loop] verdict: {decision}{' (retryable)' if retryable else ''}")
+        print(f"[runner] verdict: {decision}{' (retryable)' if retryable else ''}")
         if decision == "ship":
-            print(f"[loop] ship — review and push from {wt}")
+            print(f"[runner] ship — review and push from {wt}")
             return 0
         if not retryable:
-            print("[loop] blocking findings all spawn child tickets — human: create children, decide on this slice")
+            print("[runner] blocking findings all spawn child tickets — human: create children, decide on this slice")
             return 2
         if not progressed:
-            print("[loop] same blocks as previous verdict — build and verdict disagree; plan problem, human needed")
+            print("[runner] same blocks as previous verdict — build and verdict disagree; plan problem, human needed")
             return 2
-    print("[loop] retry cap reached — human needed")
+    print("[runner] retry cap reached — human needed")
     return 1
 
 

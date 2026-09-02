@@ -31,7 +31,7 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `scripts/render_board.py` | status columns + dependency graph. |
 | `scripts/grill_digest.py` | grill-misses → blind-spots the grill reads. |
 | `scripts/replay.py` | re-run grill on golden briefs, diff escalations. |
-| `scripts/loop.py` | headless build → ci → verdict state machine, retry cap 4. |
+| `scripts/runner.py` | headless build → ci → verdict state machine, retry cap 4. |
 | `templates/` | brief, plan, ticket, ADR skeletons. |
 
 ## Opik
