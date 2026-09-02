@@ -34,7 +34,7 @@ readable board, comments that append, closed issues that stay closed, and a hist
   1, rendered locally. Briefs stay in `kanban/briefs/`. Traces stay in `traces/`.
 - Findings and Log entries become issue comments. A comment is append-only by construction, which
   is the property 0.4.1 had to bolt on.
-- `gh` is on PATH in the Dockerfile image already (`curl`, `git` are; `gh` is added). The runner
+- The Dockerfile image has `git` and `curl` but not `gh`; it gets added. The runner
   needs a token with issues scope; the hooks run with the user's `gh auth`.
 
 ## What I'm unsure about
