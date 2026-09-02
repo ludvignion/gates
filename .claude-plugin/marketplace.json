@@ -10,7 +10,7 @@
       "name": "harness-plugin",
       "source": "./",
       "description": "Grill → plan gate → tests-first build → fresh-context verdict.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "category": "workflow",
       "keywords": ["grill", "tdd", "review", "kanban", "harness"]
     }
