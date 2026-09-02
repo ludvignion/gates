@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1 — 2026-09-02
+
+The first 0.5.0 verdict shipped a ticket that two earlier verdicts had rejected: tests made 20
+live calls to a provider when a key was present. Two gaps, both mechanical now.
+
+- `scripts/verdict_prep.py` — archives the existing `<id>.json` as `<id>.prev.json` before the
+  run, so the previous verdict's blocks always reach the input with their repro commands.
+  `render_verdict.py` no longer archives (it ran after the write and lost the old verdict).
+- `scripts/verdict_checks.py` — live-call check: runs the test suite with every key named in
+  `.env.example` set to a dummy value and outbound sockets blocked (`scripts/nosock.py`, a
+  pytest plugin); any connection attempt is a block naming the host. Verified on the real
+  branch: 20 attempts caught.
+
 ## 0.5.0 — 2026-09-02
 
 Single-call verdict. The old skill explored a frontier over 14–23 model calls, each re-reading

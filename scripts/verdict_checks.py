@@ -8,6 +8,7 @@ it (warn), closed tickets edited (warn). Findings use the verdict JSON shape so 
 them verbatim. Loads ticket shape through scripts/schemas.py; git for everything else.
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -101,7 +102,42 @@ def checks(root: Path, tid: str, base: str, ci_green: bool | None = None) -> lis
 
     for v in lint_kanban.lint(root, base):
         add("warn", v)
+
+    attempts = live_calls(root)
+    if attempts:
+        hosts = sorted({a.split("\n")[0] for a in attempts})
+        add("block", f"Tests attempt {len(attempts)} live network call(s) with keys set: {', '.join(hosts)[:120]}",
+            ac="no live calls", repro="verdict_checks.py <id>  (pytest -p nosock with .env.example keys set)")
     return out
+
+
+def live_calls(root: Path) -> list[str]:
+    """Run the test suite with every .env.example key set to a dummy value and sockets blocked.
+    Returns one entry per attempted connection. Empty when no tests dir or no pytest."""
+    if not (root / "tests").is_dir():
+        return []
+    env = dict(os.environ)
+    example = root / ".env.example"
+    if example.exists():
+        for line in example.read_text(errors="ignore").splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                env[line.split("=", 1)[0].strip()] = "dummy-from-verdict-checks"
+    log = root / "traces" / "verdict" / ".nosock.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.unlink(missing_ok=True)
+    env["NOSOCK_LOG"] = str(log)
+    env["PYTHONPATH"] = str(Path(__file__).parent) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTEST_ADDOPTS"] = (env.get("PYTEST_ADDOPTS", "") + " -p nosock -q").strip()
+    runner = ["uv", "run", "pytest"] if (root / "uv.lock").exists() else [sys.executable, "-m", "pytest"]
+    try:
+        subprocess.run(runner + ["tests", "--ignore=tests/evals"], cwd=root, env=env, capture_output=True, timeout=900)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    if not log.exists():
+        return []
+    entries = [e.strip() for e in log.read_text(errors="ignore").split("----") if e.strip()]
+    log.unlink(missing_ok=True)
+    return entries
 
 
 def main(argv: list[str]) -> int:

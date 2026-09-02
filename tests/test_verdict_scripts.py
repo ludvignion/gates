@@ -119,12 +119,37 @@ class VerdictScriptsTest(unittest.TestCase):
         self.assertIn("F1 open (AC-2): ids drift — repro: `make test`", text)
         self.assertNotIn("meh", text)
 
-    def test_render_archives_prev(self):
+    def test_prep_archives_existing_verdict_first(self):
+        vd = self.tmp / "traces" / "verdict"; vd.mkdir(parents=True)
+        (vd / "1.1.json").write_text(json.dumps({"findings": [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-2", "text": "ids drift", "repro": "make test"}]}))
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        self.assertTrue((vd / "1.1.prev.json").exists())
+        self.assertIn("F1 open (AC-2): ids drift", text)
+
+    def test_render_shows_held(self):
         vd = self.tmp / "traces" / "verdict"; vd.mkdir(parents=True)
         (vd / "1.1.json").write_text(json.dumps({"ticket": "1.1", "decision": "ship", "held": ["AC-1"], "findings": [], "ci": {"green": True}}))
         render_verdict.main(self.tmp, "1.1")
-        self.assertTrue((vd / "1.1.prev.json").exists())
         self.assertIn("Held: AC-1", (vd / "1.1.html").read_text())
+
+    def test_live_call_check_blocks(self):
+        (self.tmp / ".env.example").write_text("SOME_API_KEY=\n")
+        (self.tmp / "tests/test_net.py").write_text(
+            "import os, socket\n"
+            "def test_calls_out():\n"
+            "    if os.environ.get('SOME_API_KEY'):\n"
+            "        try: socket.create_connection(('example.invalid', 443), timeout=1)\n"
+            "        except OSError: pass\n"
+            "    assert True\n")
+        try:
+            import pytest  # noqa: F401
+        except ImportError:
+            self.skipTest("pytest not installed")
+        found = verdict_checks.checks(self.tmp, "1.1", "main", ci_green=True)
+        live = [f for f in found if "live network call" in f["text"]]
+        self.assertEqual(len(live), 1); self.assertEqual(live[0]["severity"], "block")
+        self.assertIn("example.invalid", live[0]["text"])
 
     def test_cli_prep_writes_input(self):
         r = subprocess.run([sys.executable, str(REPO / "scripts" / "verdict_prep.py"), "1.1", "--no-ci"], cwd=self.tmp, capture_output=True, text=True)

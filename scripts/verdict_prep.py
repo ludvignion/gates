@@ -3,12 +3,13 @@
 
 Writes traces/verdict/<id>.input.md and prints its path. Contents: the ticket's ACs, Out of
 scope, writes: and human waivers; the plan's "Verdict must attack" items; the charter items;
-the previous verdict's open blocks with their repro commands; `make ci` result; the mechanical
+the previous verdict's blocks with their repro commands (the existing <id>.json is archived as <id>.prev.json first); `make ci` result; the mechanical
 findings from verdict_checks.py; tests added on the branch that name ACs; the diff. The model
 reads this file and nothing else. Shapes load through scripts/schemas.py.
 """
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,9 @@ def build(root: Path, tid: str, base: str, ci: bool) -> str:
     charter_path = root / "docs" / "domain-pack" / "charter.md"
     charter = schemas.Charter.parse(charter_path.read_text(errors="ignore")).items if charter_path.exists() else ()
     prev_path = root / "traces" / "verdict" / f"{tid}.prev.json"
+    cur = root / "traces" / "verdict" / f"{tid}.json"
+    if cur.exists():  # the last verdict on this ticket is the previous one; archive before the new run
+        shutil.copyfile(cur, prev_path)
     prev_blocks = []
     if prev_path.exists():
         prev = json.loads(prev_path.read_text())
