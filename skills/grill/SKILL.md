@@ -67,3 +67,14 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
 
 A rejected verdict spawns `kanban/tickets/<n>.<m>.<p>.<slug>.md`. The rejection is the brief. Skip gate 1.
 Run rules 1–3 and 9 only; no human round unless a decision is genuinely open.
+
+## Evidence discipline
+`resolved_by: evidence` is allowed only after opening the source. For a file path, `evidence`
+quotes its first line and its line count. For a schema, it quotes the header row or field list
+as read, not as described in the brief. If the path does not exist, the node is
+`resolved_by: human` with a question. A brief describing a file is not evidence the file exists.
+## Brief shape
+Refuse a brief whose Outcome is a code property — validation, typing, models, a refactor,
+"add X across stages" — rather than a behaviour observable in the CLI or an output file. That is
+a horizontal phase. Say so and name the vertical ticket that first needs it. Refuse likewise while
+any ticket of an unshipped tracer-bullet plan is `in_progress` or `in_review`.

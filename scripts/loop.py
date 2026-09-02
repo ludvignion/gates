@@ -6,7 +6,7 @@ Each state is a `claude -p` call or a shell command; transitions only on objecti
 (exit codes, build status line in the ticket Log, verdict.json decision and findings).
 The machine, not the model, owns the loop.
 Exit codes: 0 ship (human reviews and pushes from the worktree) · 1 red baseline or retry cap ·
-2 human gate (all blocking findings spawn child tickets) ·
+2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) ·
 3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log).
 The worktree at ../<repo>-<id> is never removed here; `git worktree remove` after the human merges.
 Run in a container when unattended (see Dockerfile).
@@ -68,20 +68,31 @@ def log_grill_miss(cwd: Path, tid: str) -> None:
         f.write(json.dumps({"ticket": tid, "source": "build", "status": "NEEDS_CONTEXT"}) + "\n")
 
 
-def verdict(cwd: Path, tid: str, model: str) -> tuple[str, bool]:
-    """Returns (decision, retryable). Retryable = at least one block finding the builder can fix
-    in this slice, i.e. not spawn_child. A missing verdict is a loop failure: reject, retryable."""
+def verdict(cwd: Path, tid: str, model: str) -> tuple[str, bool, bool]:
+    """Returns (decision, retryable, progressed).
+    retryable: an open block the builder can fix here (not spawn_child).
+    progressed: at least one open block is new since the previous verdict; False means the
+    builder and reviewer are stuck on the same findings — a plan problem, not a build problem."""
     p = cwd / "traces" / "verdict" / f"{tid}.json"
-    p.unlink(missing_ok=True)  # never reread a stale verdict from a previous attempt
+    prev = p.with_name(f"{tid}.prev.json")
+    prev_open = set()
+    if p.exists():
+        p.replace(prev)
+        prev_open = {
+            f["id"] for f in json.loads(prev.read_text()).get("findings", [])
+            if f.get("severity") == "block" and f.get("status", "open") == "open"
+        }
     claude(f"/verdict {tid}", cwd, model)
     if not p.exists():
-        return "reject", True
+        return "reject", True, True
     v = json.loads(p.read_text())
-    retryable = any(
-        f.get("severity") == "block" and not f.get("spawn_child", False)
-        for f in v.get("findings", [])
-    )
-    return v["decision"], retryable
+    blocks = [
+        f for f in v.get("findings", [])
+        if f.get("severity") == "block" and f.get("status", "open") == "open"
+    ]
+    retryable = any(not f.get("spawn_child", False) for f in blocks)
+    progressed = not blocks or any(f.get("id") not in prev_open for f in blocks)
+    return v["decision"], retryable, progressed
 
 
 def main() -> int:
@@ -114,7 +125,7 @@ def main() -> int:
         if not ci(wt):
             print("[loop] ci red")
             continue
-        decision, retryable = verdict(wt, a.ticket, a.verdict_model)
+        decision, retryable, progressed = verdict(wt, a.ticket, a.verdict_model)
         print(f"[loop] verdict: {decision}{' (retryable)' if retryable else ''}")
         if decision == "ship":
             print(f"[loop] ship — review and push from {wt}")
@@ -122,9 +133,12 @@ def main() -> int:
         if not retryable:
             print("[loop] blocking findings all spawn child tickets — human: create children, decide on this slice")
             return 2
+        if not progressed:
+            print("[loop] same blocks as previous verdict — build and verdict disagree; plan problem, human needed")
+            return 2
     print("[loop] retry cap reached — human needed")
     return 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main())

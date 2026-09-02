@@ -9,6 +9,16 @@ sys.path.insert(0, str(Path(__file__).parent))
 import _fm  # noqa: E402
 
 
+PATH_RE = re.compile(r"(?:docs|src|tests|kanban|scripts)/[\w./ -]+?(?=[\s:;,)]|$)")
+
+
+def evidence_paths_exist(node: dict, root: Path) -> list[str]:
+    """Paths cited in an evidence-resolved node must exist on disk. Returns the missing ones."""
+    if node.get("resolved_by") != "evidence" or not node.get("evidence"):
+        return []
+    return [m for m in PATH_RE.findall(node["evidence"]) if not (root / m.strip()).exists()]
+
+
 def lint_trace(root: Path, n: str) -> list[str]:
     """Return list of violations. Empty list means valid."""
     violations = []
@@ -80,6 +90,13 @@ def lint_trace(root: Path, n: str) -> list[str]:
                     violations.append(
                         f"Line {i}: open node '{node}' not listed in Blocking risks"
                     )
+
+            # Rule: evidence-resolved node cites only paths that exist
+            missing = evidence_paths_exist(record, root)
+            if missing:
+                violations.append(
+                    f"Line {i}: trace {n} node '{node}' cites missing paths: {', '.join(missing)}"
+                )
 
     return violations
 
