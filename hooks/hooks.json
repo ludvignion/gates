@@ -18,6 +18,10 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/trace_stop.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/render_board.py . >/dev/null 2>&1 || true"
           }
         ]
       }
