@@ -23,3 +23,7 @@ htmlcov/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Session traces belong to projects; only golden replay fixtures live here.
+/traces/*
+!/traces/golden/
