@@ -73,6 +73,8 @@ Run rules 1–3 and 9 only; no human round unless a decision is genuinely open.
 quotes its first line and its line count. For a schema, it quotes the header row or field list
 as read, not as described in the brief. If the path does not exist, the node is
 `resolved_by: human` with a question. A brief describing a file is not evidence the file exists.
+Cite files, or directories with a trailing slash — a bare directory path without the slash
+is not checked by lint.
 ## Brief shape
 Refuse a brief whose Outcome is a code property — validation, typing, models, a refactor,
 "add X across stages" — rather than a behaviour observable in the CLI or an output file. That is

@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import _fm  # noqa: E402
 
 
-PATH_RE = re.compile(r"(?:docs|src|tests|kanban|scripts)/[\w./ -]+?(?=[\s:;,)]|$)")
+PATH_RE = re.compile(r"(?<![\w./-])(?:docs|src|tests|kanban|scripts)/[\w./ -]*?(?:\.\w+|/)(?=[\s:;,)]|$)")
 
 
 def evidence_paths_exist(node: dict, root: Path) -> list[str]:
