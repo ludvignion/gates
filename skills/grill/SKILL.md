@@ -85,6 +85,7 @@ From the signals, stamp two derived fields, each with its derivation on the same
                                   # workflow iff parallel_ready >= 3 (requires plan-tier support)
                                   # runner iff full scrutiny must run unattended or with retries
                                   # session otherwise
+                                  # if no workflow backend exists in the plugin, stamp runner instead and log the downgrade in the plan Log
 
 Scrutiny sets review cadence: light = tests-first, human reads diffs, ONE whole-branch verdict
 before ship. Full = per-ticket verdict as ship gate for each slice. The charter and domain pack
