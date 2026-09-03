@@ -41,9 +41,10 @@ def li(f: dict) -> str:
     )
 
 
-def stamp(root: Path, tid: str, vendor: str) -> tuple[schemas.Verdict, list[str]]:
+def stamp(root: Path, tid: str, vendor: str, cost_usd: float | None = None, tokens: dict | None = None) -> tuple[schemas.Verdict, list[str]]:
     """Validate against the packet's arm, stamp meta, write the JSON back. Returns the stored
-    verdict and the violations."""
+    verdict and the violations. cost_usd/tokens come from the vendor's own report (runner.py);
+    a re-run without them keeps what is already stamped."""
     vpath = root / "traces" / "verdict" / f"{tid}.json"
     ppath = root / "traces" / "verdict" / f"{tid}.input.md"
     v = schemas.Verdict.load(vpath)
@@ -54,6 +55,8 @@ def stamp(root: Path, tid: str, vendor: str) -> tuple[schemas.Verdict, list[str]
     meta = schemas.VerdictMeta(
         arm=packet.arm, vendor=vendor, plugin_version=str(packet.fm.get("plugin_version", "")),
         prompt_sha=str(packet.fm.get("prompt_sha", "")), packet_sha=schemas.sha256(ppath.read_bytes()),
+        cost_usd=cost_usd if cost_usd is not None else (v.meta.cost_usd if v.meta else None),
+        tokens=tokens if tokens is not None else (v.meta.tokens if v.meta else None),
     )
     v = v.with_meta(meta)
     v.dump(vpath)
@@ -89,7 +92,7 @@ def render(root: Path, tid: str, v: schemas.Verdict, violations: list[str]) -> P
     ci = v.ci
     held_html = f"<p class=meta>Held: {esc(', '.join(v.held))}</p>" if v.held else ""
     seat_html = (
-        "<p class=meta>Seat: " + " · ".join(f"{k} {esc(val)}" for k, val in v.meta.as_dict().items()) + "</p>"
+        "<p class=meta>Seat: " + " · ".join(f"{k} {esc(val)}" for k, val in v.meta.as_dict().items() if val is not None) + "</p>"
         if v.meta else "<p class=meta>Seat: unstamped</p>"
     )
     invalid_html = (
@@ -116,9 +119,9 @@ li{{margin:.3rem 0;padding:.2rem .4rem;list-style:none}}ul{{padding-left:0}}
     return out_path
 
 
-def main(root: Path, tid: str, vendor: str = DEFAULT_VENDOR) -> list[str]:
+def main(root: Path, tid: str, vendor: str = DEFAULT_VENDOR, cost_usd: float | None = None, tokens: dict | None = None) -> list[str]:
     """Stamp, render, print the page path; violations go to stderr and come back to the caller."""
-    v, violations = stamp(root, tid, vendor)
+    v, violations = stamp(root, tid, vendor, cost_usd, tokens)
     print(render(root, tid, v, violations))
     for x in violations:
         print(f"[verdict] invalid: {x}", file=sys.stderr)

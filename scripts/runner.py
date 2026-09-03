@@ -37,12 +37,14 @@ import schemas  # noqa: E402
 STATUS_RE = re.compile(r"^### \[build\] .*— status: (NEEDS_CONTEXT|BLOCKED|DONE)\b", re.M)
 SCRIPTS = Path(__file__).resolve().parent
 DEFAULT_VERDICT_MODEL = "opus"
-DEFAULT_VERDICT_CMD = "claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits"
+DEFAULT_VERDICT_CMD = "claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits --output-format json"
 VERDICT_CMD_HELP = (
     "shell template for the one verdict call, run in the worktree. Placeholders: "
     "{packet} = packet path (traces/verdict/<id>.input.md), {output} = where the verdict JSON must land "
     "(traces/verdict/<id>.json), {model} = --verdict-model, {ticket} = ticket id. Paths are relative to "
-    "the worktree and contain no spaces. The stamp's vendor is the template's first word. "
+    "the worktree and contain no spaces. The stamp's vendor is the template's first word. When the command "
+    "prints one JSON object with total_cost_usd and usage on stdout (claude --output-format json), they are "
+    "stamped as meta.cost_usd and meta.tokens; other vendors leave them null. "
     f"Default: {DEFAULT_VERDICT_CMD}"
 )
 OPIK_ENV = ("OPIK_URL_OVERRIDE",)
@@ -105,6 +107,19 @@ def verdict_cmd(template: str, *, packet: str, output: str, model: str, ticket: 
     return template.format(packet=packet, output=output, model=model, ticket=ticket)
 
 
+def vendor_usage(stdout: str) -> tuple[float | None, dict | None]:
+    """(cost_usd, tokens) from a vendor's stdout when it is one JSON object carrying
+    total_cost_usd / usage (claude --output-format json); (None, None) for anything else."""
+    try:
+        d = json.loads(stdout.strip() or "null")
+    except json.JSONDecodeError:
+        return None, None
+    if not isinstance(d, dict):
+        return None, None
+    cost, usage = d.get("total_cost_usd"), d.get("usage")
+    return (float(cost) if isinstance(cost, (int, float)) else None), (dict(usage) if isinstance(usage, dict) else None)
+
+
 def prep(cwd: Path, tid: str, arm: str) -> Path:
     r = subprocess.run([sys.executable, str(SCRIPTS / "verdict_prep.py"), tid, "--arm", arm],
                        cwd=cwd, capture_output=True, text=True)
@@ -159,12 +174,18 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
     cmd = verdict_cmd(template, packet=str(packet.relative_to(cwd)), output=str(p.relative_to(cwd)), model=model, ticket=tid)
     client = opik_client()
     started, t0 = datetime.now(timezone.utc), time.monotonic()
-    subprocess.run(cmd, shell=True, cwd=cwd)
+    r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
     wall = time.monotonic() - t0
+    cost_usd, tokens = vendor_usage(r.stdout)
+    if cost_usd is None and tokens is None:
+        sys.stdout.write(r.stdout)  # not a usage report: pass the vendor's output through
+    else:
+        print(f"[runner] verdict call: cost_usd={cost_usd} tokens={tokens}")
+    sys.stderr.write(r.stderr)
     if not p.exists():
         trace_verdict(client, tid=tid, packet=packet, verdict=None, started=started, wall=wall, vendor=vendor_of(template), arm=arm)
         return "reject", True, True
-    violations = render_verdict.main(cwd, tid, vendor=vendor_of(template))
+    violations = render_verdict.main(cwd, tid, vendor=vendor_of(template), cost_usd=cost_usd, tokens=tokens)
     for x in violations:
         print(f"[runner] verdict invalid: {x}")
     v = schemas.Verdict.load(p)

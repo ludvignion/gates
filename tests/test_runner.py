@@ -54,13 +54,44 @@ class RunnerSeatTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_default_cmd_and_placeholders(self):
-        self.assertEqual(runner.DEFAULT_VERDICT_CMD, "claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits")
+        self.assertEqual(runner.DEFAULT_VERDICT_CMD, "claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits --output-format json")
         cmd = runner.verdict_cmd(runner.DEFAULT_VERDICT_CMD, packet="traces/verdict/1.1.input.md", output="traces/verdict/1.1.json", model="opus", ticket="1.1")
-        self.assertEqual(cmd, "claude -p '/verdict traces/verdict/1.1.input.md' --model opus --permission-mode acceptEdits")
+        self.assertEqual(cmd, "claude -p '/verdict traces/verdict/1.1.input.md' --model opus --permission-mode acceptEdits --output-format json")
         self.assertEqual(runner.vendor_of(runner.DEFAULT_VERDICT_CMD), "claude")
         self.assertEqual(runner.vendor_of("/usr/local/bin/codex exec --json {packet} > {output}"), "codex")
         for ph in ("{packet}", "{output}", "{model}", "{ticket}"):
             self.assertIn(ph, runner.VERDICT_CMD_HELP)
+
+    def test_vendor_usage_from_claude_json_output(self):
+        claude_out = json.dumps({"type": "result", "subtype": "success", "total_cost_usd": 0.4321, "duration_ms": 9000,
+                                 "usage": {"input_tokens": 12, "output_tokens": 34, "cache_creation_input_tokens": 5, "cache_read_input_tokens": 600}, "result": "done"})
+        self.assertEqual(runner.vendor_usage(claude_out), (0.4321, {"input_tokens": 12, "output_tokens": 34, "cache_creation_input_tokens": 5, "cache_read_input_tokens": 600}))
+        self.assertEqual(runner.vendor_usage("plain text from another vendor"), (None, None))
+        self.assertEqual(runner.vendor_usage(""), (None, None))
+        self.assertEqual(runner.vendor_usage('{"result": "no usage"}'), (None, None))
+        self.assertEqual(runner.vendor_usage('[1, 2]'), (None, None))
+
+    def test_claude_usage_lands_in_meta_and_trace(self):
+        (self.tmp / "fake_vendor.py").write_text(FAKE_VENDOR + 'print(json.dumps({"total_cost_usd": 0.05, "usage": {"input_tokens": 7, "output_tokens": 8}}))\n')
+        calls = {}
+
+        class Client:
+            def trace(self, **kw): calls["trace"] = kw
+            def flush(self): pass
+
+        fake = types.ModuleType("opik"); fake.Opik = Client
+        with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}):
+            runner.verdict(self.tmp, "1.1", "opus", template=self.cmd)
+        meta = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json").meta
+        self.assertEqual((meta.cost_usd, meta.tokens), (0.05, {"input_tokens": 7, "output_tokens": 8}))
+        self.assertEqual(calls["trace"]["metadata"]["cost_usd"], 0.05)
+        self.assertEqual(calls["trace"]["metadata"]["tokens"], {"input_tokens": 7, "output_tokens": 8})
+
+    def test_other_vendor_leaves_usage_null(self):
+        runner.verdict(self.tmp, "1.1", "opus", template=self.cmd)
+        meta = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json").meta
+        self.assertEqual((meta.cost_usd, meta.tokens), (None, None))
+        self.assertIn('"cost_usd": null', (self.tmp / "traces/verdict/1.1.json").read_text())
 
     def test_verdict_runs_cmd_stamps_and_reads_decision(self):
         decision, retryable, progressed = runner.verdict(self.tmp, "1.1", "opus", arm="packet", template=self.cmd)

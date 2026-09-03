@@ -442,26 +442,34 @@ def sha256(data: bytes | str) -> str:
 # Verdict; nobody indexes the JSON by hand. ``meta`` is optional so verdicts written before the
 # stamp still load.
 META_FIELDS = ("arm", "vendor", "plugin_version", "prompt_sha", "packet_sha")
+META_OPTIONAL = ("cost_usd", "tokens")  # what the vendor reported for the call; null when it reports nothing
 
 
 @dataclass(frozen=True)
 class VerdictMeta:
-    """Which seat produced the verdict: the seam metadata, one value per META_FIELDS."""
+    """Which seat produced the verdict: the seam metadata, one value per META_FIELDS, plus the
+    call's cost and token usage when the vendor prints them (claude --output-format json)."""
 
     arm: str
     vendor: str
     plugin_version: str
     prompt_sha: str
     packet_sha: str
+    cost_usd: float | None = None
+    tokens: dict | None = None
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "VerdictMeta | None":
         if not isinstance(d, dict):
             return None
-        return cls(**{k: str(d.get(k, "")) for k in META_FIELDS})
+        cost = d.get("cost_usd")
+        tokens = d.get("tokens")
+        return cls(**{k: str(d.get(k, "")) for k in META_FIELDS},
+                   cost_usd=float(cost) if isinstance(cost, (int, float)) else None,
+                   tokens=dict(tokens) if isinstance(tokens, dict) else None)
 
     def as_dict(self) -> dict:
-        return {k: getattr(self, k) for k in META_FIELDS}
+        return {**{k: getattr(self, k) for k in META_FIELDS}, "cost_usd": self.cost_usd, "tokens": self.tokens}
 
 
 @dataclass(frozen=True)

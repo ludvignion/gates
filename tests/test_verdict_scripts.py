@@ -235,13 +235,19 @@ class VerdictScriptsTest(unittest.TestCase):
             "plugin_version": json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())["version"],
             "prompt_sha": schemas.sha256((REPO / "skills" / "verdict" / "verdict-prompt.md").read_text()),
             "packet_sha": schemas.sha256((vpath.with_name("1.1.input.md")).read_bytes()),
+            "cost_usd": None, "tokens": None,
         })
+        render_verdict.main(self.tmp, "1.1", vendor="codex", cost_usd=0.5, tokens={"input_tokens": 10})
+        self.assertEqual(schemas.Verdict.load(vpath).meta.cost_usd, 0.5)
+        render_verdict.main(self.tmp, "1.1", vendor="codex")  # a re-run without usage keeps it
+        self.assertEqual(schemas.Verdict.load(vpath).meta.tokens, {"input_tokens": 10})
+        self.assertIn("cost_usd 0.5", vpath.with_suffix(".html").read_text())
         self.assertEqual(v.raw["quality"], {"a.py": {"srp": True}})  # unknown keys survive the round trip
         self.assertEqual(v.decision, "reject")
         html = vpath.with_suffix(".html").read_text()
         self.assertIn("Seat: arm repo · vendor codex", html)
         render_verdict.main(self.tmp, "1.1", vendor="codex")  # idempotent
-        self.assertEqual(schemas.Verdict.load(vpath).meta, v.meta)
+        self.assertEqual(schemas.Verdict.load(vpath).meta.packet_sha, v.meta.packet_sha)
 
     def test_blind_downgrades_uncited_block(self):
         vpath = self._verdict_and_packet("blind", [
@@ -299,7 +305,11 @@ class VerdictSchemaTest(unittest.TestCase):
         self.assertEqual(v.uncited_blocks(), v.blocks())
         meta = schemas.VerdictMeta.from_dict({"arm": "blind", "vendor": "codex", "plugin_version": "0.6.2", "prompt_sha": "a", "packet_sha": "b"})
         self.assertEqual(v.with_meta(meta).as_dict()["meta"], meta.as_dict())
-        self.assertEqual(sorted(meta.as_dict()), sorted(schemas.META_FIELDS))
+        self.assertEqual(sorted(meta.as_dict()), sorted(schemas.META_FIELDS + schemas.META_OPTIONAL))
+        self.assertIsNone(meta.cost_usd); self.assertIsNone(meta.tokens)
+        rich = schemas.VerdictMeta.from_dict({**meta.as_dict(), "cost_usd": 0.25, "tokens": {"output_tokens": 3}})
+        self.assertEqual((rich.cost_usd, rich.tokens), (0.25, {"output_tokens": 3}))
+        self.assertIsNone(schemas.VerdictMeta.from_dict({**meta.as_dict(), "cost_usd": "n/a"}).cost_usd)
         with self.assertRaises(ValueError):
             schemas.Verdict.from_dict(["not", "an", "object"])
 
@@ -316,6 +326,23 @@ class VerdictSchemaTest(unittest.TestCase):
             {"id": "F1", "severity": "block"}]}), "blind")[0].decision, "reject")
 
 
+class VerdictSkillTest(unittest.TestCase):
+    """skills/verdict/SKILL.md: the packet-path flow ends at the verdict JSON."""
+
+    def test_packet_path_flow_has_no_close_out(self):
+        body = (REPO / "skills" / "verdict" / "SKILL.md").read_text()
+        flow = schemas.section(body, "Packet path")
+        steps = schemas._items(flow)  # the numbered steps are what the session does; prose only says what it does not
+        self.assertEqual(len(steps), 2, steps)
+        for step in ("verdict_prep", "render_verdict", "Log", "status", "summary", "options"):
+            self.assertFalse(any(step in it for it in steps), step)
+        self.assertIn("`output`", steps[1])
+        self.assertIn("Read nothing else", steps[0])
+        self.assertEqual(len(schemas._items(schemas.section(body, "Ticket id"))), 3)
+        self.assertIn("Session ends at the verdict.", schemas.section(body, "Never"))
+        self.assertIn("render_verdict.py", schemas.section(body, "Ticket id"))
+
+
 class VerdictEvalFixtureTest(unittest.TestCase):
     """tests/fixtures/project: a neutral project verdict_eval.py runs over without a model or a server."""
 
@@ -328,19 +355,21 @@ class VerdictEvalFixtureTest(unittest.TestCase):
         self.assertIn("green", packet.section("CI"))
         self.assertLessEqual(packet.section("Diff").count("\n"), 34)
         v = schemas.Verdict.load(FIXTURE_PROJECT / "traces" / "verdict" / "1.1.json")
-        self.assertEqual(v.decision, "ship")
-        self.assertEqual([f["severity"] for f in v.findings], ["warn", "warn"])
+        self.assertEqual(v.decision, "reject")
+        self.assertEqual([(f["id"], f["severity"], f.get("ac") or f.get("charter")) for f in v.findings],
+                         [("F1", "block", "AC-2"), ("F2", "warn", "charter-2")])
+        self.assertTrue(v.findings[0]["repro"])
         self.assertTrue(all(v.cited(f) for f in v.findings))
         self.assertEqual(v.meta.packet_sha, schemas.sha256(ppath.read_bytes()))
         rows = verdict_eval.items(FIXTURE_PROJECT)
-        self.assertEqual([(r["ticket"], r["expected"]) for r in rows], [("1.1", "ship")])
+        self.assertEqual([(r["ticket"], r["expected"]) for r in rows], [("1.1", "reject")])
 
     def test_canned_cmd_copies_verdict(self):
         tmp = Path(tempfile.mkdtemp())
         try:
             r = subprocess.run([sys.executable, str(CANNED), str(FIXTURE_PROJECT / "traces/verdict/1.1.json"), str(tmp / "out/v.json")], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(json.loads((tmp / "out/v.json").read_text())["decision"], "ship")
+            self.assertEqual(json.loads((tmp / "out/v.json").read_text())["decision"], "reject")
             self.assertEqual(subprocess.run([sys.executable, str(CANNED)], capture_output=True).returncode, 2)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -366,7 +395,7 @@ class VerdictEvalFixtureTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(sorted(k for k in rows[0] if k != "ticket"), sorted(verdict_eval.METRICS))
         self.assertEqual({k: rows[0][k] for k in ("block_count", "finding_count", "citation_compliance", "decision_agreement")},
-                         {"block_count": 0.0, "finding_count": 2.0, "citation_compliance": 1.0, "decision_agreement": 1.0})
+                         {"block_count": 1.0, "finding_count": 2.0, "citation_compliance": 1.0, "decision_agreement": 1.0})
         self.assertGreater(rows[0]["wall_seconds"], 0.0)
         text = out.getvalue()
         self.assertIn("1 packets, 1 with an expected decision", text)
@@ -374,7 +403,7 @@ class VerdictEvalFixtureTest(unittest.TestCase):
             self.assertIn(f"{name}=", text)
         self.assertIn("decision_agreement=1.0", text)
         blind = verdict_eval.score_local(verdict_eval.items(FIXTURE_PROJECT), "blind", cmd)[0]
-        self.assertEqual(blind["decision_agreement"], 1.0)  # cited warns survive the blind close-out
+        self.assertEqual(blind["decision_agreement"], 1.0)  # a cited block survives the blind close-out
 
 
 if __name__ == "__main__":

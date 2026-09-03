@@ -7,8 +7,8 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
 
 - `skills/verdict/verdict-prompt.md` — new. The judging prompt, extracted from `SKILL.md`, with
   its guardrail line (fix nothing; write only the verdict JSON and this ticket's Log).
-  `SKILL.md` is a thin wrapper: prep unless handed a packet path, judge per the packet's
-  Instructions, close out.
+  `SKILL.md` is a thin wrapper with two flows: a packet path (runner seat) ends at the verdict
+  JSON, no close-out, no Log edit, no summary; a ticket id (human) preps, judges, closes out.
 - `scripts/verdict_prep.py` — the packet is self-contained: frontmatter (`ticket`, `arm`,
   `base`, `output`, `ticket_file`, `status`, `writes`, `plugin_version`, `prompt_sha`), the
   prompt as `## Instructions`, a `## Seat` line, then the evidence sections. `--arm
@@ -30,8 +30,10 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
 - `scripts/runner.py` — `--arm` and `--verdict-cmd "<template>"`. The runner writes the packet,
   runs the template in the worktree with `{packet}`, `{output}`, `{model}`, `{ticket}` filled,
   then closes out with the template's executable name as vendor. Default template:
-  `claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits`. Decision logic
-  unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` is set (`OPIK_API_KEY`
+  `claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits --output-format json`.
+  When the command's stdout is one JSON object with `total_cost_usd` and `usage` (that flag), they
+  are stamped as `meta.cost_usd` / `meta.tokens` and reach the Opik metadata; other vendors leave
+  them null. Decision logic unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` is set (`OPIK_API_KEY`
   alone is not a signal), the call is one trace: input = packet text, output = stamped verdict, metadata = stamp +
   ticket + wall seconds. Otherwise nothing is traced and nothing else changes.
 - `scripts/verdict_eval.py` — new. Loads a project's `traces/verdict/*.input.md` into an Opik
@@ -42,7 +44,7 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
 - `scripts/verdict_canned.py` — new. A verdict command that copies a prepared JSON to
   `{output}`: the seat end to end with zero model tokens.
 - `tests/fixtures/project/` — new. A neutral project (fixture ticket 1.1 and plan 1, one
-  0.6.2-format packet rendered via `Packet`, a stamped ship verdict with two cited warns) that
+  0.6.2-format packet rendered via `Packet`, a stamped reject verdict with a cited AC-2 block) that
   `verdict_eval.py` runs over. Without Opik the eval scores locally and prints one line per
   item; CI runs it with the canned command and blocks the network.
 - `Makefile` — `make ci` for this repo (unittest discover).
