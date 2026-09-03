@@ -6,7 +6,8 @@ The verdict packet is the seam: which vendor renders the verdict, and how much c
 are two runner flags, and every call is one Opik trace, so verdicts across seats compare.
 
 - `skills/verdict/verdict-prompt.md` — new. The judging prompt, extracted from `SKILL.md`, with
-  its guardrail line (fix nothing; write only the verdict JSON and this ticket's Log).
+  its guardrail line (fix nothing; the reply is the verdict JSON and nothing else; only the
+  human `/verdict` flow touches this ticket's Log).
   `SKILL.md` is a thin wrapper with two flows: a packet path (runner seat) ends at the verdict
   JSON, no close-out, no Log edit, no summary; a ticket id (human) preps, judges, closes out.
 - `scripts/verdict_prep.py` — the packet is self-contained: frontmatter (`ticket`, `arm`,
@@ -21,8 +22,8 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
   through `Verdict`; the ad-hoc parsing promised away in 0.4.2 is gone. Verdicts without
   `meta` still load.
 - `scripts/verdict_checks.py` — each ticket AC that no test added on the branch names is a
-  block, one per AC (`no test names AC-n`, `ac` cited); it was one warn. `validate(verdict, arm)`: a block without an `ac` or `charter`
-  citation is a violation, except under `blind`, where it is downgraded to a warn and the
+  C-block, one per AC (`no test names AC-n`, `ac` cited); it was one warn.
+  `validate(verdict, arm)`: a block without an `ac` or `charter` citation is a violation, except under `blind`, where it is downgraded to a warn and the
   decision re-derived by the prompt's own rule (reject iff an open block or CI red).
 - `scripts/render_verdict.py` — the close-out: validate for the packet's arm, stamp `meta`
   (`arm`, `vendor`, `plugin_version`, `prompt_sha` = sha256 of `verdict-prompt.md`,
@@ -39,11 +40,13 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
   finding ids, severities, statuses) is an error: logged, traced as the output's `error` with the
   reason, the CLI envelope (`stop_reason`, `num_turns`, `permission_denials`, `is_error`) and the
   stderr tail, treated as a reject to retry. The prompt no longer asks the model to write a file:
-  the reply is the JSON, the harness files it. When the report carries `total_cost_usd` and `usage`, they are stamped as
-  `meta.cost_usd` / `meta.tokens` and reach the Opik metadata; other vendors leave them null.
-  Decision logic unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` is set (`OPIK_API_KEY`
-  alone is not a signal), the call is one trace: input = packet text, output = stamped verdict, metadata = stamp +
-  ticket + wall seconds. Otherwise nothing is traced and nothing else changes.
+  the reply is the JSON, the harness files it. When the report carries `total_cost_usd` and
+  `usage`, they are stamped as `meta.cost_usd` / `meta.tokens`; other vendors leave them null.
+  Decision logic unchanged.
+- Opik trace, in `runner.py` — gated on `OPIK_URL_OVERRIDE` being set and the `opik` package
+  importing (`OPIK_API_KEY` alone is not a signal). The one model call is one trace: input =
+  packet text, output = stamped verdict (or the error envelope), metadata = stamp + cost + ticket
+  + wall seconds. Otherwise nothing is traced and nothing else changes.
 - `scripts/verdict_eval.py` — new. Loads a project's `traces/verdict/*.input.md` into an Opik
   dataset, items keyed on the packet sha so a rerun replaces and never duplicates, and items
   whose packet is gone are deleted (expected = the stamped verdict's decision when its
@@ -208,3 +211,4 @@ Consuming projects: delete the project-local `Stop` hook in `.claude/settings.js
 - Build guard: refuse `/build` when the working tree is dirty with files outside the ticket's `writes:` (pilot: six kanban files merged past a build unnoticed).
 - `writes:` validation: at close-out, diff the branch's touched paths against `writes:` and fail on unlisted paths (pilot: 1.1's `writes:` missed two of its own packages).
 - Gate rule: charter and ADR edits require a `[human]` approval line before commit (pilot: charter amended from a question, pre-gate, commit 8f5431b).
+- Verdict coverage: every AC and charter item in the packet must appear in `held` or in a finding's `ac`/`charter`; anything else becomes a C-warn "unaccounted: AC-n" at close-out (0.6.2 left silence on an item indistinguishable from a pass).
