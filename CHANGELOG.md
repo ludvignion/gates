@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.1 — 2026-09-03
+
+Housekeeping. The plugin carries no use-case vocabulary, and one dead script is gone.
+
+- `tests/fixtures/kanban/` — fixtures describe a neutral document-processing pipeline
+  (transform, export, retry, reference set). Ticket ids, AC tags, `depends_on`, `writes:` and
+  Log entries are unchanged, so every test triggers the same rules and expects the same
+  violations. Renamed: `1.3.transform-stage.md`, `1.5.export-stage.md`, `1.7.retry-pass.md`.
+- `scripts/render_plan.py` — deleted. Gate 1 is the plan file plus the board; nothing called it.
+  `AGENTS.md` examples now cite `render_board.py`.
+- `README.md` — script table matches `scripts/`; notes that `scripts/` is the runtime the skills
+  and project Makefiles call.
+
 ## 0.6.0 — 2026-09-03
 
 Three kanban invariants that were sentences in skill files are now checks. Findings drifted

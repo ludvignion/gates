@@ -26,7 +26,6 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `skills/briefing` | opt-in response style: what changed, then lettered options. |
 | `hooks/guard_writes.py` | blocks writes to closed tickets, and outside the active ticket's `writes:`. |
 | `hooks/trace_stop.py` | one JSONL line per agent turn into `traces/sessions.jsonl`. |
-| `scripts/render_plan.py` | gate 1 page. |
 | `scripts/verdict_prep.py` | one prepared input for the single-call verdict. |
 | `scripts/verdict_checks.py` | mechanical verdict findings, zero model tokens. |
 | `scripts/render_verdict.py` | gate 2 page; archives the previous verdict for retries. |
@@ -34,8 +33,11 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `scripts/lint_kanban.py` | CI check: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp. |
 | `scripts/grill_digest.py` | grill-misses → blind-spots the grill reads. |
 | `scripts/replay.py` | re-run grill on golden briefs, diff escalations. |
-| `scripts/runner.py` | headless build → ci → verdict state machine, retry cap 4. |
+| `scripts/runner.py` | headless build → ci → verdict state machine. |
 | `templates/` | brief, plan, ticket, ADR skeletons. |
+
+`scripts/` is the runtime the skills and project Makefiles call; `tests/` tests it. Neither is
+invoked by users directly.
 
 ## Opik
 

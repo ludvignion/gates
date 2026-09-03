@@ -20,9 +20,9 @@ Anything the harness relies on (dependencies, blocking risks, trace records, ver
 
 Never rely on a sentence in a skill file alone. Never let two scripts read the same artifact two different ways.
 
-**Good:** `TraceRecord` model carries the node-type closing rules; `lint_trace.py` and `render_plan.py` both load through it.
+**Good:** `TraceRecord` model carries the node-type closing rules; `lint_trace.py` and `render_board.py` both load through it.
 
-**Bad:** "Remember to check dependencies" in SKILL.md — or `render_plan.py` splitting frontmatter with string operations.
+**Bad:** "Remember to check dependencies" in SKILL.md — or `render_board.py` splitting frontmatter with string operations.
 
 ## Principle: Skill changes replay on golden traces
 

@@ -51,7 +51,7 @@ class GuardWritesTest(unittest.TestCase):
         t = self.tickets / "1.2.match-stage.md"
         t.write_text(t.read_text().replace("writes: []", 'writes: ["src/match/"]'))
         self.assertEqual(run_hook(self.tmp, self.tmp / "src" / "match" / "a.py").returncode, 0)
-        self.assertEqual(run_hook(self.tmp, self.tmp / "src" / "verify" / "a.py").returncode, 2)
+        self.assertEqual(run_hook(self.tmp, self.tmp / "src" / "transform" / "a.py").returncode, 2)
 
 
 if __name__ == "__main__":
