@@ -1,4 +1,6 @@
 """runner.py verdict seat (--verdict-cmd, --arm, stamp, opik-absent path) and verdict_eval.py."""
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -54,10 +56,11 @@ class RunnerSeatTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_default_cmd_and_placeholders(self):
-        self.assertEqual(runner.DEFAULT_VERDICT_CMD, 'claude -p "$(cat {packet})" --model {model} --output-format json --tools ""')
+        self.assertEqual(runner.DEFAULT_VERDICT_CMD, 'claude -p --model {model} --output-format json --tools "" < {packet}')
         cmd = runner.verdict_cmd(runner.DEFAULT_VERDICT_CMD, packet="traces/verdict/1.1.input.md", output="traces/verdict/1.1.json", model="opus", ticket="1.1")
-        self.assertEqual(cmd, 'claude -p "$(cat traces/verdict/1.1.input.md)" --model opus --output-format json --tools ""')
+        self.assertEqual(cmd, 'claude -p --model opus --output-format json --tools "" < traces/verdict/1.1.input.md')
         self.assertNotIn("-p '/verdict", cmd)  # the skill is not invoked; the path merely contains the word
+        self.assertNotIn("$(cat", cmd)  # the packet is stdin, never an argument
         self.assertEqual(runner.vendor_of(runner.DEFAULT_VERDICT_CMD), "claude")
         self.assertEqual(runner.vendor_of("/usr/local/bin/codex exec --json {packet} > {output}"), "codex")
         for ph in ("{packet}", "{output}", "{model}", "{ticket}"):
@@ -83,18 +86,60 @@ class RunnerSeatTest(unittest.TestCase):
         self.assertIsNone(runner.verdict_from_result("not a report"))
         self.assertIsNone(runner.verdict_from_result(json.dumps({"type": "result", "is_error": True})))
 
-    def test_reply_only_vendor_gets_its_output_written(self):
-        """The default seat: the model replies with the verdict, writes nothing; the runner writes {output}."""
+    def test_reply_only_vendor_on_stdin_gets_its_output_written(self):
+        """The default seat: the packet arrives on stdin (it starts with ---, which no argv parser
+        survives), the model replies with the verdict, writes nothing; the runner writes {output}."""
         reply = "```json\n" + json.dumps({"ticket": "1.1", "decision": "reject", "held": [], "ci": {"green": True},
                                            "findings": [{"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "text": "x"}]}) + "\n```"
         (self.tmp / "reply_vendor.py").write_text(
-            "import json, sys\nassert sys.argv[1].startswith('---\\nticket: 1.1'), sys.argv[1][:30]\n"
+            "import json, sys\nassert sys.argv[1:] == ['--model', 'opus'], sys.argv\n"
+            "text = sys.stdin.read()\nassert text.startswith('---\\nticket: 1.1'), text[:30]\n"
             "print(json.dumps({'type': 'result', 'result': " + repr(reply) + ", 'total_cost_usd': 0.01, 'usage': {'output_tokens': 9}}))\n")
-        template = f'{sys.executable} reply_vendor.py "$(cat {{packet}})"'
+        template = f"{sys.executable} reply_vendor.py --model {{model}} < {{packet}}"
         decision, retryable, progressed = runner.verdict(self.tmp, "1.1", "opus", template=template)
         self.assertEqual((decision, retryable, progressed), ("reject", True, True))
         v = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json")
         self.assertEqual(v.findings[0]["id"], "F1"); self.assertEqual(v.meta.cost_usd, 0.01)
+        self.assertTrue((self.tmp / "traces/verdict/1.1.input.md").read_text().startswith("---\n"))
+
+    def test_vendor_errors_are_rejects_and_traced(self):
+        """Non-zero exit, empty result, and JSON that fails the Verdict schema: each an error."""
+        (self.tmp / "bad_json.py").write_text("import json, sys\njson.dump({'decision': 'maybe', 'findings': [{'severity': 'block'}]}, open(sys.argv[1], 'w'))\n")
+        (self.tmp / "not_json.py").write_text("import sys\nopen(sys.argv[1], 'w').write('not json')\n")
+        cases = {
+            "exit 3": "exit 3",
+            "empty result": "true",
+            "invalid verdict: decision 'maybe' not in ('ship', 'reject'); findings[0] has no id": f"{sys.executable} bad_json.py {{output}}",
+            "invalid verdict: Expecting value": f"{sys.executable} not_json.py {{output}}",
+        }
+        for expected_error, template in cases.items():
+            with self.subTest(expected_error):
+                calls = {}
+
+                class Client:
+                    def trace(self, **kw): calls["trace"] = kw
+                    def flush(self): pass
+
+                fake = types.ModuleType("opik"); fake.Opik = Client
+                out = self.tmp / "traces/verdict/1.1.json"
+                out.unlink(missing_ok=True)
+                with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}), \
+                        contextlib.redirect_stdout(io.StringIO()) as printed:
+                    self.assertEqual(runner.verdict(self.tmp, "1.1", "opus", template=template), ("reject", True, True))
+                self.assertIn(f"[runner] verdict error: {expected_error}", printed.getvalue())
+                self.assertTrue(calls["trace"]["output"]["error"].startswith(expected_error))
+                self.assertFalse((self.tmp / "traces/verdict/1.1.html").exists())  # no close-out on an error
+
+    def test_call_error(self):
+        out = self.tmp / "v.json"
+        self.assertEqual(runner.call_error(1, out), "exit 1")
+        self.assertEqual(runner.call_error(0, out), "empty result")
+        out.write_text(json.dumps({"decision": "ship", "findings": [{"id": "F1", "severity": "warn", "status": "resolved"}]}))
+        self.assertIsNone(runner.call_error(0, out))
+        out.write_text(json.dumps({"decision": "ship", "findings": [{"id": "F1", "severity": "warn", "status": "gone"}]}))
+        self.assertEqual(runner.call_error(0, out), "invalid verdict: F1: status 'gone' not in ('open', 'resolved')")
+        out.write_text("[]")
+        self.assertEqual(runner.call_error(0, out), "invalid verdict: not a verdict JSON object")
 
     def test_claude_usage_lands_in_meta_and_trace(self):
         (self.tmp / "fake_vendor.py").write_text(FAKE_VENDOR + 'print(json.dumps({"total_cost_usd": 0.05, "usage": {"input_tokens": 7, "output_tokens": 8}}))\n')
@@ -134,7 +179,9 @@ class RunnerSeatTest(unittest.TestCase):
         self.assertEqual(schemas.Packet.load(self.tmp / "traces/verdict/1.1.input.md").arm, "blind")
 
     def test_missing_output_is_reject(self):
-        self.assertEqual(runner.verdict(self.tmp, "1.1", "opus", template="true"), ("reject", True, True))
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            self.assertEqual(runner.verdict(self.tmp, "1.1", "opus", template="true"), ("reject", True, True))
+        self.assertIn("[runner] verdict error: empty result", printed.getvalue())
 
     def test_previous_verdict_archived_and_progress_tracked(self):
         vd = self.tmp / "traces/verdict"; vd.mkdir(parents=True)
@@ -242,9 +289,48 @@ class VerdictEvalTest(unittest.TestCase):
         self.assertEqual(out["output"]["meta"]["arm"], "blind"); self.assertGreater(out["wall_seconds"], 0)
         out = verdict_eval.run_one(item, "packet", cmd)
         self.assertEqual(out["output"]["decision"], "reject")
-        self.assertEqual(verdict_eval.run_one(item, "packet", "true")["output"], {})
+        self.assertIsNone(out["error"])
         with self.assertRaises(ValueError):
             verdict_eval.run_one({**item, "packet": schemas.Packet.parse(item["packet"]).rearm("blind").render()}, "packet", cmd)
+
+    def test_run_one_marks_errors(self):
+        item = verdict_eval.items(self.tmp)[0]
+        (self.tmp / "bad_json.py").write_text("import json, sys\njson.dump({'decision': 'maybe'}, open(sys.argv[1], 'w'))\n")
+        for expected_error, template in {
+            "exit 2": "exit 2",
+            "empty result": "true",
+            "invalid verdict: decision 'maybe' not in ('ship', 'reject')": f"{sys.executable} {self.tmp / 'bad_json.py'} {{output}}",
+        }.items():
+            with self.subTest(expected_error):
+                r = verdict_eval.run_one(item, "packet", template)
+                self.assertEqual((r["output"], r["error"]), ({}, expected_error))
+                self.assertEqual(set(verdict_eval.score(r["output"], "ship", r["wall_seconds"], r["error"]).values()), {None})
+
+    def test_summary_excludes_errors_and_counts_them(self):
+        rows = [
+            {"ticket": "1.1", "error": None, "block_count": 1.0, "finding_count": 2.0, "citation_compliance": 1.0, "decision_agreement": 1.0, "wall_seconds": 2.0},
+            {"ticket": "1.2", "error": None, "block_count": 3.0, "finding_count": 4.0, "citation_compliance": 0.5, "decision_agreement": None, "wall_seconds": 4.0},
+            {"ticket": "1.3", "error": "exit 1", "block_count": None, "finding_count": None, "citation_compliance": None, "decision_agreement": None, "wall_seconds": None},
+        ]
+        self.assertEqual(verdict_eval.summary(rows),
+                         "[eval] 3 items, 1 errors, averages over 2: block_count=2.0 finding_count=3.0 citation_compliance=0.75 decision_agreement=1.0 wall_seconds=3.0")
+        self.assertEqual(verdict_eval.summary([]), "[eval] 0 items, 0 errors, averages over 0: block_count=None finding_count=None citation_compliance=None decision_agreement=None wall_seconds=None")
+
+    def test_sync_dataset_replaces_and_deletes_stale(self):
+        rows = verdict_eval.items(self.tmp)
+        stale_item = {"id": verdict_eval.item_id("f" * 64), "ticket": "9.9", "packet_sha": "f" * 64}
+
+        class Dataset:
+            def __init__(self): self.items = {stale_item["id"]: stale_item}; self.deleted = []
+            def insert(self, items): self.items.update({it["id"]: it for it in items})
+            def get_items(self): return list(self.items.values())
+            def delete(self, ids): self.deleted += ids; [self.items.pop(i) for i in ids]
+
+        ds = Dataset()
+        self.assertEqual(verdict_eval.sync_dataset(ds, rows), [stale_item["id"]])
+        self.assertEqual(set(ds.items), {rows[0]["id"]})
+        self.assertEqual(verdict_eval.sync_dataset(ds, rows), [])  # a rerun: same id, nothing stale, nothing duplicated
+        self.assertEqual(len(ds.items), 1)
 
     def test_metrics_are_code(self):
         out = {"decision": "reject", "findings": [
@@ -269,7 +355,8 @@ class VerdictEvalTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("1 packets, 0 with an expected decision", r.stdout)
         self.assertIn("scoring locally, nothing uploaded", r.stdout)
-        self.assertIn("ticket=1.1 block_count=0.0 finding_count=0.0 citation_compliance=0.0 decision_agreement=None wall_seconds=", r.stdout)
+        self.assertIn("ticket=1.1 error=empty result block_count=None finding_count=None citation_compliance=None decision_agreement=None wall_seconds=None", r.stdout)
+        self.assertIn("[eval] 1 items, 1 errors, averages over 0:", r.stdout)
 
 
 if __name__ == "__main__":

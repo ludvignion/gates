@@ -8,10 +8,13 @@ Each state is a `claude -p` call or a shell command; transitions only on objecti
 The machine, not the model, owns the loop.
 
 Verdict seat: the runner writes the packet (verdict_prep.py --arm), runs --verdict-cmd over it
-(default: the packet text as a tool-less claude prompt; the reply is the verdict), then closes out (render_verdict.py: validate for the arm, stamp meta, render). The vendor in the
-stamp is the template's executable name. If the opik package is importable and OPIK_URL_OVERRIDE
-is set, the one model call is one Opik trace: input = packet, output = verdict,
-metadata = stamp + ticket + wall seconds. Otherwise nothing changes.
+(default: the packet on stdin as a tool-less claude prompt; the reply is the verdict), then
+closes out (render_verdict.py: validate for the arm, stamp meta, render). The vendor in the
+stamp is the template's executable name. A non-zero exit, an empty result, or JSON that fails
+the Verdict schema is an error: logged, traced, treated as a reject to retry. If the opik
+package is importable and OPIK_URL_OVERRIDE is set, the one model call is one Opik trace:
+input = packet, output = verdict, metadata = stamp + ticket + wall seconds. Otherwise nothing
+changes.
 
 Exit codes: 0 ship (human reviews and pushes from the worktree) · 1 red baseline or retry cap ·
 2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) ·
@@ -27,6 +30,7 @@ import shlex
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -37,16 +41,18 @@ import schemas  # noqa: E402
 STATUS_RE = re.compile(r"^### \[build\] .*— status: (NEEDS_CONTEXT|BLOCKED|DONE)\b", re.M)
 SCRIPTS = Path(__file__).resolve().parent
 DEFAULT_VERDICT_MODEL = "opus"
-DEFAULT_VERDICT_CMD = 'claude -p "$(cat {packet})" --model {model} --output-format json --tools ""'
+DEFAULT_VERDICT_CMD = 'claude -p --model {model} --output-format json --tools "" < {packet}'
 VERDICT_CMD_HELP = (
     "shell template for the one verdict call, run in the worktree. Placeholders: "
     "{packet} = packet path (traces/verdict/<id>.input.md), {output} = where the verdict JSON must land "
     "(traces/verdict/<id>.json), {model} = --verdict-model, {ticket} = ticket id. Paths are relative to "
-    "the worktree and contain no spaces. The default feeds the packet text as the prompt with no tools; "
-    "the model's reply is the verdict JSON, which the runner takes from the `result` field of claude's "
-    "--output-format json and writes to {output}. A command that writes {output} itself is left alone. "
-    "The stamp's vendor is the template's first word. When stdout is one JSON object with total_cost_usd "
-    "and usage, they are stamped as meta.cost_usd and meta.tokens; other vendors leave them null. "
+    "the worktree and contain no spaces. The default feeds the packet on stdin as the prompt with no tools; "
+    "never as an argument, a packet starts with ---. The model's reply is the verdict JSON, which the runner "
+    "takes from the `result` field of claude's --output-format json and writes to {output}. A command that "
+    "writes {output} itself is left alone. A non-zero exit, an empty result, or JSON that fails the Verdict "
+    "schema is an error, treated as a reject to retry. The stamp's vendor is the template's first word. When "
+    "stdout is one JSON object with total_cost_usd and usage, they are stamped as meta.cost_usd and "
+    "meta.tokens; other vendors leave them null. "
     f"Default: {DEFAULT_VERDICT_CMD}"
 )
 OPIK_ENV = ("OPIK_URL_OVERRIDE",)
@@ -146,18 +152,45 @@ def verdict_from_result(stdout: str) -> dict | None:
     return None
 
 
-def call_vendor(cmd: str, cwd: Path, output: Path) -> tuple[str, float | None, dict | None, float, datetime]:
-    """Run the verdict command once. If it did not write `output` itself and its report carries the
-    verdict in `result`, write that. Returns (stdout, cost_usd, tokens, wall_seconds, started)."""
+@dataclass(frozen=True)
+class VendorCall:
+    """One run of the verdict command: what it printed, how it exited, what it reported, and the
+    one reason it failed if it did: `exit <code>`, `empty result` (no verdict written and none in
+    the reply), or `invalid verdict: ...` (JSON that fails the Verdict schema)."""
+
+    stdout: str
+    returncode: int
+    cost_usd: float | None
+    tokens: dict | None
+    wall: float
+    started: datetime
+    error: str | None
+
+
+def call_error(returncode: int, output: Path) -> str | None:
+    if returncode != 0:
+        return f"exit {returncode}"
+    if not output.exists():
+        return "empty result"
+    try:
+        problems = schemas.Verdict.load(output).problems()
+    except (json.JSONDecodeError, ValueError) as e:
+        return f"invalid verdict: {e}"
+    return f"invalid verdict: {'; '.join(problems)}" if problems else None
+
+
+def call_vendor(cmd: str, cwd: Path, output: Path) -> VendorCall:
+    """Run the verdict command once. If it exited 0, did not write `output` itself, and its report
+    carries the verdict in `result`, write that. `error` names the failure when there is one."""
     started, t0 = datetime.now(timezone.utc), time.monotonic()
     r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
     wall = time.monotonic() - t0
     sys.stderr.write(r.stderr)
     cost_usd, tokens = vendor_usage(r.stdout)
-    if not output.exists() and (v := verdict_from_result(r.stdout)) is not None:
+    if r.returncode == 0 and not output.exists() and (v := verdict_from_result(r.stdout)) is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(v, indent=1) + "\n", encoding="utf-8")
-    return r.stdout, cost_usd, tokens, wall, started
+    return VendorCall(r.stdout, r.returncode, cost_usd, tokens, wall, started, call_error(r.returncode, output))
 
 
 def prep(cwd: Path, tid: str, arm: str) -> Path:
@@ -182,7 +215,7 @@ def opik_client():
 
 
 def trace_verdict(client, *, tid: str, packet: Path, verdict: "schemas.Verdict | None", started: datetime, wall: float,
-                  vendor: str, arm: str) -> None:
+                  vendor: str, arm: str, error: str | None = None) -> None:
     """One trace per model call, created whole after the call (the SDK batches; an end() right
     after create can lose data). Never raises into the state machine."""
     if client is None:
@@ -191,7 +224,7 @@ def trace_verdict(client, *, tid: str, packet: Path, verdict: "schemas.Verdict |
     try:
         client.trace(name="verdict", start_time=started, end_time=started + timedelta(seconds=wall),
                      input={"packet": packet.read_text(encoding="utf-8")},
-                     output=verdict.as_dict() if verdict else {"missing": True},
+                     output=verdict.as_dict() if verdict else {"error": error or "missing"},
                      metadata={**meta, "ticket": tid, "wall_seconds": round(wall, 3)})
         client.flush()
     except Exception as e:  # tracing is observability, not a gate
@@ -213,19 +246,21 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
     packet = prep(cwd, tid, arm)
     cmd = verdict_cmd(template, packet=str(packet.relative_to(cwd)), output=str(p.relative_to(cwd)), model=model, ticket=tid)
     client = opik_client()
-    stdout, cost_usd, tokens, wall, started = call_vendor(cmd, cwd, p)
-    if vendor_report(stdout) is None:
-        sys.stdout.write(stdout)  # not a report: pass the vendor's output through
+    call = call_vendor(cmd, cwd, p)
+    if vendor_report(call.stdout) is None:
+        sys.stdout.write(call.stdout)  # not a report: pass the vendor's output through
     else:
-        print(f"[runner] verdict call: cost_usd={cost_usd} tokens={tokens}")
-    if not p.exists():
-        trace_verdict(client, tid=tid, packet=packet, verdict=None, started=started, wall=wall, vendor=vendor_of(template), arm=arm)
+        print(f"[runner] verdict call: cost_usd={call.cost_usd} tokens={call.tokens}")
+    if call.error:
+        print(f"[runner] verdict error: {call.error}")
+        trace_verdict(client, tid=tid, packet=packet, verdict=None, started=call.started, wall=call.wall,
+                      vendor=vendor_of(template), arm=arm, error=call.error)
         return "reject", True, True
-    violations = render_verdict.main(cwd, tid, vendor=vendor_of(template), cost_usd=cost_usd, tokens=tokens)
+    violations = render_verdict.main(cwd, tid, vendor=vendor_of(template), cost_usd=call.cost_usd, tokens=call.tokens)
     for x in violations:
         print(f"[runner] verdict invalid: {x}")
     v = schemas.Verdict.load(p)
-    trace_verdict(client, tid=tid, packet=packet, verdict=v, started=started, wall=wall, vendor=vendor_of(template), arm=arm)
+    trace_verdict(client, tid=tid, packet=packet, verdict=v, started=call.started, wall=call.wall, vendor=vendor_of(template), arm=arm)
     blocks = v.open_blocks()
     retryable = any(not f.get("spawn_child", False) for f in blocks)
     progressed = not blocks or any(f.get("id") not in prev_open for f in blocks)

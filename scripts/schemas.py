@@ -441,6 +441,9 @@ def sha256(data: bytes | str) -> str:
 # adds. runner.py, render_verdict.py, lint_kanban.py and verdict_prep.py all load through
 # Verdict; nobody indexes the JSON by hand. ``meta`` is optional so verdicts written before the
 # stamp still load.
+DECISIONS = ("ship", "reject")
+SEVERITIES = ("block", "warn", "note")
+STATUSES = ("open", "resolved")
 META_FIELDS = ("arm", "vendor", "plugin_version", "prompt_sha", "packet_sha")
 META_OPTIONAL = ("cost_usd", "tokens")  # what the vendor reported for the call; null when it reports nothing
 
@@ -516,6 +519,22 @@ class Verdict:
 
     def dump(self, path: Path) -> None:
         path.write_text(json.dumps(self.as_dict(), indent=1) + "\n", encoding="utf-8")
+
+    def problems(self) -> tuple[str, ...]:
+        """Why this is not a verdict: an unknown decision, or a finding without an id, with an
+        unknown severity, or an unknown status. Empty = passes the schema."""
+        out = []
+        if self.decision not in DECISIONS:
+            out.append(f"decision {self.decision!r} not in {DECISIONS}")
+        for i, f in enumerate(self.findings):
+            label = f.get("id") if isinstance(f.get("id"), str) and f.get("id") else f"findings[{i}]"
+            if label == f"findings[{i}]":
+                out.append(f"{label} has no id")
+            if f.get("severity") not in SEVERITIES:
+                out.append(f"{label}: severity {f.get('severity')!r} not in {SEVERITIES}")
+            if f.get("status", "open") not in STATUSES:
+                out.append(f"{label}: status {f.get('status')!r} not in {STATUSES}")
+        return tuple(out)
 
     @staticmethod
     def is_open(f: dict) -> bool:

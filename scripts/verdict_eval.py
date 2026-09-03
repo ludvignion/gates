@@ -2,11 +2,11 @@
 """Compare verdict seats on a project's archived packets. Run: verdict_eval.py <project> [--arm packet] [--verdict-cmd "<template>"]
 
 Loads every traces/verdict/<id>.input.md under the project into an Opik dataset (one item per
-packet, its id derived from the packet sha so a rerun replaces and never duplicates: ticket, packet
-text, its arm and sha, and the expected gate-2 decision), then runs one
-arm × one verdict command over the dataset as one Opik experiment. Expected decision: the
-archived <id>.json's decision when its meta.packet_sha matches the packet, else the last
-`### [verdict] … — ship|reject` entry in the ticket's Log, else null.
+packet, its id derived from the packet sha so a rerun replaces and never duplicates, and items
+whose packet is gone are deleted: ticket, packet text, its arm and sha, and the expected gate-2
+decision), then runs one arm × one verdict command over the dataset as one Opik experiment.
+Expected decision: the archived <id>.json's decision when its meta.packet_sha matches the
+packet, else the last `### [verdict] … — ship|reject` entry in the ticket's Log, else null.
 
 Each run is the runner's seat, replayed: the packet is re-rendered under --arm (a blind packet
 cannot be widened; that item errors), written into a scratch tree, the command runs there with
@@ -14,9 +14,12 @@ cannot be widened; that item errors), written into a scratch tree, the command r
 has no repository, so the repo arm has nothing extra to read here.
 
 Metrics, all code: block_count, finding_count, citation_compliance, decision_agreement (when
-expected is present), wall_seconds. With the opik package and OPIK_URL_OVERRIDE the run is an Opik
-experiment; without them the same items are run and scored locally and printed, one line each,
-which is what CI does over tests/fixtures/project with scripts/verdict_canned.py as the command.
+expected is present), wall_seconds. A run whose command exits non-zero, yields no verdict, or
+yields JSON that fails the Verdict schema is an error: scored as failed in Opik, left out of
+every average, counted in the summary line. With the opik package and OPIK_URL_OVERRIDE the run
+is an Opik experiment; without them the same items are run and scored locally and printed, one
+line each plus the summary, which is what CI does over tests/fixtures/project with
+scripts/verdict_canned.py as the command.
 """
 import argparse
 import re
@@ -78,10 +81,22 @@ def items(project: Path) -> list[dict]:
     return out
 
 
+def sync_dataset(dataset, rows: list[dict]) -> list[str]:
+    """Insert the current packets (ids from their sha, so a rerun replaces) and delete every item
+    whose packet_sha is not in the current set. Returns the deleted ids."""
+    dataset.insert(rows)
+    current = {r["packet_sha"] for r in rows}
+    stale = [it["id"] for it in dataset.get_items() if it.get("packet_sha") not in current]
+    if stale:
+        dataset.delete(stale)
+    return stale
+
+
 # --- one run ------------------------------------------------------------------------------
 def run_one(item: dict, arm: str, template: str, model: str = runner.DEFAULT_VERDICT_MODEL) -> dict:
     """Replay one packet under `arm` with `template` in a scratch tree. Returns the task output
-    the metrics read: {"output": verdict dict (empty when missing), "wall_seconds": float}."""
+    the metrics read: {"output": verdict dict (empty on error), "wall_seconds": float,
+    "error": None, or why there is no verdict (exit code, empty result, invalid verdict)}."""
     tid = item["ticket"]
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -92,11 +107,11 @@ def run_one(item: dict, arm: str, template: str, model: str = runner.DEFAULT_VER
         ppath = vdir / f"{tid}.input.md"
         ppath.write_text(packet.render(), encoding="utf-8")
         cmd = runner.verdict_cmd(template, packet=f"traces/verdict/{tid}.input.md", output=out_rel, model=model, ticket=tid)
-        _stdout, cost_usd, tokens, wall, _started = runner.call_vendor(cmd, root, root / out_rel)
-        if not (root / out_rel).exists():
-            return {"output": {}, "wall_seconds": wall}
-        v, _violations = render_verdict.stamp(root, tid, runner.vendor_of(template), cost_usd, tokens)
-        return {"output": v.as_dict(), "wall_seconds": wall}
+        call = runner.call_vendor(cmd, root, root / out_rel)
+        if call.error:
+            return {"output": {}, "wall_seconds": call.wall, "error": call.error}
+        v, _violations = render_verdict.stamp(root, tid, runner.vendor_of(template), call.cost_usd, call.tokens)
+        return {"output": v.as_dict(), "wall_seconds": call.wall, "error": None}
 
 
 # --- metrics (pure; METRICS is the one list, wrapped for opik in metrics()) --------------
@@ -133,9 +148,22 @@ METRICS = {
 }
 
 
-def score(output: dict, expected: str | None, wall_seconds: float) -> dict:
-    """Every metric for one run; None where a metric has nothing to score."""
+def score(output: dict, expected: str | None, wall_seconds: float, error: str | None = None) -> dict:
+    """Every metric for one run; None where a metric has nothing to score, and None throughout
+    for an errored run so it never enters an average."""
+    if error:
+        return {name: None for name in METRICS}
     return {name: fn(output, expected, wall_seconds) for name, fn in METRICS.items()}
+
+
+def summary(rows: list[dict]) -> str:
+    """One line: item count, error count, and each metric averaged over the scored items."""
+    errors = sum(1 for r in rows if r.get("error"))
+    parts = []
+    for name in METRICS:
+        vals = [r[name] for r in rows if not r.get("error") and r.get(name) is not None]
+        parts.append(f"{name}={round(sum(vals) / len(vals), 3) if vals else None}")
+    return f"[eval] {len(rows)} items, {errors} errors, averages over {len(rows) - errors}: " + " ".join(parts)
 
 
 def metrics() -> list:
@@ -146,7 +174,9 @@ def metrics() -> list:
             def __init__(self):
                 super().__init__(name=name, track=False)
 
-            def score(self, output: dict, expected: str | None = None, wall_seconds: float = 0.0, **_):
+            def score(self, output: dict, expected: str | None = None, wall_seconds: float = 0.0, error: str | None = None, **_):
+                if error:
+                    return score_result.ScoreResult(name=name, value=0.0, scoring_failed=True, reason=error)
                 value = fn(output, expected, wall_seconds)
                 if value is None:
                     return score_result.ScoreResult(name=name, value=0.0, scoring_failed=True, reason="no expected decision")
@@ -158,13 +188,17 @@ def metrics() -> list:
     return [wrap(name, fn) for name, fn in METRICS.items()]
 
 
+def score_row(item: dict, r: dict) -> dict:
+    return {"ticket": item["ticket"], "error": r["error"], **score(r["output"], item.get("expected"), r["wall_seconds"], r["error"])}
+
+
 def score_local(rows: list[dict], arm: str, template: str) -> list[dict]:
     """The experiment without Opik: run every item, score it here. What CI runs."""
-    out = []
-    for item in rows:
-        r = run_one(item, arm, template)
-        out.append({"ticket": item["ticket"], **score(r["output"], item["expected"], r["wall_seconds"])})
-    return out
+    return [score_row(item, run_one(item, arm, template)) for item in rows]
+
+
+def fmt(row: dict) -> str:
+    return "[eval] " + " ".join(f"{k}={round(v, 3) if isinstance(v, float) else v}" for k, v in row.items())
 
 
 # --- entry -------------------------------------------------------------------------------
@@ -183,18 +217,29 @@ def main(argv: list[str]) -> int:
     client = runner.opik_client()
     if client is None:
         print("[eval] opik not importable or OPIK_URL_OVERRIDE unset; scoring locally, nothing uploaded")
-        for row in score_local(rows, a.arm, a.verdict_cmd):
-            print("[eval] " + " ".join(f"{k}={v if v is None else round(v, 3) if isinstance(v, float) else v}" for k, v in row.items()))
+        scored = score_local(rows, a.arm, a.verdict_cmd)
+        for row in scored:
+            print(fmt(row))
+        print(summary(scored))
         return 0
     from opik.evaluation import evaluate
 
     dataset = client.get_or_create_dataset(name=f"verdict-packets-{project.name}")
-    dataset.insert(rows)
+    stale = sync_dataset(dataset, rows)
+    if stale:
+        print(f"[eval] deleted {len(stale)} stale dataset item(s)")
     vendor = runner.vendor_of(a.verdict_cmd)
     prompt_sha = schemas.sha256(verdict_prep.prompt_text())
+    scored: list[dict] = []
+
+    def task(item: dict) -> dict:
+        r = run_one(item, a.arm, a.verdict_cmd)
+        scored.append(score_row(item, r))
+        return r
+
     result = evaluate(
         dataset=dataset,
-        task=lambda item: run_one(item, a.arm, a.verdict_cmd),
+        task=task,
         scoring_metrics=metrics(),
         experiment_name=f"verdict-{a.arm}-{vendor}-{time.strftime('%Y%m%dT%H%M%S')}",
         experiment_config={"arm": a.arm, "vendor": vendor, "verdict_cmd": a.verdict_cmd,
@@ -202,6 +247,7 @@ def main(argv: list[str]) -> int:
         task_threads=1,
     )
     print(f"[eval] experiment {result.experiment_name}: {len(result.test_results)} items")
+    print(summary(scored))
     return 0
 
 

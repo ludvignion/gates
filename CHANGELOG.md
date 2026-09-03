@@ -31,20 +31,25 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
 - `scripts/runner.py` — `--arm` and `--verdict-cmd "<template>"`. The runner writes the packet,
   runs the template in the worktree with `{packet}`, `{output}`, `{model}`, `{ticket}` filled,
   then closes out with the template's executable name as vendor. Default template:
-  `claude -p "$(cat {packet})" --model {model} --output-format json --tools ""`: the packet text
-  is the prompt, no tools, and the reply is the verdict, which the runner takes from the report's
-  `result` field and writes to `{output}`. `runner.py` and `verdict_eval.py` never invoke
-  `/verdict`; that is the human path. When the report carries `total_cost_usd` and `usage`, they
-  are stamped as `meta.cost_usd` / `meta.tokens` and reach the Opik metadata; other vendors leave
-  them null. Decision logic unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` is set (`OPIK_API_KEY`
+  `claude -p --model {model} --output-format json --tools "" < {packet}`: the packet arrives on
+  stdin (never as an argument: a packet starts with `---`), no tools, and the reply is the
+  verdict, which the runner takes from the report's `result` field and writes to `{output}`.
+  `runner.py` and `verdict_eval.py` never invoke `/verdict`; that is the human path. A non-zero
+  exit, an empty result, or JSON that fails the `Verdict` schema (`Verdict.problems()`: decision,
+  finding ids, severities, statuses) is an error: logged, traced as the trace output, treated as
+  a reject to retry. When the report carries `total_cost_usd` and `usage`, they are stamped as
+  `meta.cost_usd` / `meta.tokens` and reach the Opik metadata; other vendors leave them null.
+  Decision logic unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` is set (`OPIK_API_KEY`
   alone is not a signal), the call is one trace: input = packet text, output = stamped verdict, metadata = stamp +
   ticket + wall seconds. Otherwise nothing is traced and nothing else changes.
 - `scripts/verdict_eval.py` — new. Loads a project's `traces/verdict/*.input.md` into an Opik
-  dataset, items keyed on the packet sha so a rerun replaces and never duplicates (expected = the
-  stamped verdict's decision when its `packet_sha` matches, else the
-  ticket Log's last `[verdict] — ship|reject`, else null) and runs one arm × one verdict command
-  as an experiment. Code metrics only: `block_count`, `finding_count`, `citation_compliance`,
-  `decision_agreement`, `wall_seconds`.
+  dataset, items keyed on the packet sha so a rerun replaces and never duplicates, and items
+  whose packet is gone are deleted (expected = the stamped verdict's decision when its
+  `packet_sha` matches, else the ticket Log's last `[verdict] — ship|reject`, else null) and runs
+  one arm × one verdict command as an experiment. Code metrics only: `block_count`,
+  `finding_count`, `citation_compliance`, `decision_agreement`, `wall_seconds`. An errored run
+  (non-zero exit, empty result, invalid verdict) scores as failed, stays out of every average,
+  and is counted in the summary line.
 - `scripts/verdict_canned.py` — new. A verdict command that copies a prepared JSON to
   `{output}`: the seat end to end with zero model tokens.
 - `tests/fixtures/project/` — new. A neutral project (fixture ticket 1.1 and plan 1, one
@@ -52,8 +57,8 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
   `verdict_eval.py` runs over. Without Opik the eval scores locally and prints one line per
   item; CI runs it with the canned command and blocks the network.
 - `Makefile` — `make ci` for this repo (unittest discover).
-- `tests/` — 29 new tests (arms, packet round trip, stamp, validate, cmd template, opik absent
-  and configured, eval dataset and metrics, fixture smoke).
+- `tests/` — 41 new tests (arms, packet round trip, stamp, validate, cmd template, stdin packet,
+  vendor errors, opik absent and configured, eval dataset sync and metrics, fixture smoke).
 
 Consuming projects (project-template): pin `v0.6.2`. Nothing in `make verdict` changes for the
 human path. Projects that call `runner.py` get the packet seat by default. `verdict_eval.py`

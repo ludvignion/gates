@@ -398,7 +398,8 @@ class VerdictEvalFixtureTest(unittest.TestCase):
         self.assertEqual(attempts, [])
         rows = verdict_eval.score_local(verdict_eval.items(FIXTURE_PROJECT), "packet", cmd)
         self.assertEqual(len(rows), 1)
-        self.assertEqual(sorted(k for k in rows[0] if k != "ticket"), sorted(verdict_eval.METRICS))
+        self.assertEqual(sorted(k for k in rows[0] if k not in ("ticket", "error")), sorted(verdict_eval.METRICS))
+        self.assertIsNone(rows[0]["error"])
         self.assertEqual({k: rows[0][k] for k in ("block_count", "finding_count", "citation_compliance", "decision_agreement")},
                          {"block_count": 1.0, "finding_count": 2.0, "citation_compliance": 1.0, "decision_agreement": 1.0})
         self.assertGreater(rows[0]["wall_seconds"], 0.0)
@@ -407,6 +408,7 @@ class VerdictEvalFixtureTest(unittest.TestCase):
         for name in verdict_eval.METRICS:
             self.assertIn(f"{name}=", text)
         self.assertIn("decision_agreement=1.0", text)
+        self.assertIn("[eval] 1 items, 0 errors, averages over 1: block_count=1.0 finding_count=2.0 citation_compliance=1.0 decision_agreement=1.0 wall_seconds=", text)
         blind = verdict_eval.score_local(verdict_eval.items(FIXTURE_PROJECT), "blind", cmd)[0]
         self.assertEqual(blind["decision_agreement"], 1.0)  # a cited block survives the blind close-out
 
