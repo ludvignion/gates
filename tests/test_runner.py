@@ -197,13 +197,15 @@ class VerdictEvalTest(unittest.TestCase):
         self.assertIsNone(verdict_eval.decision_agreement(out, None))
         self.assertEqual(verdict_eval.block_count({}), 0.0)
 
-    def test_cli_without_opik_exits_2_after_counting(self):
+    def test_cli_without_opik_scores_locally(self):
         with mock.patch.dict(os.environ, {k: "" for k in runner.OPIK_ENV}):
             for k in runner.OPIK_ENV:
                 os.environ.pop(k, None)
-            r = subprocess.run([sys.executable, str(REPO / "scripts/verdict_eval.py"), str(self.tmp)], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 2, r.stderr)
+            r = subprocess.run([sys.executable, str(REPO / "scripts/verdict_eval.py"), str(self.tmp), "--verdict-cmd", "true"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("1 packets, 0 with an expected decision", r.stdout)
+        self.assertIn("scoring locally, nothing uploaded", r.stdout)
+        self.assertIn("ticket=1.1 block_count=0.0 finding_count=0.0 citation_compliance=0.0 decision_agreement=None wall_seconds=", r.stdout)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,9 @@ cannot be widened; that item errors), written into a scratch tree, the command r
 has no repository, so the repo arm has nothing extra to read here.
 
 Metrics, all code: block_count, finding_count, citation_compliance, decision_agreement (when
-expected is present), wall_seconds. Needs the opik package and OPIK_URL_OVERRIDE.
+expected is present), wall_seconds. With the opik package and OPIK_URL_OVERRIDE the run is an Opik
+experiment; without them the same items are run and scored locally and printed, one line each,
+which is what CI does over tests/fixtures/project with scripts/verdict_canned.py as the command.
 """
 import argparse
 import re
@@ -89,7 +91,7 @@ def run_one(item: dict, arm: str, template: str, model: str = runner.DEFAULT_VER
         return {"output": v.as_dict(), "wall_seconds": wall}
 
 
-# --- metrics (pure; wrapped as opik metrics in metrics()) --------------------------------
+# --- metrics (pure; METRICS is the one list, wrapped for opik in metrics()) --------------
 def block_count(output: dict) -> float:
     return float(len(schemas.Verdict.from_dict(output).open_blocks())) if output else 0.0
 
@@ -114,6 +116,20 @@ def decision_agreement(output: dict, expected: str | None) -> float | None:
     return 1.0 if output and output.get("decision") == expected else 0.0
 
 
+METRICS = {
+    "block_count": lambda output, expected, wall_seconds: block_count(output),
+    "finding_count": lambda output, expected, wall_seconds: finding_count(output),
+    "citation_compliance": lambda output, expected, wall_seconds: citation_compliance(output),
+    "decision_agreement": lambda output, expected, wall_seconds: decision_agreement(output, expected),
+    "wall_seconds": lambda output, expected, wall_seconds: wall_seconds,
+}
+
+
+def score(output: dict, expected: str | None, wall_seconds: float) -> dict:
+    """Every metric for one run; None where a metric has nothing to score."""
+    return {name: fn(output, expected, wall_seconds) for name, fn in METRICS.items()}
+
+
 def metrics() -> list:
     from opik.evaluation.metrics import BaseMetric, score_result
 
@@ -123,7 +139,7 @@ def metrics() -> list:
                 super().__init__(name=name, track=False)
 
             def score(self, output: dict, expected: str | None = None, wall_seconds: float = 0.0, **_):
-                value = fn(output=output, expected=expected, wall_seconds=wall_seconds)
+                value = fn(output, expected, wall_seconds)
                 if value is None:
                     return score_result.ScoreResult(name=name, value=0.0, scoring_failed=True, reason="no expected decision")
                 return score_result.ScoreResult(name=name, value=float(value))
@@ -131,13 +147,16 @@ def metrics() -> list:
         _M.__name__ = name
         return _M()
 
-    return [
-        wrap("block_count", lambda output, **_: block_count(output)),
-        wrap("finding_count", lambda output, **_: finding_count(output)),
-        wrap("citation_compliance", lambda output, **_: citation_compliance(output)),
-        wrap("decision_agreement", lambda output, expected, **_: decision_agreement(output, expected)),
-        wrap("wall_seconds", lambda wall_seconds, **_: wall_seconds),
-    ]
+    return [wrap(name, fn) for name, fn in METRICS.items()]
+
+
+def score_local(rows: list[dict], arm: str, template: str) -> list[dict]:
+    """The experiment without Opik: run every item, score it here. What CI runs."""
+    out = []
+    for item in rows:
+        r = run_one(item, arm, template)
+        out.append({"ticket": item["ticket"], **score(r["output"], item["expected"], r["wall_seconds"])})
+    return out
 
 
 # --- entry -------------------------------------------------------------------------------
@@ -155,8 +174,10 @@ def main(argv: list[str]) -> int:
         return 1
     client = runner.opik_client()
     if client is None:
-        print("[eval] opik not importable or OPIK_URL_OVERRIDE unset; nothing run", file=sys.stderr)
-        return 2
+        print("[eval] opik not importable or OPIK_URL_OVERRIDE unset; scoring locally, nothing uploaded")
+        for row in score_local(rows, a.arm, a.verdict_cmd):
+            print("[eval] " + " ".join(f"{k}={v if v is None else round(v, 3) if isinstance(v, float) else v}" for k, v in row.items()))
+        return 0
     from opik.evaluation import evaluate
 
     dataset = client.get_or_create_dataset(name=f"verdict-packets-{project.name}")

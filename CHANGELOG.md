@@ -39,9 +39,15 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
   ticket Log's last `[verdict] — ship|reject`, else null) and runs one arm × one verdict command
   as an experiment. Code metrics only: `block_count`, `finding_count`, `citation_compliance`,
   `decision_agreement`, `wall_seconds`.
+- `scripts/verdict_canned.py` — new. A verdict command that copies a prepared JSON to
+  `{output}`: the seat end to end with zero model tokens.
+- `tests/fixtures/project/` — new. A neutral project (fixture ticket 1.1 and plan 1, one
+  0.6.2-format packet rendered via `Packet`, a stamped ship verdict with two cited warns) that
+  `verdict_eval.py` runs over. Without Opik the eval scores locally and prints one line per
+  item; CI runs it with the canned command and blocks the network.
 - `Makefile` — `make ci` for this repo (unittest discover).
-- `tests/` — 26 new tests (arms, packet round trip, stamp, validate, cmd template, opik absent
-  and configured, eval dataset and metrics).
+- `tests/` — 29 new tests (arms, packet round trip, stamp, validate, cmd template, opik absent
+  and configured, eval dataset and metrics, fixture smoke).
 
 Consuming projects (project-template): pin `v0.6.2`. Nothing in `make verdict` changes for the
 human path. Projects that call `runner.py` get the packet seat by default. `verdict_eval.py`

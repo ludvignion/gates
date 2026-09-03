@@ -1,0 +1,48 @@
+{
+ "ticket": "1.1",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "charter-1",
+  "charter-2"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-2",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "No test named AC-2; stages read and write unproven, src/pipeline/run.py:7"
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": "charter-2",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "Stub outputs carry no evidence link yet, src/pipeline/run.py:8"
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.6.2",
+  "prompt_sha": "67df37d9a13a1a44ed40338408ceb2ab61458a5fcec21fd42b34fb917d4395e8",
+  "packet_sha": "9efd6536d2a63d76ee457b9b88177b10c230b1a5091b8ba2dd09f88ec1b586b5"
+ }
+}

@@ -1,18 +1,27 @@
 """verdict_checks.py, verdict_prep.py (arms), render_verdict.py (stamp), and the verdict schemas."""
+import contextlib
+import io
 import json
+import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 import render_verdict  # noqa: E402
 import schemas  # noqa: E402
 import verdict_checks  # noqa: E402
+import verdict_eval  # noqa: E402
 import verdict_prep  # noqa: E402
+
+FIXTURE_PROJECT = REPO / "tests" / "fixtures" / "project"
+CANNED = REPO / "scripts" / "verdict_canned.py"
 
 PLAN = """---
 brief: 1
@@ -305,6 +314,67 @@ class VerdictSchemaTest(unittest.TestCase):
         red, _ = verdict_checks.validate(v.with_findings(v.findings), "blind")
         self.assertEqual(verdict_checks.validate(schemas.Verdict.from_dict({"decision": "reject", "ci": {"green": False}, "findings": [
             {"id": "F1", "severity": "block"}]}), "blind")[0].decision, "reject")
+
+
+class VerdictEvalFixtureTest(unittest.TestCase):
+    """tests/fixtures/project: a neutral project verdict_eval.py runs over without a model or a server."""
+
+    def test_fixture_is_a_0_6_2_packet_with_a_matching_stamp(self):
+        ppath = FIXTURE_PROJECT / "traces" / "verdict" / "1.1.input.md"
+        packet = schemas.Packet.load(ppath)
+        self.assertEqual(packet.render(), ppath.read_text(encoding="utf-8"))  # rendered via Packet, round-trips
+        self.assertEqual(tuple(t for t, _ in packet.sections), schemas.PACKET_SECTIONS)
+        self.assertEqual(packet.arm, "packet"); self.assertEqual(packet.fm["output"], "traces/verdict/1.1.json")
+        self.assertIn("green", packet.section("CI"))
+        self.assertLessEqual(packet.section("Diff").count("\n"), 34)
+        v = schemas.Verdict.load(FIXTURE_PROJECT / "traces" / "verdict" / "1.1.json")
+        self.assertEqual(v.decision, "ship")
+        self.assertEqual([f["severity"] for f in v.findings], ["warn", "warn"])
+        self.assertTrue(all(v.cited(f) for f in v.findings))
+        self.assertEqual(v.meta.packet_sha, schemas.sha256(ppath.read_bytes()))
+        rows = verdict_eval.items(FIXTURE_PROJECT)
+        self.assertEqual([(r["ticket"], r["expected"]) for r in rows], [("1.1", "ship")])
+
+    def test_canned_cmd_copies_verdict(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            r = subprocess.run([sys.executable, str(CANNED), str(FIXTURE_PROJECT / "traces/verdict/1.1.json"), str(tmp / "out/v.json")], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(json.loads((tmp / "out/v.json").read_text())["decision"], "ship")
+            self.assertEqual(subprocess.run([sys.executable, str(CANNED)], capture_output=True).returncode, 2)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_eval_smoke_on_fixture_without_opik_or_network(self):
+        cmd = f"{sys.executable} {CANNED} {FIXTURE_PROJECT / 'traces/verdict/1.1.json'} {{output}}"
+        attempts = []
+
+        def refuse(self_, addr, *a, **k):
+            attempts.append(addr)
+            raise OSError("network blocked by test")
+
+        env = {k: "" for k in ("OPIK_URL_OVERRIDE", "OPIK_API_KEY")}
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, env), mock.patch.object(socket.socket, "connect", refuse), \
+                mock.patch.object(socket.socket, "connect_ex", refuse), contextlib.redirect_stdout(out):
+            for k in env:
+                os.environ.pop(k, None)
+            rc = verdict_eval.main(["verdict_eval.py", str(FIXTURE_PROJECT), "--arm", "packet", "--verdict-cmd", cmd])
+        self.assertEqual(rc, 0, out.getvalue())
+        self.assertEqual(attempts, [])
+        rows = verdict_eval.score_local(verdict_eval.items(FIXTURE_PROJECT), "packet", cmd)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(sorted(k for k in rows[0] if k != "ticket"), sorted(verdict_eval.METRICS))
+        self.assertEqual({k: rows[0][k] for k in ("block_count", "finding_count", "citation_compliance", "decision_agreement")},
+                         {"block_count": 0.0, "finding_count": 2.0, "citation_compliance": 1.0, "decision_agreement": 1.0})
+        self.assertGreater(rows[0]["wall_seconds"], 0.0)
+        text = out.getvalue()
+        self.assertIn("1 packets, 1 with an expected decision", text)
+        for name in verdict_eval.METRICS:
+            self.assertIn(f"{name}=", text)
+        self.assertIn("decision_agreement=1.0", text)
+        blind = verdict_eval.score_local(verdict_eval.items(FIXTURE_PROJECT), "blind", cmd)[0]
+        self.assertEqual(blind["decision_agreement"], 1.0)  # cited warns survive the blind close-out
 
 
 if __name__ == "__main__":
