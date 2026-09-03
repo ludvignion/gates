@@ -95,8 +95,8 @@ def sync_dataset(dataset, rows: list[dict]) -> list[str]:
 # --- one run ------------------------------------------------------------------------------
 def run_one(item: dict, arm: str, template: str, model: str = runner.DEFAULT_VERDICT_MODEL) -> dict:
     """Replay one packet under `arm` with `template` in a scratch tree. Returns the task output
-    the metrics read: {"output": verdict dict (empty on error), "wall_seconds": float,
-    "error": None, or why there is no verdict (exit code, empty result, invalid verdict)}."""
+    the metrics read: {"output": verdict dict, or {"error": envelope} on error, "wall_seconds":
+    float, "error": None, or why there is no verdict (exit code, empty result, invalid verdict)}."""
     tid = item["ticket"]
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -109,25 +109,30 @@ def run_one(item: dict, arm: str, template: str, model: str = runner.DEFAULT_VER
         cmd = runner.verdict_cmd(template, packet=f"traces/verdict/{tid}.input.md", output=out_rel, model=model, ticket=tid)
         call = runner.call_vendor(cmd, root, root / out_rel)
         if call.error:
-            return {"output": {}, "wall_seconds": call.wall, "error": call.error}
+            return {"output": {"error": call.envelope}, "wall_seconds": call.wall, "error": call.error}
         v, _violations = render_verdict.stamp(root, tid, runner.vendor_of(template), call.cost_usd, call.tokens)
         return {"output": v.as_dict(), "wall_seconds": call.wall, "error": None}
 
 
 # --- metrics (pure; METRICS is the one list, wrapped for opik in metrics()) --------------
+def _verdict(output: dict) -> "schemas.Verdict | None":
+    """The output as a verdict; None for an empty output or an error envelope."""
+    return schemas.Verdict.from_dict(output) if output and ("decision" in output or "findings" in output) else None
+
+
 def block_count(output: dict) -> float:
-    return float(len(schemas.Verdict.from_dict(output).open_blocks())) if output else 0.0
+    return float(len(v.open_blocks())) if (v := _verdict(output)) else 0.0
 
 
 def finding_count(output: dict) -> float:
-    return float(len(schemas.Verdict.from_dict(output).findings)) if output else 0.0
+    return float(len(v.findings)) if (v := _verdict(output)) else 0.0
 
 
 def citation_compliance(output: dict) -> float:
     """Blocks that cite ac or charter, over all blocks; 1.0 with no blocks."""
-    if not output:
+    v = _verdict(output)
+    if v is None:
         return 0.0
-    v = schemas.Verdict.from_dict(output)
     blocks = v.blocks()
     return 1.0 if not blocks else sum(1 for f in blocks if v.cited(f)) / len(blocks)
 

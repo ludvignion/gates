@@ -127,8 +127,34 @@ class RunnerSeatTest(unittest.TestCase):
                         contextlib.redirect_stdout(io.StringIO()) as printed:
                     self.assertEqual(runner.verdict(self.tmp, "1.1", "opus", template=template), ("reject", True, True))
                 self.assertIn(f"[runner] verdict error: {expected_error}", printed.getvalue())
-                self.assertTrue(calls["trace"]["output"]["error"].startswith(expected_error))
+                err = calls["trace"]["output"]["error"]
+                self.assertTrue(err["reason"].startswith(expected_error))
+                self.assertEqual(sorted(err), sorted(("reason", "stderr_tail") + runner.ENVELOPE_FIELDS))
                 self.assertFalse((self.tmp / "traces/verdict/1.1.html").exists())  # no close-out on an error
+
+    def test_error_envelope_carries_cli_fields_and_stderr(self):
+        envelope = {"type": "result", "subtype": "error_max_turns", "is_error": True, "stop_reason": "max_turns",
+                    "num_turns": 3, "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "ls"}}],
+                    "result": "gave up", "total_cost_usd": 0.02, "usage": {"output_tokens": 4}}
+        (self.tmp / "failing_vendor.py").write_text(
+            "import json, sys\nprint(json.dumps(" + repr(envelope) + "))\n"
+            "sys.stderr.write('line1\\nline2\\nboom: rate limited\\n')\nsys.exit(1)\n")
+        calls = {}
+
+        class Client:
+            def trace(self, **kw): calls["trace"] = kw
+            def flush(self): pass
+
+        fake = types.ModuleType("opik"); fake.Opik = Client
+        with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(runner.verdict(self.tmp, "1.1", "opus", template=f"{sys.executable} failing_vendor.py < {{packet}}"), ("reject", True, True))
+        err = calls["trace"]["output"]["error"]
+        self.assertEqual(err, {"reason": "exit 1", "stop_reason": "max_turns", "num_turns": 3, "is_error": True,
+                               "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "ls"}}],
+                               "stderr_tail": "line1\nline2\nboom: rate limited"})
+        self.assertEqual(runner.error_envelope("empty result", "not json", "")["stop_reason"], None)
+        self.assertEqual(runner.error_envelope("exit 2", "", "\n".join(str(i) for i in range(50)))["stderr_tail"], "\n".join(str(i) for i in range(30, 50)))
 
     def test_call_error(self):
         out = self.tmp / "v.json"
@@ -303,7 +329,10 @@ class VerdictEvalTest(unittest.TestCase):
         }.items():
             with self.subTest(expected_error):
                 r = verdict_eval.run_one(item, "packet", template)
-                self.assertEqual((r["output"], r["error"]), ({}, expected_error))
+                self.assertEqual(r["error"], expected_error)
+                self.assertEqual(r["output"]["error"]["reason"], expected_error)
+                self.assertIn("stderr_tail", r["output"]["error"])
+                self.assertEqual(verdict_eval.block_count(r["output"]), 0.0)  # an envelope is not a verdict
                 self.assertEqual(set(verdict_eval.score(r["output"], "ship", r["wall_seconds"], r["error"]).values()), {None})
 
     def test_summary_excludes_errors_and_counts_them(self):

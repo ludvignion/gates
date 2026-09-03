@@ -36,8 +36,10 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
   verdict, which the runner takes from the report's `result` field and writes to `{output}`.
   `runner.py` and `verdict_eval.py` never invoke `/verdict`; that is the human path. A non-zero
   exit, an empty result, or JSON that fails the `Verdict` schema (`Verdict.problems()`: decision,
-  finding ids, severities, statuses) is an error: logged, traced as the trace output, treated as
-  a reject to retry. When the report carries `total_cost_usd` and `usage`, they are stamped as
+  finding ids, severities, statuses) is an error: logged, traced as the output's `error` with the
+  reason, the CLI envelope (`stop_reason`, `num_turns`, `permission_denials`, `is_error`) and the
+  stderr tail, treated as a reject to retry. The prompt no longer asks the model to write a file:
+  the reply is the JSON, the harness files it. When the report carries `total_cost_usd` and `usage`, they are stamped as
   `meta.cost_usd` / `meta.tokens` and reach the Opik metadata; other vendors leave them null.
   Decision logic unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` is set (`OPIK_API_KEY`
   alone is not a signal), the call is one trace: input = packet text, output = stamped verdict, metadata = stamp +
@@ -57,7 +59,7 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
   `verdict_eval.py` runs over. Without Opik the eval scores locally and prints one line per
   item; CI runs it with the canned command and blocks the network.
 - `Makefile` — `make ci` for this repo (unittest discover).
-- `tests/` — 41 new tests (arms, packet round trip, stamp, validate, cmd template, stdin packet,
+- `tests/` — 42 new tests (arms, packet round trip, stamp, validate, cmd template, stdin packet,
   vendor errors, opik absent and configured, eval dataset sync and metrics, fixture smoke).
 
 Consuming projects (project-template): pin `v0.6.2`. Nothing in `make verdict` changes for the
