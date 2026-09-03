@@ -31,7 +31,7 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `scripts/verdict_checks.py` | mechanical verdict findings, zero model tokens. |
 | `scripts/render_verdict.py` | gate 2 page; archives the previous verdict for retries. |
 | `scripts/render_board.py` | progress per plan, status columns, dependency graph. Runs on every Stop. |
-| `scripts/lint_kanban.py` | CI check: closed tickets only grow their append-only sections. |
+| `scripts/lint_kanban.py` | CI check: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp. |
 | `scripts/grill_digest.py` | grill-misses → blind-spots the grill reads. |
 | `scripts/replay.py` | re-run grill on golden briefs, diff escalations. |
 | `scripts/runner.py` | headless build → ci → verdict state machine, retry cap 4. |

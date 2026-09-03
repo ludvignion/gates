@@ -18,6 +18,13 @@ PLAN = """---
 brief: 1
 status: approved
 approved: reviewer 2026-09-01
+signals:
+  spend: false
+  partner_facing: false
+  parallel_ready: 0
+  tickets: 1
+scrutiny: light
+backend: session
 ---
 # 1 Widget pipeline
 ## Acceptance criteria

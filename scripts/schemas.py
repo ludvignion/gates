@@ -10,6 +10,11 @@ Shapes here:
 - ``TicketCitations`` — the ``(plan <n> AC-<x>[, AC-<y>]...)`` groups inside a ticket's
                          ``## Acceptance criteria`` lines. Only AC lines count; prose or log
                          mentions of a plan AC do not.
+- ``ClosedTicketDiff`` — what changed on a closed ticket between two versions.
+- ``Attacks``, ``Charter``, ``Ticket`` — the verdict's inputs.
+- ``Log``, ``Finding``   — a ticket's ``## Log`` as role-tagged entries; its ``— finding:``
+                         entries and the ticket ids each is homed to.
+- ``RoutingStamp``    — a plan's ``signals``/``scrutiny``/``backend`` frontmatter stamp.
 """
 import re
 from dataclasses import dataclass, field
@@ -196,3 +201,144 @@ class Ticket:
             for m in re.finditer(r"^### \[human\][^\n]*\n(?:(?!###)[^\n]*\n?)*", log, re.MULTILINE)
         )
         return cls(acs=acs, out_of_scope=oos, waivers=waivers)
+
+
+# --- Kanban lint inputs -------------------------------------------------------------------
+# What lint_kanban.py needs beyond ClosedTicketDiff: a ticket's ``## Log`` as role-tagged
+# entries, the ``— finding:`` entries and where each is homed, and a plan's routing stamp.
+TICKET_ID_RE = re.compile(r"(?<![\w$.])[1-9]\d*\.\d+(?:\.\d+)?(?![\w%]|\.\d)")
+_LOG_HEAD_RE = re.compile(r"^### \[(?P<role>[^\]]+)\](?P<rest>[^\n]*)$", re.MULTILINE)
+_FINDING_RE = re.compile(r"—\s*finding:\s*(?P<title>.+?)\s*$")
+_HOME_RE = re.compile(r"\bhomed?\b[^\n\d]{0,20}(?P<id>[1-9]\d*\.\d+(?:\.\d+)?)", re.IGNORECASE)
+_SHIP_RE = re.compile(r"—\s*ship\b")
+_ID_TOKEN_RE = re.compile(r"\b[A-Z]\d+\b")
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", s.replace("`", "").strip().rstrip(".")).lower()
+
+
+@dataclass(frozen=True)
+class LogEntry:
+    """One ``### [role] <timestamp> — <what>`` heading plus the lines under it."""
+
+    role: str
+    head: str  # the heading text after ``[role]``
+    text: str  # heading and body, as written
+
+    def names(self, needle: str) -> bool:
+        return _norm(needle) in _norm(self.text)
+
+
+@dataclass(frozen=True)
+class Finding:
+    """A ``— finding:`` Log entry. ``homes`` are the ticket ids after an explicit ``home: <id>``
+    or ``homed to <id>`` marker; nothing else homes a finding. ``candidates`` are the other
+    ticket ids in the entry, offered as a hint when there is no marker."""
+
+    title: str
+    entry: LogEntry
+    homes: tuple[str, ...]
+    candidates: tuple[str, ...] = ()
+
+    @classmethod
+    def from_entry(cls, entry: LogEntry, own_id: str) -> "Finding | None":
+        m = _FINDING_RE.search(entry.head)
+        if not m:
+            return None
+        homes = tuple(dict.fromkeys(h.group("id") for h in _HOME_RE.finditer(entry.text) if h.group("id") != own_id))
+        candidates = tuple(dict.fromkeys(i for i in TICKET_ID_RE.findall(entry.text) if i != own_id and i not in homes))
+        return cls(title=m.group("title"), entry=entry, homes=homes, candidates=candidates)
+
+
+@dataclass(frozen=True)
+class Log:
+    """A ticket's ``## Log`` section as entries. Everything before the first ``###`` is dropped."""
+
+    entries: tuple[LogEntry, ...] = ()
+
+    @classmethod
+    def parse(cls, body: str) -> "Log":
+        text = next((t for title, t in sections(body) if title.lower().startswith("log")), "")
+        heads = list(_LOG_HEAD_RE.finditer(text))
+        entries = []
+        for i, h in enumerate(heads):
+            end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+            entries.append(LogEntry(role=h.group("role"), head=h.group("rest").strip(), text=text[h.start():end].rstrip()))
+        return cls(entries=tuple(entries))
+
+    @property
+    def text(self) -> str:
+        return "\n".join(e.text for e in self.entries)
+
+    def findings(self, own_id: str) -> tuple[Finding, ...]:
+        return tuple(f for e in self.entries if (f := Finding.from_entry(e, own_id)))
+
+    def waivers(self) -> tuple[LogEntry, ...]:
+        return tuple(e for e in self.entries if e.role == "human")
+
+    def closeouts(self) -> tuple[LogEntry, ...]:
+        return tuple(e for e in self.entries if e.role == "build" and "close-out" in e.head)
+
+    def shipped(self) -> bool:
+        return any(e.role == "verdict" and _SHIP_RE.search(e.head) for e in self.entries)
+
+    def waived_ids(self) -> set[str]:
+        """Finding ids (``F1``, ``C2``) named anywhere in a ``[human]`` entry."""
+        return {i for e in self.waivers() for i in _ID_TOKEN_RE.findall(e.text)}
+
+    def addresses(self, title: str) -> bool:
+        """A ``[human]`` waiver or a build close-out names the finding."""
+        return any(e.names(title) for e in self.waivers() + self.closeouts())
+
+    def mentions(self, needle: str) -> bool:
+        return any(e.names(needle) for e in self.entries)
+
+
+ROUTING_SIGNALS = ("spend", "partner_facing", "parallel_ready", "tickets")
+ROUTING_FIELDS = ("scrutiny", "backend")
+_FM_KEY_RE = re.compile(r"^(?P<indent>\s*)(?P<key>[A-Za-z_]+):(?P<val>[^\n]*)$")
+
+
+@dataclass(frozen=True)
+class RoutingStamp:
+    """The plan frontmatter's routing stamp (grill SKILL.md, Routing): ``signals`` with its four
+    keys, plus the derived ``scrutiny`` and ``backend``."""
+
+    signals: tuple[str, ...] = ()  # signal keys present under ``signals:``
+    has_signals: bool = False
+    scrutiny: str = ""
+    backend: str = ""
+
+    @classmethod
+    def parse(cls, text: str) -> "RoutingStamp":
+        if not text.startswith("---"):
+            return cls()
+        head = text.split("---", 2)[1]
+        signals: list[str] = []
+        has_signals = False
+        fields = {"scrutiny": "", "backend": ""}
+        in_signals = False
+        for line in head.splitlines():
+            m = _FM_KEY_RE.match(line)
+            if not m:
+                continue
+            key, val = m.group("key"), m.group("val").split("#", 1)[0].strip()
+            if m.group("indent"):
+                if in_signals:
+                    signals.append(key)
+                continue
+            in_signals = key == "signals"
+            has_signals = has_signals or in_signals
+            if key in fields:
+                fields[key] = val
+        return cls(signals=tuple(signals), has_signals=has_signals, **fields)
+
+    def missing(self) -> tuple[str, ...]:
+        out = []
+        if not self.has_signals:
+            out.append("signals")
+        else:
+            out.extend(f"signals.{s}" for s in ROUTING_SIGNALS if s not in self.signals)
+        out.extend(f for f in ROUTING_FIELDS if not getattr(self, f))
+        return tuple(out)

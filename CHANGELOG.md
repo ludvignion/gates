@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.0 — 2026-09-03
+
+Three kanban invariants that were sentences in skill files are now checks. Findings drifted
+between tickets without a written home, a ticket shipped past a block nobody waived, and plans
+were approved without the routing stamp the build skill keys on.
+
+- `scripts/lint_kanban.py` — three new rules beside the closed-ticket check, same reporting
+  style, one line per violation. **Finding homes:** every `— finding:` Log entry carries an
+  explicit `home: <id>` / `homed to <id>` marker naming a ticket file, or a `[human]` waiver or
+  build close-out names its title. Bare ticket ids in the text do not count; the violation
+  lists them as candidate homes. Homed to an id with no file = violation;
+  a done|superseded ticket whose Log never mentions a finding homed to it (title or source id)
+  = violation. **No ship past open block:** a ticket whose `traces/verdict/<id>.json` has an
+  open block may not carry a `[verdict] … — ship` entry or `status: done` unless a `[human]`
+  entry names the finding id. **Routing stamp:** an approved plan carries `signals` (spend,
+  partner_facing, parallel_ready, tickets), `scrutiny` and `backend`.
+- `scripts/schemas.py` — `Log`, `LogEntry`, `Finding`, `RoutingStamp`; the lint loads through
+  them. `lint()` keeps its signature, so `verdict_checks.py` reports the new rules as warns.
+- `tests/` — 20 new tests; the fixture plans now carry a routing stamp.
+
+Consuming projects: approved plans without a routing stamp fail `lint_kanban.py` — stamp them
+by hand (the grill stamps new ones). Findings already in Logs need a `home: <id>` line or a
+waiver.
+
 ## 0.5.1 — 2026-09-02
 
 The first 0.5.0 verdict shipped a ticket that two earlier verdicts had rejected: tests made 20

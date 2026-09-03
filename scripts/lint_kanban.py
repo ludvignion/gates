@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
-"""Closed tickets are immutable. Fail when a ticket that was done|superseded at <base> differs
-now outside its append-only sections. Run: python3 lint_kanban.py [base]  (default HEAD:
-uncommitted changes; in CI pass the merge base, e.g. origin/main).
+"""Kanban invariants. Run: python3 lint_kanban.py [base]  (default HEAD: uncommitted changes;
+in CI pass the merge base, e.g. origin/main). Exit 1 on any violation.
 
-Compares the ticket at <base> with the working tree, so it catches edits made outside a Claude
-session too. Loads through scripts/schemas.py (ClosedTicketDiff); no parsing of its own.
+Rules, each loading through scripts/schemas.py (no parsing of its own):
+1. CLOSED TICKETS ARE IMMUTABLE. A ticket that was done|superseded at <base> differs now
+   outside its append-only sections, or was deleted. Compares <base> with the working tree, so
+   it catches edits made outside a Claude session too. (ClosedTicketDiff)
+2. FINDING HOMES. Every ``— finding:`` entry in a ticket ``## Log`` carries an explicit
+   ``home: <id>`` / ``homed to <id>`` marker naming a ticket file, or a ``[human]`` waiver or
+   build close-out names its title. Ticket ids in the text without a marker do not home it;
+   they are reported as candidates. A finding homed to a ticket id with no file, and a
+   done|superseded ticket whose Log never mentions a finding homed to it, are violations.
+   (Log, Finding)
+3. NO SHIP PAST OPEN BLOCK. A ticket whose traces/verdict/<id>.json has an open block may not
+   carry a ``[verdict] … — ship`` Log entry or ``status: done`` unless a ``[human]`` Log entry
+   names that finding id. (Log)
+4. ROUTING STAMP. An approved plan carries ``signals`` (spend, partner_facing, parallel_ready,
+   tickets), ``scrutiny`` and ``backend`` in its frontmatter. (RoutingStamp)
 """
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -19,7 +32,11 @@ def _git(root: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout
 
 
-def lint(root: Path, base: str = "HEAD") -> list[str]:
+def _rel(root: Path, p: Path) -> str:
+    return p.relative_to(root).as_posix()
+
+
+def closed_tickets(root: Path, base: str = "HEAD") -> list[str]:
     out = []
     changed = _git(root, "diff", "--name-only", base, "--", "kanban").split()
     for rel in changed:
@@ -40,6 +57,79 @@ def lint(root: Path, base: str = "HEAD") -> list[str]:
         for v in diff.violations:
             out.append(f"{rel}: ticket {fm['id']} is {fm['status']}; {v}")
     return out
+
+
+def finding_homes(root: Path) -> list[str]:
+    out = []
+    tickets = _fm.tickets(root / "kanban") if (root / "kanban").is_dir() else []
+    by_id = {fm["id"]: (p, fm, schemas.Log.parse(body)) for p, fm, body in tickets}
+    homed_to: dict[str, list[tuple[str, str]]] = {}
+    for tid, (p, fm, log) in by_id.items():
+        rel = _rel(root, p)
+        for f in log.findings(tid):
+            if f.homes:
+                for h in f.homes:
+                    if h not in by_id:
+                        out.append(f"{rel}: ticket {tid} finding homed to ticket {h}, which has no file: {f.title}")
+                    else:
+                        homed_to.setdefault(h, []).append((tid, f.title))
+            elif not log.addresses(f.title):
+                hint = f" (candidate homes seen: {', '.join(f.candidates)} — add 'home:' if intended)" if f.candidates else ""
+                out.append(f"{rel}: ticket {tid} finding has no home (no home: marker, [human] waiver, or close-out names it): {f.title}{hint}")
+    for tid, items in homed_to.items():
+        p, fm, log = by_id[tid]
+        if fm.get("status") not in schemas.CLOSED_STATUSES:
+            continue
+        for src, title in items:
+            if not (log.mentions(title) or log.mentions(src)):
+                out.append(f"{_rel(root, p)}: ticket {tid} is {fm['status']} but the finding homed here from {src} is unaddressed in its Log: {title}")
+    return out
+
+
+def open_blocks(root: Path) -> list[str]:
+    out = []
+    tickets = _fm.tickets(root / "kanban") if (root / "kanban").is_dir() else []
+    for p, fm, body in tickets:
+        tid = fm["id"]
+        vpath = root / "traces" / "verdict" / f"{tid}.json"
+        if not vpath.exists():
+            continue
+        try:
+            findings = json.loads(vpath.read_text()).get("findings", [])
+        except (json.JSONDecodeError, AttributeError):
+            out.append(f"{_rel(root, vpath)}: not a verdict JSON object")
+            continue
+        blocks = [f for f in findings if f.get("severity") == "block" and f.get("status") == "open"]
+        if not blocks:
+            continue
+        log = schemas.Log.parse(body)
+        how = "is done" if fm.get("status") == "done" else "has a [verdict] ship entry" if log.shipped() else ""
+        if not how:
+            continue
+        waived = log.waived_ids()
+        for f in blocks:
+            if f.get("id") not in waived:
+                out.append(f"{_rel(root, p)}: ticket {tid} {how} with open block {f.get('id')} and no [human] waiver naming it: {f.get('text', '')}")
+    return out
+
+
+def routing_stamps(root: Path) -> list[str]:
+    out = []
+    plans = sorted((root / "kanban").rglob("*.plan.md")) if (root / "kanban").is_dir() else []
+    for p in plans:
+        text = p.read_text()
+        fm, _ = _fm.parse(text)
+        if not fm.get("approved"):
+            continue
+        missing = schemas.RoutingStamp.parse(text).missing()
+        if missing:
+            n = p.name[: -len(".plan.md")]
+            out.append(f"{_rel(root, p)}: plan {n} is approved but its frontmatter lacks {', '.join(missing)}")
+    return out
+
+
+def lint(root: Path, base: str = "HEAD") -> list[str]:
+    return closed_tickets(root, base) + finding_homes(root) + open_blocks(root) + routing_stamps(root)
 
 
 def main(argv: list[str]) -> int:
