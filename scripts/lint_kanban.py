@@ -95,11 +95,10 @@ def open_blocks(root: Path) -> list[str]:
         if not vpath.exists():
             continue
         try:
-            findings = json.loads(vpath.read_text()).get("findings", [])
-        except (json.JSONDecodeError, AttributeError):
+            blocks = schemas.Verdict.load(vpath).open_blocks()
+        except (json.JSONDecodeError, ValueError):
             out.append(f"{_rel(root, vpath)}: not a verdict JSON object")
             continue
-        blocks = [f for f in findings if f.get("severity") == "block" and f.get("status") == "open"]
         if not blocks:
             continue
         log = schemas.Log.parse(body)

@@ -6,6 +6,10 @@ ACs that no test added on this branch names (warn), new src defs with one caller
 (warn, Phase B q4), new public names absent from docs/glossary.md when the diff does not touch
 it (warn), closed tickets edited (warn). Findings use the verdict JSON shape so the model copies
 them verbatim. Loads ticket shape through scripts/schemas.py; git for everything else.
+
+Also the check on the written verdict, `validate(verdict, arm)`: a block without an `ac` or
+`charter` citation is a violation — except under the blind arm, which cannot cite by design, so
+there the block is downgraded to a warn instead.
 """
 import json
 import os
@@ -109,6 +113,21 @@ def checks(root: Path, tid: str, base: str, ci_green: bool | None = None) -> lis
         add("block", f"Tests attempt {len(attempts)} live network call(s) with keys set: {', '.join(hosts)[:120]}",
             ac="no live calls", repro="verdict_checks.py <id>  (pytest -p nosock with .env.example keys set)")
     return out
+
+
+def validate(v: schemas.Verdict, arm: str) -> tuple[schemas.Verdict, list[str]]:
+    """The verdict as it should be stored, and the violations found. Blind cannot cite, so its
+    uncited blocks become warns (text unchanged); under any other arm they are violations and
+    the verdict is returned as written."""
+    uncited = v.uncited_blocks()
+    if not uncited:
+        return v, []
+    if arm != "blind":
+        return v, [f"{f.get('id')}: block without an ac or charter citation ({arm} seat)" for f in uncited]
+    ids = {id(f) for f in uncited}
+    v = v.with_findings(tuple({**f, "severity": "warn"} if id(f) in ids else f for f in v.findings))
+    # the prompt's rule, applied mechanically after the downgrade: reject iff an open block or CI red
+    return v.with_decision("reject" if v.open_blocks() or v.ci.get("green") is False else "ship"), []
 
 
 def live_calls(root: Path) -> list[str]:

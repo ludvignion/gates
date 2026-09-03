@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.6.2 — 2026-09-03
+
+The verdict packet is the seam: which vendor renders the verdict, and how much context it sees,
+are two runner flags, and every call is one Opik trace, so verdicts across seats compare.
+
+- `skills/verdict/verdict-prompt.md` — new. The judging prompt, extracted from `SKILL.md`, with
+  its guardrail line (fix nothing; write only the verdict JSON and this ticket's Log).
+  `SKILL.md` is a thin wrapper: prep unless handed a packet path, judge per the packet's
+  Instructions, close out.
+- `scripts/verdict_prep.py` — the packet is self-contained: frontmatter (`ticket`, `arm`,
+  `base`, `output`, `ticket_file`, `status`, `writes`, `plugin_version`, `prompt_sha`), the
+  prompt as `## Instructions`, a `## Seat` line, then the evidence sections. `--arm
+  blind|packet|repo`, default `packet` (today's content). `blind` = Instructions, Seat, CI,
+  Diff stat, Diff; the frontmatter drops `ticket_file`, `status`, `writes`. `repo` = packet plus
+  a seat line allowing read-only reads of the tree.
+- `scripts/schemas.py` — `Packet` (frontmatter + ordered sections; `rearm()` narrows a packet,
+  `render()` writes it), `Verdict` and `VerdictMeta` (the JSON, its optional `meta` stamp).
+  `runner.py`, `render_verdict.py`, `lint_kanban.py` and `verdict_prep.py` all load the verdict
+  through `Verdict`; the ad-hoc parsing promised away in 0.4.2 is gone. Verdicts without
+  `meta` still load.
+- `scripts/verdict_checks.py` — `validate(verdict, arm)`: a block without an `ac` or `charter`
+  citation is a violation, except under `blind`, where it is downgraded to a warn and the
+  decision re-derived by the prompt's own rule (reject iff an open block or CI red).
+- `scripts/render_verdict.py` — the close-out: validate for the packet's arm, stamp `meta`
+  (`arm`, `vendor`, `plugin_version`, `prompt_sha` = sha256 of `verdict-prompt.md`,
+  `packet_sha` = sha256 of the packet file), write the JSON back, render the page with a Seat
+  line and any Invalid line. `--vendor` (default `claude`). Idempotent.
+- `scripts/runner.py` — `--arm` and `--verdict-cmd "<template>"`. The runner writes the packet,
+  runs the template in the worktree with `{packet}`, `{output}`, `{model}`, `{ticket}` filled,
+  then closes out with the template's executable name as vendor. Default template:
+  `claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits`. Decision logic
+  unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` or `OPIK_API_KEY` is set,
+  the call is one trace: input = packet text, output = stamped verdict, metadata = stamp +
+  ticket + wall seconds. Otherwise nothing is traced and nothing else changes.
+- `scripts/verdict_eval.py` — new. Loads a project's `traces/verdict/*.input.md` into an Opik
+  dataset (expected = the stamped verdict's decision when its `packet_sha` matches, else the
+  ticket Log's last `[verdict] — ship|reject`, else null) and runs one arm × one verdict command
+  as an experiment. Code metrics only: `block_count`, `finding_count`, `citation_compliance`,
+  `decision_agreement`, `wall_seconds`.
+- `Makefile` — `make ci` for this repo (unittest discover).
+- `tests/` — 26 new tests (arms, packet round trip, stamp, validate, cmd template, opik absent
+  and configured, eval dataset and metrics).
+
+Consuming projects (project-template): pin `v0.6.2`. Nothing in `make verdict` changes for the
+human path. Projects that call `runner.py` get the packet seat by default. `verdict_eval.py`
+and Opik tracing need `opik>=2.2` in the project's environment plus `OPIK_URL_OVERRIDE`; the
+plugin does not pin it. Verdict JSONs written before 0.6.2 render as "Seat: unstamped".
+
 ## 0.6.1 — 2026-09-03
 
 Housekeeping. The plugin carries no use-case vocabulary, and one dead script is gone.

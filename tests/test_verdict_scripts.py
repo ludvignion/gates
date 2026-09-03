@@ -1,4 +1,4 @@
-"""verdict_checks.py, verdict_prep.py, render_verdict.py archive, and the verdict schemas."""
+"""verdict_checks.py, verdict_prep.py (arms), render_verdict.py (stamp), and the verdict schemas."""
 import json
 import shutil
 import subprocess
@@ -158,6 +158,114 @@ class VerdictScriptsTest(unittest.TestCase):
         self.assertEqual(len(live), 1); self.assertEqual(live[0]["severity"], "block")
         self.assertIn("example.invalid", live[0]["text"])
 
+    def test_prep_includes_prompt_and_stamp_fields(self):
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        prompt = (REPO / "skills" / "verdict" / "verdict-prompt.md").read_text()
+        packet = schemas.Packet.parse(text)
+        self.assertEqual(packet.arm, "packet")
+        self.assertEqual(packet.fm["prompt_sha"], schemas.sha256(prompt))
+        self.assertEqual(packet.fm["plugin_version"], json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())["version"])
+        self.assertEqual(packet.fm["output"], "traces/verdict/1.1.json")
+        self.assertEqual(packet.fm["ticket_file"], "kanban/tickets/1.1.tracer-bullet.md")
+        self.assertIn("Guardrail: fix nothing.", packet.section("Instructions"))
+        self.assertIn(schemas.SEAT_LINE["packet"], packet.section("Seat"))
+        self.assertEqual(tuple(t for t, _ in packet.sections), schemas.PACKET_SECTIONS)
+
+    def test_prep_blind_arm_is_diff_and_prompt(self):
+        vd = self.tmp / "traces" / "verdict"; vd.mkdir(parents=True)
+        (vd / "1.1.prev.json").write_text(json.dumps({"findings": [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-2", "text": "ids drift", "repro": "make test"}]}))
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False, arm="blind")
+        packet = schemas.Packet.parse(text)
+        self.assertEqual(packet.arm, "blind")
+        self.assertEqual(tuple(t for t, _ in packet.sections), schemas.BLIND_SECTIONS)
+        for gone in ("AC-1 (behavioral)", "real matching", "waive F1", "too expensive to repeat", "charter-1: Unknown",
+                     "ids drift", '"id": "C1"', "tests/test_run.py: ", "writes: [", "ticket_file:", "status: in_review"):
+            self.assertNotIn(gone, text, gone)
+        for kept in ("+class Widget", "## Diff stat", "## CI", "Guardrail: fix nothing.", schemas.SEAT_LINE["blind"], "ticket: 1.1"):
+            self.assertIn(kept, text, kept)
+
+    def test_prep_repo_arm_adds_read_only_line(self):
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False, arm="repo")
+        packet = schemas.Packet.parse(text)
+        self.assertEqual(packet.arm, "repo")
+        self.assertIn("read-only", packet.section("Seat"))
+        self.assertEqual(tuple(t for t, _ in packet.sections), schemas.PACKET_SECTIONS)
+        self.assertIn("- AC-1 (behavioral)", text)
+
+    def test_packet_roundtrip_and_rearm(self):
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        packet = schemas.Packet.parse(text)
+        self.assertEqual(schemas.Packet.parse(packet.render()).sections, packet.sections)
+        blind = packet.rearm("blind")
+        self.assertEqual(schemas.Packet.parse(blind.render()).arm, "blind")
+        with self.assertRaises(ValueError):
+            blind.rearm("packet")
+        with self.assertRaises(ValueError):
+            packet.rearm("wide")
+
+    def test_cli_prep_arm_flag(self):
+        r = subprocess.run([sys.executable, str(REPO / "scripts" / "verdict_prep.py"), "1.1", "--no-ci", "--arm", "blind"], cwd=self.tmp, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(schemas.Packet.load(self.tmp / "traces/verdict/1.1.input.md").arm, "blind")
+
+    def _verdict_and_packet(self, arm: str, findings: list[dict], decision: str = "reject") -> Path:
+        vd = self.tmp / "traces" / "verdict"; vd.mkdir(parents=True, exist_ok=True)
+        (vd / "1.1.input.md").write_text(verdict_prep.build(self.tmp, "1.1", "main", ci=False, arm=arm))
+        (vd / "1.1.json").write_text(json.dumps({"ticket": "1.1", "decision": decision, "held": [], "findings": findings,
+                                                 "ci": {"green": True, "mutation_score": None}, "quality": {"a.py": {"srp": True}}}))
+        return vd / "1.1.json"
+
+    def test_stamp_meta_on_close_out(self):
+        vpath = self._verdict_and_packet("repo", [{"id": "F1", "severity": "block", "status": "open", "ac": "AC-2", "text": "x"}])
+        violations = render_verdict.main(self.tmp, "1.1", vendor="codex")
+        self.assertEqual(violations, [])
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(v.meta.as_dict(), {
+            "arm": "repo", "vendor": "codex",
+            "plugin_version": json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())["version"],
+            "prompt_sha": schemas.sha256((REPO / "skills" / "verdict" / "verdict-prompt.md").read_text()),
+            "packet_sha": schemas.sha256((vpath.with_name("1.1.input.md")).read_bytes()),
+        })
+        self.assertEqual(v.raw["quality"], {"a.py": {"srp": True}})  # unknown keys survive the round trip
+        self.assertEqual(v.decision, "reject")
+        html = vpath.with_suffix(".html").read_text()
+        self.assertIn("Seat: arm repo · vendor codex", html)
+        render_verdict.main(self.tmp, "1.1", vendor="codex")  # idempotent
+        self.assertEqual(schemas.Verdict.load(vpath).meta, v.meta)
+
+    def test_blind_downgrades_uncited_block(self):
+        vpath = self._verdict_and_packet("blind", [
+            {"id": "F1", "severity": "block", "status": "open", "ac": None, "charter": None, "text": "no citation"},
+            {"id": "F2", "severity": "block", "status": "open", "ac": "AC-1", "charter": None, "text": "cited"}])
+        self.assertEqual(render_verdict.main(self.tmp, "1.1"), [])
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual([(f["id"], f["severity"]) for f in v.findings], [("F1", "warn"), ("F2", "block")])
+        self.assertEqual(v.decision, "reject")
+        self.assertEqual(v.meta.vendor, "claude")
+
+    def test_blind_downgrade_recomputes_decision(self):
+        vpath = self._verdict_and_packet("blind", [{"id": "F1", "severity": "block", "status": "open", "text": "no citation"}])
+        render_verdict.main(self.tmp, "1.1")
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(v.open_blocks(), ()); self.assertEqual(v.decision, "ship")
+
+    def test_packet_arm_reports_uncited_block(self):
+        vpath = self._verdict_and_packet("packet", [{"id": "F1", "severity": "block", "status": "open", "text": "no citation"}])
+        violations = render_verdict.main(self.tmp, "1.1")
+        self.assertEqual(violations, ["F1: block without an ac or charter citation (packet seat)"])
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(v.findings[0]["severity"], "block"); self.assertEqual(v.meta.arm, "packet")
+        self.assertIn("Invalid: F1: block without", vpath.with_suffix(".html").read_text())
+
+    def test_legacy_verdict_without_packet_renders_unstamped(self):
+        vd = self.tmp / "traces" / "verdict"; vd.mkdir(parents=True)
+        (vd / "1.1.json").write_text(json.dumps({"ticket": "1.1", "decision": "ship", "held": [], "findings": [], "ci": {"green": True}}))
+        render_verdict.main(self.tmp, "1.1")
+        self.assertIsNone(schemas.Verdict.load(vd / "1.1.json").meta)
+        self.assertNotIn("meta", json.loads((vd / "1.1.json").read_text()))
+        self.assertIn("Seat: unstamped", (vd / "1.1.html").read_text())
+
     def test_cli_prep_writes_input(self):
         r = subprocess.run([sys.executable, str(REPO / "scripts" / "verdict_prep.py"), "1.1", "--no-ci"], cwd=self.tmp, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -174,6 +282,29 @@ class VerdictSchemaTest(unittest.TestCase):
         self.assertEqual(len(t.acs), 2); self.assertTrue(t.acs[0].startswith("AC-1 "))
         self.assertEqual(t.out_of_scope, ("real matching",))
         self.assertEqual(len(t.waivers), 1); self.assertIn("mechanical output", t.waivers[0])
+
+    def test_verdict_meta_optional(self):
+        v = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "ship", "findings": [{"id": "F1", "severity": "block"}]})
+        self.assertIsNone(v.meta)
+        self.assertEqual(v.open_blocks(), ({"id": "F1", "severity": "block"},))  # no status = open, as runner reads it
+        self.assertEqual(v.uncited_blocks(), v.blocks())
+        meta = schemas.VerdictMeta.from_dict({"arm": "blind", "vendor": "codex", "plugin_version": "0.6.2", "prompt_sha": "a", "packet_sha": "b"})
+        self.assertEqual(v.with_meta(meta).as_dict()["meta"], meta.as_dict())
+        self.assertEqual(sorted(meta.as_dict()), sorted(schemas.META_FIELDS))
+        with self.assertRaises(ValueError):
+            schemas.Verdict.from_dict(["not", "an", "object"])
+
+    def test_validate_by_arm(self):
+        v = schemas.Verdict.from_dict({"decision": "reject", "ci": {"green": True}, "findings": [
+            {"id": "F1", "severity": "block", "status": "open"}, {"id": "F2", "severity": "warn", "status": "open"}]})
+        kept, violations = verdict_checks.validate(v, "packet")
+        self.assertEqual(kept, v); self.assertEqual(len(violations), 1)
+        down, violations = verdict_checks.validate(v, "blind")
+        self.assertEqual(violations, []); self.assertEqual([f["severity"] for f in down.findings], ["warn", "warn"])
+        self.assertEqual(down.decision, "ship")
+        red, _ = verdict_checks.validate(v.with_findings(v.findings), "blind")
+        self.assertEqual(verdict_checks.validate(schemas.Verdict.from_dict({"decision": "reject", "ci": {"green": False}, "findings": [
+            {"id": "F1", "severity": "block"}]}), "blind")[0].decision, "reject")
 
 
 if __name__ == "__main__":
