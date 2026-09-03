@@ -8,7 +8,7 @@
  ],
  "findings": [
   {
-   "id": "F1",
+   "id": "C1",
    "severity": "block",
    "status": "open",
    "ac": "AC-2",
@@ -16,9 +16,9 @@
    "home": null,
    "spawn_child": false,
    "covered_by": null,
-   "repro": "grep -rn 'AC-2' tests/ || echo 'no test names AC-2'",
+   "repro": null,
    "waived_by": null,
-   "text": "AC-2 unmet: no test proves each stage reads and writes a file, src/pipeline/run.py:7"
+   "text": "no test names AC-2"
   },
   {
    "id": "F2",
@@ -42,8 +42,8 @@
   "arm": "packet",
   "vendor": "claude",
   "plugin_version": "0.6.2",
-  "prompt_sha": "67df37d9a13a1a44ed40338408ceb2ab61458a5fcec21fd42b34fb917d4395e8",
-  "packet_sha": "9efd6536d2a63d76ee457b9b88177b10c230b1a5091b8ba2dd09f88ec1b586b5",
+  "prompt_sha": "3cd73747c6f5d4cd5e70ef65845b599289036e54e8b2ef41f1ff0b1edc27936b",
+  "packet_sha": "a2689ed06d0ad369301148a34d3814bdb924508c54a7b7b2a8c1f351234df63f",
   "cost_usd": null,
   "tokens": null
  }

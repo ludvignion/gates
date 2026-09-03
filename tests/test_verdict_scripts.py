@@ -103,7 +103,9 @@ class VerdictScriptsTest(unittest.TestCase):
         self.assertEqual(by["Written outside writes"]["severity"], "block")
         self.assertIn("src/other/y.py", by["Written outside writes"]["text"])
         self.assertEqual(by["make ci is red"]["severity"], "block")
-        self.assertEqual(by["No test added on this branch names AC-2"]["ac"], "AC-2")
+        self.assertEqual(by["no test names AC-2"]["ac"], "AC-2")
+        self.assertEqual(by["no test names AC-2"]["severity"], "block")
+        self.assertNotIn("no test names AC-1", by)  # AC-1 is named by tests/test_run.py on the branch
         self.assertIn("lonely", by["New defs with one caller or none"]["text"])
         self.assertIn("Widget", by["New names absent from docs/glossary.md"]["text"])
         self.assertTrue(all(f["status"] == "open" for f in found))
@@ -340,6 +342,7 @@ class VerdictSkillTest(unittest.TestCase):
         self.assertIn("Read nothing else", steps[0])
         self.assertEqual(len(schemas._items(schemas.section(body, "Ticket id"))), 3)
         self.assertIn("Session ends at the verdict.", schemas.section(body, "Never"))
+        self.assertIn("never invoke `/verdict`", body)
         self.assertIn("render_verdict.py", schemas.section(body, "Ticket id"))
 
 
@@ -357,8 +360,10 @@ class VerdictEvalFixtureTest(unittest.TestCase):
         v = schemas.Verdict.load(FIXTURE_PROJECT / "traces" / "verdict" / "1.1.json")
         self.assertEqual(v.decision, "reject")
         self.assertEqual([(f["id"], f["severity"], f.get("ac") or f.get("charter")) for f in v.findings],
-                         [("F1", "block", "AC-2"), ("F2", "warn", "charter-2")])
-        self.assertTrue(v.findings[0]["repro"])
+                         [("C1", "block", "AC-2"), ("F2", "warn", "charter-2")])
+        self.assertEqual(v.findings[0]["text"], "no test names AC-2")
+        self.assertIn('"id": "C1"', packet.section("Mechanical findings (copy verbatim into findings)"))
+        self.assertEqual(packet.fm["prompt_sha"], schemas.sha256((REPO / "skills" / "verdict" / "verdict-prompt.md").read_text()))
         self.assertTrue(all(v.cited(f) for f in v.findings))
         self.assertEqual(v.meta.packet_sha, schemas.sha256(ppath.read_bytes()))
         rows = verdict_eval.items(FIXTURE_PROJECT)

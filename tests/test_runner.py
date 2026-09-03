@@ -54,9 +54,10 @@ class RunnerSeatTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_default_cmd_and_placeholders(self):
-        self.assertEqual(runner.DEFAULT_VERDICT_CMD, "claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits --output-format json")
+        self.assertEqual(runner.DEFAULT_VERDICT_CMD, 'claude -p "$(cat {packet})" --model {model} --output-format json --tools ""')
         cmd = runner.verdict_cmd(runner.DEFAULT_VERDICT_CMD, packet="traces/verdict/1.1.input.md", output="traces/verdict/1.1.json", model="opus", ticket="1.1")
-        self.assertEqual(cmd, "claude -p '/verdict traces/verdict/1.1.input.md' --model opus --permission-mode acceptEdits --output-format json")
+        self.assertEqual(cmd, 'claude -p "$(cat traces/verdict/1.1.input.md)" --model opus --output-format json --tools ""')
+        self.assertNotIn("-p '/verdict", cmd)  # the skill is not invoked; the path merely contains the word
         self.assertEqual(runner.vendor_of(runner.DEFAULT_VERDICT_CMD), "claude")
         self.assertEqual(runner.vendor_of("/usr/local/bin/codex exec --json {packet} > {output}"), "codex")
         for ph in ("{packet}", "{output}", "{model}", "{ticket}"):
@@ -70,6 +71,30 @@ class RunnerSeatTest(unittest.TestCase):
         self.assertEqual(runner.vendor_usage(""), (None, None))
         self.assertEqual(runner.vendor_usage('{"result": "no usage"}'), (None, None))
         self.assertEqual(runner.vendor_usage('[1, 2]'), (None, None))
+
+    def test_verdict_from_result(self):
+        verdict = {"ticket": "1.1", "decision": "ship", "held": [], "findings": [], "ci": {"green": True}}
+        fenced = "Here it is:\n```json\n" + json.dumps(verdict, indent=1) + "\n```\n"
+        self.assertEqual(runner.verdict_from_result(json.dumps({"type": "result", "result": fenced})), verdict)
+        self.assertEqual(runner.verdict_from_result(json.dumps({"result": json.dumps(verdict)})), verdict)
+        self.assertEqual(runner.verdict_from_result(json.dumps({"result": '{"held": []} then ' + json.dumps(verdict)})), verdict)
+        self.assertIsNone(runner.verdict_from_result(json.dumps({"result": "no json here {oops"})))
+        self.assertIsNone(runner.verdict_from_result(json.dumps({"result": {"decision": "ship"}})))  # result is text
+        self.assertIsNone(runner.verdict_from_result("not a report"))
+        self.assertIsNone(runner.verdict_from_result(json.dumps({"type": "result", "is_error": True})))
+
+    def test_reply_only_vendor_gets_its_output_written(self):
+        """The default seat: the model replies with the verdict, writes nothing; the runner writes {output}."""
+        reply = "```json\n" + json.dumps({"ticket": "1.1", "decision": "reject", "held": [], "ci": {"green": True},
+                                           "findings": [{"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "text": "x"}]}) + "\n```"
+        (self.tmp / "reply_vendor.py").write_text(
+            "import json, sys\nassert sys.argv[1].startswith('---\\nticket: 1.1'), sys.argv[1][:30]\n"
+            "print(json.dumps({'type': 'result', 'result': " + repr(reply) + ", 'total_cost_usd': 0.01, 'usage': {'output_tokens': 9}}))\n")
+        template = f'{sys.executable} reply_vendor.py "$(cat {{packet}})"'
+        decision, retryable, progressed = runner.verdict(self.tmp, "1.1", "opus", template=template)
+        self.assertEqual((decision, retryable, progressed), ("reject", True, True))
+        v = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json")
+        self.assertEqual(v.findings[0]["id"], "F1"); self.assertEqual(v.meta.cost_usd, 0.01)
 
     def test_claude_usage_lands_in_meta_and_trace(self):
         (self.tmp / "fake_vendor.py").write_text(FAKE_VENDOR + 'print(json.dumps({"total_cost_usd": 0.05, "usage": {"input_tokens": 7, "output_tokens": 8}}))\n')
@@ -182,6 +207,14 @@ class VerdictEvalTest(unittest.TestCase):
         sha = sha or schemas.sha256((self.vd / "1.1.input.md").read_bytes())
         (self.vd / "1.1.json").write_text(json.dumps({"ticket": "1.1", "decision": decision, "findings": [], "meta": {
             "arm": "packet", "vendor": "claude", "plugin_version": "0.6.2", "prompt_sha": "p", "packet_sha": sha}}))
+
+    def test_items_keyed_on_packet_sha(self):
+        import uuid
+        rows = verdict_eval.items(self.tmp)
+        self.assertEqual(rows[0]["id"], verdict_eval.item_id(rows[0]["packet_sha"]))
+        self.assertEqual(verdict_eval.items(self.tmp)[0]["id"], rows[0]["id"])  # a rerun maps to the same item
+        u = uuid.UUID(rows[0]["id"]); self.assertEqual((u.version, u.variant), (7, uuid.RFC_4122))
+        self.assertNotEqual(verdict_eval.item_id("a" * 64), verdict_eval.item_id("b" * 64))
 
     def test_expected_from_stamped_verdict(self):
         self._stamped("ship")

@@ -3,7 +3,9 @@ world. Its frontmatter names the ticket, the seat (`arm`), and the `output` path
 verdict JSON. Read nothing beyond the packet unless the Seat section says otherwise. You do
 not see the implementer's reasoning; keep it that way.
 
-Guardrail: fix nothing. Write only the verdict JSON at `output` and this ticket's `## Log`.
+Guardrail: fix nothing. Your reply is the verdict JSON and nothing else: no prose before or
+after it. A session with file tools also writes it at `output`; only the human-run `/verdict`
+flow touches this ticket's `## Log`, nothing else is ever written.
 
 ### Budget
 One judgement pass over the packet, then write. No exploration, no second reading. If the

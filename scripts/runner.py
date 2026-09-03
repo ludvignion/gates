@@ -7,8 +7,8 @@ Each state is a `claude -p` call or a shell command; transitions only on objecti
 (exit codes, build status line in the ticket Log, verdict.json decision and findings).
 The machine, not the model, owns the loop.
 
-Verdict seat: the runner writes the packet (verdict_prep.py --arm), runs --verdict-cmd over it,
-then closes out (render_verdict.py: validate for the arm, stamp meta, render). The vendor in the
+Verdict seat: the runner writes the packet (verdict_prep.py --arm), runs --verdict-cmd over it
+(default: the packet text as a tool-less claude prompt; the reply is the verdict), then closes out (render_verdict.py: validate for the arm, stamp meta, render). The vendor in the
 stamp is the template's executable name. If the opik package is importable and OPIK_URL_OVERRIDE
 is set, the one model call is one Opik trace: input = packet, output = verdict,
 metadata = stamp + ticket + wall seconds. Otherwise nothing changes.
@@ -37,14 +37,16 @@ import schemas  # noqa: E402
 STATUS_RE = re.compile(r"^### \[build\] .*— status: (NEEDS_CONTEXT|BLOCKED|DONE)\b", re.M)
 SCRIPTS = Path(__file__).resolve().parent
 DEFAULT_VERDICT_MODEL = "opus"
-DEFAULT_VERDICT_CMD = "claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits --output-format json"
+DEFAULT_VERDICT_CMD = 'claude -p "$(cat {packet})" --model {model} --output-format json --tools ""'
 VERDICT_CMD_HELP = (
     "shell template for the one verdict call, run in the worktree. Placeholders: "
     "{packet} = packet path (traces/verdict/<id>.input.md), {output} = where the verdict JSON must land "
     "(traces/verdict/<id>.json), {model} = --verdict-model, {ticket} = ticket id. Paths are relative to "
-    "the worktree and contain no spaces. The stamp's vendor is the template's first word. When the command "
-    "prints one JSON object with total_cost_usd and usage on stdout (claude --output-format json), they are "
-    "stamped as meta.cost_usd and meta.tokens; other vendors leave them null. "
+    "the worktree and contain no spaces. The default feeds the packet text as the prompt with no tools; "
+    "the model's reply is the verdict JSON, which the runner takes from the `result` field of claude's "
+    "--output-format json and writes to {output}. A command that writes {output} itself is left alone. "
+    "The stamp's vendor is the template's first word. When stdout is one JSON object with total_cost_usd "
+    "and usage, they are stamped as meta.cost_usd and meta.tokens; other vendors leave them null. "
     f"Default: {DEFAULT_VERDICT_CMD}"
 )
 OPIK_ENV = ("OPIK_URL_OVERRIDE",)
@@ -107,17 +109,55 @@ def verdict_cmd(template: str, *, packet: str, output: str, model: str, ticket: 
     return template.format(packet=packet, output=output, model=model, ticket=ticket)
 
 
-def vendor_usage(stdout: str) -> tuple[float | None, dict | None]:
-    """(cost_usd, tokens) from a vendor's stdout when it is one JSON object carrying
-    total_cost_usd / usage (claude --output-format json); (None, None) for anything else."""
+def vendor_report(stdout: str) -> dict | None:
+    """stdout as one JSON object (claude --output-format json), else None."""
     try:
         d = json.loads(stdout.strip() or "null")
     except json.JSONDecodeError:
-        return None, None
-    if not isinstance(d, dict):
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def vendor_usage(stdout: str) -> tuple[float | None, dict | None]:
+    """(cost_usd, tokens) from a vendor's report carrying total_cost_usd / usage; (None, None) for
+    anything else."""
+    d = vendor_report(stdout)
+    if d is None:
         return None, None
     cost, usage = d.get("total_cost_usd"), d.get("usage")
     return (float(cost) if isinstance(cost, (int, float)) else None), (dict(usage) if isinstance(usage, dict) else None)
+
+
+def verdict_from_result(stdout: str) -> dict | None:
+    """The verdict JSON object inside the report's `result` text (the model's reply), fenced or
+    bare; None when there is no report, no result, or no object with a `decision` in it."""
+    d = vendor_report(stdout)
+    text = d.get("result") if d else None
+    if not isinstance(text, str):
+        return None
+    decoder = json.JSONDecoder()
+    for m in re.finditer(r"\{", text):
+        try:
+            obj, _ = decoder.raw_decode(text, m.start())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and "decision" in obj:
+            return obj
+    return None
+
+
+def call_vendor(cmd: str, cwd: Path, output: Path) -> tuple[str, float | None, dict | None, float, datetime]:
+    """Run the verdict command once. If it did not write `output` itself and its report carries the
+    verdict in `result`, write that. Returns (stdout, cost_usd, tokens, wall_seconds, started)."""
+    started, t0 = datetime.now(timezone.utc), time.monotonic()
+    r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    wall = time.monotonic() - t0
+    sys.stderr.write(r.stderr)
+    cost_usd, tokens = vendor_usage(r.stdout)
+    if not output.exists() and (v := verdict_from_result(r.stdout)) is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(v, indent=1) + "\n", encoding="utf-8")
+    return r.stdout, cost_usd, tokens, wall, started
 
 
 def prep(cwd: Path, tid: str, arm: str) -> Path:
@@ -173,15 +213,11 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
     packet = prep(cwd, tid, arm)
     cmd = verdict_cmd(template, packet=str(packet.relative_to(cwd)), output=str(p.relative_to(cwd)), model=model, ticket=tid)
     client = opik_client()
-    started, t0 = datetime.now(timezone.utc), time.monotonic()
-    r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
-    wall = time.monotonic() - t0
-    cost_usd, tokens = vendor_usage(r.stdout)
-    if cost_usd is None and tokens is None:
-        sys.stdout.write(r.stdout)  # not a usage report: pass the vendor's output through
+    stdout, cost_usd, tokens, wall, started = call_vendor(cmd, cwd, p)
+    if vendor_report(stdout) is None:
+        sys.stdout.write(stdout)  # not a report: pass the vendor's output through
     else:
         print(f"[runner] verdict call: cost_usd={cost_usd} tokens={tokens}")
-    sys.stderr.write(r.stderr)
     if not p.exists():
         trace_verdict(client, tid=tid, packet=packet, verdict=None, started=started, wall=wall, vendor=vendor_of(template), arm=arm)
         return "reject", True, True

@@ -2,7 +2,8 @@
 """Compare verdict seats on a project's archived packets. Run: verdict_eval.py <project> [--arm packet] [--verdict-cmd "<template>"]
 
 Loads every traces/verdict/<id>.input.md under the project into an Opik dataset (one item per
-packet: ticket, packet text, its arm and sha, and the expected gate-2 decision), then runs one
+packet, its id derived from the packet sha so a rerun replaces and never duplicates: ticket, packet
+text, its arm and sha, and the expected gate-2 decision), then runs one
 arm × one verdict command over the dataset as one Opik experiment. Expected decision: the
 archived <id>.json's decision when its meta.packet_sha matches the packet, else the last
 `### [verdict] … — ship|reject` entry in the ticket's Log, else null.
@@ -19,10 +20,10 @@ which is what CI does over tests/fixtures/project with scripts/verdict_canned.py
 """
 import argparse
 import re
-import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -56,6 +57,15 @@ def expected_decision(project: Path, tid: str, packet_sha: str) -> str | None:
     return None
 
 
+def item_id(packet_sha: str) -> str:
+    """The dataset item id for a packet: a UUID (v7 layout, as Opik issues them) carved from the
+    packet sha, so the same packet always maps to the same item and a rerun replaces it."""
+    h = int(packet_sha[:32], 16)
+    h = (h & ~(0xF << 76)) | (0x7 << 76)        # version nibble = 7
+    h = (h & ~(0x3 << 62)) | (0x2 << 62)        # variant bits = 10
+    return str(uuid.UUID(int=h))
+
+
 def items(project: Path) -> list[dict]:
     out = []
     for ppath in sorted((project / "traces" / "verdict").glob("*.input.md")):
@@ -63,7 +73,7 @@ def items(project: Path) -> list[dict]:
         packet = schemas.Packet.parse(text)
         sha = schemas.sha256(ppath.read_bytes())
         tid = packet.ticket or ppath.name[: -len(".input.md")]
-        out.append({"ticket": tid, "packet": text, "packet_arm": packet.arm, "packet_sha": sha,
+        out.append({"id": item_id(sha), "ticket": tid, "packet": text, "packet_arm": packet.arm, "packet_sha": sha,
                     "expected": expected_decision(project, tid, sha)})
     return out
 
@@ -82,12 +92,10 @@ def run_one(item: dict, arm: str, template: str, model: str = runner.DEFAULT_VER
         ppath = vdir / f"{tid}.input.md"
         ppath.write_text(packet.render(), encoding="utf-8")
         cmd = runner.verdict_cmd(template, packet=f"traces/verdict/{tid}.input.md", output=out_rel, model=model, ticket=tid)
-        t0 = time.monotonic()
-        subprocess.run(cmd, shell=True, cwd=root)
-        wall = time.monotonic() - t0
+        _stdout, cost_usd, tokens, wall, _started = runner.call_vendor(cmd, root, root / out_rel)
         if not (root / out_rel).exists():
             return {"output": {}, "wall_seconds": wall}
-        v, _violations = render_verdict.stamp(root, tid, runner.vendor_of(template))
+        v, _violations = render_verdict.stamp(root, tid, runner.vendor_of(template), cost_usd, tokens)
         return {"output": v.as_dict(), "wall_seconds": wall}
 
 

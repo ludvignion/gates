@@ -14,7 +14,9 @@ copies them into the packet, so the packet is self-contained: frontmatter (ticke
 output path), the instructions, the seat line, then the evidence sections. The packet is the
 seam: another vendor gets the same file. Gate 2 is the rendered page.
 
-The argument decides which of the two flows below runs. Nothing else does.
+The argument decides which of the two flows below runs. Nothing else does. `runner.py` and
+`verdict_eval.py` never invoke `/verdict`: their default command feeds the packet text to
+`claude -p` with no tools and takes the reply as the verdict. `/verdict` is the human path.
 
 ## Packet path
 The argument ends in `.input.md`: `runner.py` wrote the packet and owns the close-out. The two

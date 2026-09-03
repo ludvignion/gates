@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Mechanical verdict findings, zero model tokens. Run: verdict_checks.py <id> [--base main]
 
-Checks (ids C1..): files written outside the ticket's `writes:` (block), CI red (block), ticket
-ACs that no test added on this branch names (warn), new src defs with one caller or none
+Checks (ids C1..): files written outside the ticket's `writes:` (block), CI red (block), each
+ticket AC that no test added on this branch names (block, one per AC), new src defs with one caller or none
 (warn, Phase B q4), new public names absent from docs/glossary.md when the diff does not touch
 it (warn), closed tickets edited (warn). Findings use the verdict JSON shape so the model copies
 them verbatim. Loads ticket shape through scripts/schemas.py; git for everything else.
@@ -80,9 +80,9 @@ def checks(root: Path, tid: str, base: str, ci_green: bool | None = None) -> lis
     ) if any("test" in f for f in files) else ""
     tested = set(AC_RE.findall(added_test_lines))
     ac_ids = [m.group(0) for it in ticket.acs if (m := schemas.AC_ID_RE.match(it))]
-    untested = [a for a in ac_ids if a not in tested]
-    if untested and ac_ids:
-        add("warn", f"No test added on this branch names {', '.join(untested)}", ac=untested[0])
+    for ac in ac_ids:
+        if ac not in tested:
+            add("block", f"no test names {ac}", ac=ac)
 
     src_py = list((root / "src").rglob("*.py")) if (root / "src").is_dir() else []
     if src_py:
