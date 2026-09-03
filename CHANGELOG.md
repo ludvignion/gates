@@ -122,3 +122,9 @@ Decisions recorded:
 
 Consuming projects: delete the project-local `Stop` hook in `.claude/settings.json` that ran
 `make board` as a stopgap — the plugin does it now. Pin to `v0.4.0`.
+
+## Backlog (from network pilot, 2026-09-03)
+
+- Build guard: refuse `/build` when the working tree is dirty with files outside the ticket's `writes:` (pilot: six kanban files merged past a build unnoticed).
+- `writes:` validation: at close-out, diff the branch's touched paths against `writes:` and fail on unlisted paths (pilot: 1.1's `writes:` missed two of its own packages).
+- Gate rule: charter and ADR edits require a `[human]` approval line before commit (pilot: charter amended from a question, pre-gate, commit 8f5431b).
