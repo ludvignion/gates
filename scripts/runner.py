@@ -10,7 +10,7 @@ The machine, not the model, owns the loop.
 Verdict seat: the runner writes the packet (verdict_prep.py --arm), runs --verdict-cmd over it,
 then closes out (render_verdict.py: validate for the arm, stamp meta, render). The vendor in the
 stamp is the template's executable name. If the opik package is importable and OPIK_URL_OVERRIDE
-or OPIK_API_KEY is set, the one model call is one Opik trace: input = packet, output = verdict,
+is set, the one model call is one Opik trace: input = packet, output = verdict,
 metadata = stamp + ticket + wall seconds. Otherwise nothing changes.
 
 Exit codes: 0 ship (human reviews and pushes from the worktree) · 1 red baseline or retry cap ·
@@ -45,7 +45,7 @@ VERDICT_CMD_HELP = (
     "the worktree and contain no spaces. The stamp's vendor is the template's first word. "
     f"Default: {DEFAULT_VERDICT_CMD}"
 )
-OPIK_ENV = ("OPIK_URL_OVERRIDE", "OPIK_API_KEY")
+OPIK_ENV = ("OPIK_URL_OVERRIDE",)
 
 
 def sh(args: list[str], cwd: Path) -> int:
@@ -114,8 +114,9 @@ def prep(cwd: Path, tid: str, arm: str) -> Path:
 
 
 def opik_client():
-    """An Opik client when the package is importable and the SDK's own env names a server
-    (OPIK_URL_OVERRIDE, or OPIK_API_KEY for the cloud); else None and nothing is traced."""
+    """An Opik client when the package is importable and OPIK_URL_OVERRIDE (the SDK's own env
+    name for the server) is set; else None and nothing is traced. OPIK_API_KEY alone is not a
+    signal."""
     if not any(os.environ.get(k) for k in OPIK_ENV):
         return None
     try:

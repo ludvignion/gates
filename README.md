@@ -44,7 +44,7 @@ invoked by users directly.
 ## Opik
 
 Traces go to `traces/` locally. `runner.py` sends the one verdict call as one Opik trace when the
-`opik` package is importable and `OPIK_URL_OVERRIDE` (or `OPIK_API_KEY`) is set; otherwise nothing
+`opik` package is importable and `OPIK_URL_OVERRIDE` is set; otherwise nothing
 changes. `verdict_eval.py` compares seats over a project's archived packets. For session-level
 traces, install the official `opik-claude-code-plugin` alongside this one; tag runs with the
 ticket id via `kanban/.active`.

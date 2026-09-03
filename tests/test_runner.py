@@ -90,6 +90,10 @@ class RunnerSeatTest(unittest.TestCase):
 
     def test_opik_absent_or_unconfigured_traces_nothing(self):
         self.assertIsNone(runner.opik_client())  # env unset, whatever is installed
+        self.assertEqual(runner.OPIK_ENV, ("OPIK_URL_OVERRIDE",))
+        fake = types.ModuleType("opik"); fake.Opik = lambda: self.fail("client built on OPIK_API_KEY alone")
+        with mock.patch.dict(os.environ, {"OPIK_API_KEY": "k"}), mock.patch.dict(sys.modules, {"opik": fake}):
+            self.assertIsNone(runner.opik_client())  # api key alone is not a signal
         with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": None}):
             self.assertIsNone(runner.opik_client())  # env set, package missing
         runner.verdict(self.tmp, "1.1", "opus", template=self.cmd)

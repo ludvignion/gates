@@ -31,8 +31,8 @@ are two runner flags, and every call is one Opik trace, so verdicts across seats
   runs the template in the worktree with `{packet}`, `{output}`, `{model}`, `{ticket}` filled,
   then closes out with the template's executable name as vendor. Default template:
   `claude -p '/verdict {packet}' --model {model} --permission-mode acceptEdits`. Decision logic
-  unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` or `OPIK_API_KEY` is set,
-  the call is one trace: input = packet text, output = stamped verdict, metadata = stamp +
+  unchanged. When the `opik` package imports and `OPIK_URL_OVERRIDE` is set (`OPIK_API_KEY`
+  alone is not a signal), the call is one trace: input = packet text, output = stamped verdict, metadata = stamp +
   ticket + wall seconds. Otherwise nothing is traced and nothing else changes.
 - `scripts/verdict_eval.py` — new. Loads a project's `traces/verdict/*.input.md` into an Opik
   dataset (expected = the stamped verdict's decision when its `packet_sha` matches, else the

@@ -13,7 +13,7 @@ cannot be widened; that item errors), written into a scratch tree, the command r
 has no repository, so the repo arm has nothing extra to read here.
 
 Metrics, all code: block_count, finding_count, citation_compliance, decision_agreement (when
-expected is present), wall_seconds. Needs the opik package and OPIK_URL_OVERRIDE or OPIK_API_KEY.
+expected is present), wall_seconds. Needs the opik package and OPIK_URL_OVERRIDE.
 """
 import argparse
 import re
@@ -155,7 +155,7 @@ def main(argv: list[str]) -> int:
         return 1
     client = runner.opik_client()
     if client is None:
-        print("[eval] opik not importable or OPIK_URL_OVERRIDE/OPIK_API_KEY unset; nothing run", file=sys.stderr)
+        print("[eval] opik not importable or OPIK_URL_OVERRIDE unset; nothing run", file=sys.stderr)
         return 2
     from opik.evaluation import evaluate
 
