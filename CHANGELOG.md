@@ -1,5 +1,75 @@
 # Changelog
 
+## 0.6.2 — 2026-09-03
+
+The verdict packet is the seam: which vendor renders the verdict, and how much context it sees,
+are two runner flags, and every call is one Opik trace, so verdicts across seats compare.
+
+- `skills/verdict/verdict-prompt.md` — new. The judging prompt, extracted from `SKILL.md`, with
+  its guardrail line (fix nothing; the reply is the verdict JSON and nothing else; only the
+  human `/verdict` flow touches this ticket's Log).
+  `SKILL.md` is a thin wrapper with two flows: a packet path (runner seat) ends at the verdict
+  JSON, no close-out, no Log edit, no summary; a ticket id (human) preps, judges, closes out.
+- `scripts/verdict_prep.py` — the packet is self-contained: frontmatter (`ticket`, `arm`,
+  `base`, `output`, `ticket_file`, `status`, `writes`, `plugin_version`, `prompt_sha`), the
+  prompt as `## Instructions`, a `## Seat` line, then the evidence sections. `--arm
+  blind|packet|repo`, default `packet` (today's content). `blind` = Instructions, Seat, CI,
+  Diff stat, Diff; the frontmatter drops `ticket_file`, `status`, `writes`. `repo` = packet plus
+  a seat line allowing read-only reads of the tree.
+- `scripts/schemas.py` — `Packet` (frontmatter + ordered sections; `rearm()` narrows a packet,
+  `render()` writes it), `Verdict` and `VerdictMeta` (the JSON, its optional `meta` stamp).
+  `runner.py`, `render_verdict.py`, `lint_kanban.py` and `verdict_prep.py` all load the verdict
+  through `Verdict`; the ad-hoc parsing promised away in 0.4.2 is gone. Verdicts without
+  `meta` still load.
+- `scripts/verdict_checks.py` — each ticket AC that no test added on the branch names is a
+  C-block, one per AC (`no test names AC-n`, `ac` cited); it was one warn.
+  `validate(verdict, arm)`: a block without an `ac` or `charter` citation is a violation, except under `blind`, where it is downgraded to a warn and the
+  decision re-derived by the prompt's own rule (reject iff an open block or CI red).
+- `scripts/render_verdict.py` — the close-out: validate for the packet's arm, stamp `meta`
+  (`arm`, `vendor`, `plugin_version`, `prompt_sha` = sha256 of `verdict-prompt.md`,
+  `packet_sha` = sha256 of the packet file), write the JSON back, render the page with a Seat
+  line and any Invalid line. `--vendor` (default `claude`). Idempotent.
+- `scripts/runner.py` — `--arm` and `--verdict-cmd "<template>"`. The runner writes the packet,
+  runs the template in the worktree with `{packet}`, `{output}`, `{model}`, `{ticket}` filled,
+  then closes out with the template's executable name as vendor. Default template:
+  `claude -p --model {model} --output-format json --tools "" < {packet}`: the packet arrives on
+  stdin (never as an argument: a packet starts with `---`), no tools, and the reply is the
+  verdict, which the runner takes from the report's `result` field and writes to `{output}`.
+  `runner.py` and `verdict_eval.py` never invoke `/verdict`; that is the human path. A non-zero
+  exit, an empty result, or JSON that fails the `Verdict` schema (`Verdict.problems()`: decision,
+  finding ids, severities, statuses) is an error: logged, traced as the output's `error` with the
+  reason, the CLI envelope (`stop_reason`, `num_turns`, `permission_denials`, `is_error`) and the
+  stderr tail, treated as a reject to retry. The prompt no longer asks the model to write a file:
+  the reply is the JSON, the harness files it. When the report carries `total_cost_usd` and
+  `usage`, they are stamped as `meta.cost_usd` / `meta.tokens`; other vendors leave them null.
+  Decision logic unchanged.
+- Opik trace, in `runner.py` — gated on `OPIK_URL_OVERRIDE` being set and the `opik` package
+  importing (`OPIK_API_KEY` alone is not a signal). The one model call is one trace: input =
+  packet text, output = stamped verdict (or the error envelope), metadata = stamp + cost + ticket
+  + wall seconds. Otherwise nothing is traced and nothing else changes.
+- `scripts/verdict_eval.py` — new. Loads a project's `traces/verdict/*.input.md` into an Opik
+  dataset, items keyed on the packet sha so a rerun replaces and never duplicates, and items
+  whose packet is gone are deleted (expected = the stamped verdict's decision when its
+  `packet_sha` matches, else the ticket Log's last `[verdict] — ship|reject`, else null) and runs
+  one arm × one verdict command as an experiment. Code metrics only: `block_count`,
+  `finding_count`, `citation_compliance`, `decision_agreement`, `wall_seconds`. An errored run
+  (non-zero exit, empty result, invalid verdict) scores as failed, stays out of every average,
+  and is counted in the summary line.
+- `scripts/verdict_canned.py` — new. A verdict command that copies a prepared JSON to
+  `{output}`: the seat end to end with zero model tokens.
+- `tests/fixtures/project/` — new. A neutral project (fixture ticket 1.1 and plan 1, one
+  0.6.2-format packet rendered via `Packet`, a stamped reject verdict with a cited AC-2 block) that
+  `verdict_eval.py` runs over. Without Opik the eval scores locally and prints one line per
+  item; CI runs it with the canned command and blocks the network.
+- `Makefile` — `make ci` for this repo (unittest discover).
+- `tests/` — 42 new tests (arms, packet round trip, stamp, validate, cmd template, stdin packet,
+  vendor errors, opik absent and configured, eval dataset sync and metrics, fixture smoke).
+
+Consuming projects (project-template): pin `v0.6.2`. Nothing in `make verdict` changes for the
+human path. Projects that call `runner.py` get the packet seat by default. `verdict_eval.py`
+and Opik tracing need `opik>=2.2` in the project's environment plus `OPIK_URL_OVERRIDE`; the
+plugin does not pin it. Verdict JSONs written before 0.6.2 render as "Seat: unstamped".
+
 ## 0.6.1 — 2026-09-03
 
 Housekeeping. The plugin carries no use-case vocabulary, and one dead script is gone.
@@ -141,3 +211,4 @@ Consuming projects: delete the project-local `Stop` hook in `.claude/settings.js
 - Build guard: refuse `/build` when the working tree is dirty with files outside the ticket's `writes:` (pilot: six kanban files merged past a build unnoticed).
 - `writes:` validation: at close-out, diff the branch's touched paths against `writes:` and fail on unlisted paths (pilot: 1.1's `writes:` missed two of its own packages).
 - Gate rule: charter and ADR edits require a `[human]` approval line before commit (pilot: charter amended from a question, pre-gate, commit 8f5431b).
+- Verdict coverage: every AC and charter item in the packet must appear in `held` or in a finding's `ac`/`charter`; anything else becomes a C-warn "unaccounted: AC-n" at close-out (0.6.2 left silence on an item indistinguishable from a pass).
