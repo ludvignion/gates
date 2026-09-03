@@ -255,6 +255,92 @@ class RunnerSeatTest(unittest.TestCase):
             self.assertIn(s, r.stdout)
 
 
+FAKE_CLAUDE = """#!/bin/sh
+# stand-in claude: records the call, prints the envelope from $FAKE_CLAUDE_ENVELOPE
+echo "$*" >> "$FAKE_CLAUDE_LOG"
+[ -n "$FAKE_CLAUDE_BREAK" ] && rm -f green   # a build that leaves ci red
+cat "$FAKE_CLAUDE_ENVELOPE"
+"""
+
+
+class RunnerBuildSeatTest(unittest.TestCase):
+    """The headless build session: allowlisted shell, prompts denied not hung, denial stops the run."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.repo = self.tmp / "proj"
+        for rel, text in {
+            "kanban/plans/1.plan.md": PLAN, "kanban/tickets/1.1.tracer-bullet.md": TICKET,
+            "Makefile": "ci:\n\t@test -f green\n",
+        }.items():
+            (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / rel).write_text(text)
+        (self.repo / "green").write_text("")  # baseline ci green; the fake build turns it red
+        git(self.repo, "init", "-q", "-b", "main"); git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "base")
+        bin_dir = self.tmp / "bin"; bin_dir.mkdir()
+        (bin_dir / "claude").write_text(FAKE_CLAUDE); (bin_dir / "claude").chmod(0o755)
+        self.log = self.tmp / "calls.log"; self.envelope = self.tmp / "envelope.json"
+        self.env = mock.patch.dict(os.environ, {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                                                "FAKE_CLAUDE_LOG": str(self.log), "FAKE_CLAUDE_ENVELOPE": str(self.envelope)})
+        self.env.start()
+        for k in runner.OPIK_ENV:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        self.env.stop()
+        subprocess.run(["git", "worktree", "prune"], cwd=self.repo, capture_output=True)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _main(self, *extra: str) -> tuple[int, str]:
+        with mock.patch.object(sys, "argv", ["runner.py", "1.1", "--cwd", str(self.repo), "--max-retries", "2", *extra]), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            rc = runner.main()
+        return rc, out.getvalue()
+
+    def test_build_cmd_is_headless_with_shell_allowlist(self):
+        cmd = runner.build_cmd("1.1", "sonnet")
+        self.assertEqual(cmd[:3], ["claude", "-p", "/build 1.1"])
+        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "acceptEdits")
+        self.assertEqual(cmd[cmd.index("--permission-prompts") + 1], "none")
+        self.assertEqual(cmd[cmd.index("--output-format") + 1], "json")
+        allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
+        self.assertEqual(tuple(allowed), runner.BUILD_ALLOWED_TOOLS)
+        for tool in ("Bash(make *)", "Bash(uv *)", "Bash(git *)", "Bash(pytest *)"):
+            self.assertIn(tool, allowed)
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
+
+    def test_permission_denial_stops_without_retry(self):
+        self.envelope.write_text(json.dumps({
+            "type": "result", "is_error": False, "num_turns": 4, "result": "Blocked on git add approval",
+            "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "git add -A"}}]}))
+        (self.repo / "green").unlink()  # ci would be red too: the denial must win
+        rc, out = self._main()
+        self.assertEqual(rc, 4, out)
+        self.assertIn("[runner] permission denied: Bash(git add -A)", out)
+        self.assertNotIn("ci red", out)
+        self.assertEqual(len(self.log.read_text().splitlines()), 1)  # one build call, no retry
+        self.assertIn("--permission-prompts none", self.log.read_text())
+
+    def test_clean_build_with_red_ci_still_retries(self):
+        self.envelope.write_text(json.dumps({"type": "result", "is_error": False, "num_turns": 2, "result": "done", "permission_denials": []}))
+        with mock.patch.dict(os.environ, {"FAKE_CLAUDE_BREAK": "1"}):
+            rc, out = self._main()
+        self.assertEqual(rc, 1, out)  # retry cap: the fake build never turns ci green
+        self.assertEqual(out.count("[runner] ci red"), 2)
+        self.assertEqual(len(self.log.read_text().splitlines()), 2)
+        self.assertNotIn("permission denied", out)
+
+    def test_build_call_parses_envelope(self):
+        self.envelope.write_text(json.dumps({"result": "ok", "permission_denials": [{"tool_name": "WebFetch", "tool_input": {"url": "x"}}, "junk"]}))
+        with contextlib.redirect_stdout(io.StringIO()):
+            call = runner.build(self.repo, "1.1", "sonnet")
+        self.assertEqual((call.returncode, call.result, call.denied), (0, "ok", "WebFetch"))
+        self.envelope.write_text("not an envelope")
+        with contextlib.redirect_stdout(io.StringIO()):
+            call = runner.build(self.repo, "1.1", "sonnet")
+        self.assertEqual((call.denials, call.result), ((), "not an envelope"))
+
+
 class VerdictEvalTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

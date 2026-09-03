@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.2.1 — 2026-09-03
+
+Patch. The headless build session the runner spawns could not run shell commands: it printed
+"Need user permission to run shell commands" and "Blocked on git add approval", CI stayed red on
+lint, and the runner counted each denial as a ci-red retry until the cap.
+
+- `scripts/runner.py` — the build command is now
+  `claude -p "/build <id>" --model <m> --permission-mode acceptEdits --permission-prompts none
+  --allowedTools "Bash(make *),Bash(make),Bash(uv *),Bash(git *),Bash(pytest *),Bash(python3 -m pytest *),Bash(python -m pytest *)"
+  --output-format json`. `acceptEdits` covers file writes, the allowlist covers make, uv, git and
+  pytest, and `--permission-prompts none` (the CLI's headless switch) turns anything else into a
+  recorded denial instead of a hang. The runner reads the envelope's `permission_denials`; when
+  it is non-empty it prints `permission denied: <tool(command)>` and exits 4 at once. No retry,
+  no "ci red". `BUILD_ALLOWED_TOOLS` is the one list.
+- `tests/` — a fake `claude` on PATH: a denial stops the runner with exit 4 after one attempt;
+  a clean build with red CI still retries to the cap.
+
+Consuming projects (project-template): `.claude/settings.json` gains the same allowlist under
+`permissions.allow`, so a human `/build` in the worktree does not prompt either. Pin `v0.6.2.1`.
+
 ## 0.6.2 — 2026-09-03
 
 The verdict packet is the seam: which vendor renders the verdict, and how much context it sees,

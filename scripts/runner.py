@@ -19,7 +19,9 @@ changes.
 
 Exit codes: 0 ship (human reviews and pushes from the worktree) · 1 red baseline or retry cap ·
 2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) ·
-3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log).
+3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log) ·
+4 permission denied: the headless build session was refused a tool (never retried; see
+BUILD_ALLOWED_TOOLS and the project's .claude/settings.json allowlist).
 The worktree at ../<repo>-<id> is never removed here; `git worktree remove` after the human merges.
 Run in a container when unattended (see Dockerfile).
 """
@@ -61,10 +63,6 @@ OPIK_ENV = ("OPIK_URL_OVERRIDE",)
 
 def sh(args: list[str], cwd: Path) -> int:
     return subprocess.run(args, cwd=cwd).returncode
-
-
-def claude(prompt: str, cwd: Path, model: str) -> int:
-    return sh(["claude", "-p", prompt, "--model", model, "--permission-mode", "acceptEdits"], cwd)
 
 
 def worktree(repo: Path, tid: str) -> tuple[Path, bool]:
@@ -192,6 +190,53 @@ def call_error(returncode: int, output: Path) -> str | None:
     return f"invalid verdict: {'; '.join(problems)}" if problems else None
 
 
+# --- build seat -----------------------------------------------------------------------------
+# The build session runs headless: nobody answers a permission prompt. acceptEdits covers file
+# writes; Bash needs an explicit allowlist (claude --allowedTools, "Bash(git *)" syntax), and
+# --permission-prompts none turns any remaining prompt into a recorded denial instead of a hang.
+# The project's .claude/settings.json allowlist (project-template) covers the same commands for
+# human sessions; the worktree carries that file, so both apply there.
+BUILD_ALLOWED_TOOLS = (
+    "Bash(make *)", "Bash(make)", "Bash(uv *)", "Bash(git *)", "Bash(pytest *)",
+    "Bash(python3 -m pytest *)", "Bash(python -m pytest *)",
+)
+
+
+def build_cmd(tid: str, model: str) -> list[str]:
+    return ["claude", "-p", f"/build {tid}", "--model", model, "--permission-mode", "acceptEdits",
+            "--permission-prompts", "none", "--allowedTools", ",".join(BUILD_ALLOWED_TOOLS), "--output-format", "json"]
+
+
+@dataclass(frozen=True)
+class BuildCall:
+    """One headless /build session: exit code, the CLI envelope's permission_denials (tool names
+    with what they asked for), and the reply text."""
+
+    returncode: int
+    denials: tuple[dict, ...]
+    result: str
+
+    @property
+    def denied(self) -> str:
+        """One line naming what was refused; empty when nothing was."""
+        parts = []
+        for d in self.denials:
+            name, command = d.get("tool_name", "?"), (d.get("tool_input") or {}).get("command", "")
+            parts.append(f"{name}({command})" if command else str(name))
+        return "; ".join(parts)
+
+
+def build(cwd: Path, tid: str, model: str) -> BuildCall:
+    r = subprocess.run(build_cmd(tid, model), cwd=cwd, capture_output=True, text=True)
+    sys.stderr.write(r.stderr)
+    report = vendor_report(r.stdout) or {}
+    denials = report.get("permission_denials") or ()
+    result = report.get("result") if isinstance(report.get("result"), str) else r.stdout
+    if result:
+        print(result.rstrip())
+    return BuildCall(r.returncode, tuple(d for d in denials if isinstance(d, dict)), result or "")
+
+
 def call_vendor(cmd: str, cwd: Path, output: Path) -> VendorCall:
     """Run the verdict command once. If it exited 0, did not write `output` itself, and its report
     carries the verdict in `result`, write that. `error` names the failure when there is one."""
@@ -303,7 +348,10 @@ def main() -> int:
 
     for attempt in range(1, a.max_retries + 1):
         print(f"[runner] {a.ticket} attempt {attempt}")
-        claude(f"/build {a.ticket}", wt, a.build_model)
+        call = build(wt, a.ticket, a.build_model)
+        if call.denials:
+            print(f"[runner] permission denied: {call.denied} — the build session cannot proceed headless; widen BUILD_ALLOWED_TOOLS or the project allowlist")
+            return 4
         st = build_status(wt, a.ticket)
         if st == "NEEDS_CONTEXT":
             print("[runner] build needs context — grill miss logged; human needed")
