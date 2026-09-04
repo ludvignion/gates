@@ -1,10 +1,13 @@
 """The writes a human used to make by hand in kanban/: a Log entry, a status flip, a routing
 override, a commit. runner.py and board.py call these; nothing else writes Log lines in code.
 Shapes match what scripts/schemas.py parses (Log, RoutingStamp); the format lives here once.
+From a shell, `kanban_ops.py ship|reject|child|home|waive <id> ...` runs the board's Gate 2
+actions through board.act; `order <n>` lists a plan's tickets in depends_on order (/run uses both).
 """
 import json
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -103,3 +106,48 @@ def commit(root: Path, paths: list[str], message: str, force: bool = False) -> s
         print(f"[kanban] commit failed: {r.stderr.strip()[-200:]}")
         return None
     return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
+
+
+# --- the command line: the Gate 2 words a session executes ------------------------------------
+GATE2 = ("ship", "reject", "child", "home", "waive")
+
+
+def main(argv: list[str]) -> int:
+    """`kanban_ops.py <action> <ticket> ... [--who <name>] [--cwd .]`: the Gate 2 actions the
+    board performs, from a shell. Each call is `board.act` with the same form the board posts,
+    so the Log entries, commits and dataset items are identical; nothing here writes on its
+    own. `order <n>` prints the plan's tickets in depends_on order, one per line.
+      ship <id> · reject <id> <reason> · child <id> <F#> · home <id> <F#> <target> ·
+      waive <id> <F#> <reason> · order <n>"""
+    import argparse
+
+    ap = argparse.ArgumentParser(description=main.__doc__.splitlines()[0])
+    ap.add_argument("action", choices=(*GATE2, "order"))
+    ap.add_argument("args", nargs="*")
+    ap.add_argument("--who", default="human")
+    ap.add_argument("--cwd", default=".")
+    a = ap.parse_args(argv[1:])
+    root = Path(a.cwd).resolve()
+    shapes = {"ship": ("ticket",), "reject": ("ticket", "reason"), "child": ("ticket", "finding"),
+              "home": ("ticket", "finding", "target"), "waive": ("ticket", "finding", "reason"), "order": ("plan",)}
+    keys = shapes[a.action]
+    if len(a.args) < len(keys):
+        print(f"[kanban] {a.action} takes {' '.join('<' + k + '>' for k in keys)}", file=sys.stderr)
+        return 2
+    form = dict(zip(keys, a.args[:len(keys) - 1]))
+    form[keys[-1]] = " ".join(a.args[len(keys) - 1:])  # the last field may be a multi-word reason
+    import board  # here, not at the top: board imports kanban_ops
+
+    try:
+        if a.action == "order":
+            print("\n".join(board.plan_order(root, form["plan"])))
+        else:
+            print(board.act(root, {"action": a.action, "who": a.who, **form}))
+    except board.BoardError as e:
+        print(f"[kanban] {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

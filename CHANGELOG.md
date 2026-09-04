@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.4 — 2026-09-04
+
+- `skills/run/SKILL.md` — new. `/run <id>` or `/run plan <n>`. A thin wrapper: the session starts
+  `runner.py` for the ticket (or for each ticket of the plan in `depends_on` order, pausing at
+  every Gate 2), relays its phase lines, and ends the run on one line: decision and the Gate 2
+  page path. Then, in the same session, Gate 2 is plain language — `ship`, `reject: <reason>`,
+  `child from F#`, `home F# to <id>`, `waive F#: <reason>` — each one `kanban_ops.py` command,
+  the same `board.act` the board's buttons call. The session builds, judges and edits nothing.
+  `/build` and `/verdict` are unchanged.
+- `scripts/kanban_ops.py` — a command line: `ship|reject|child|home|waive <id> ...` (`--who`,
+  `--cwd`) dispatches through `board.act` with the board's form; `order <n>` prints a plan's
+  open tickets in `depends_on` order. A refusal is the board's message on stderr, exit 1.
+- `.claude-plugin/plugin.json` — the five skills listed under `skills`; version 0.6.4.
+- `tests/test_run_skill.py` — the skill text names `runner.py` and `kanban_ops.py` and carries no
+  file-editing instruction; the CLI's reject, waive, order and refusal on a git copy of the
+  fixture project.
+
+Consuming projects (project-template): pin `v0.6.4`.
+
 ## 0.6.3 — 2026-09-04
 
 The board is the interface. Evidence from the text-render pilot (5 tickets, plan 1) drives
