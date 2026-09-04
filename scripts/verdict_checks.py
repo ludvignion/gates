@@ -114,6 +114,10 @@ def checks(root: Path, tid: str, base: str, ci_green: bool | None = None) -> lis
     for v in lint_kanban.lint(root, base):
         add("warn", v)
 
+    for e in schemas.Log.parse(body).entries:
+        if e.role == "runner" and e.head.startswith("orbit after close-out"):
+            add("warn", e.head)
+
     attempts = live_calls(root)
     if attempts:
         hosts = sorted({a.split("\n")[0] for a in attempts})

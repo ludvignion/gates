@@ -317,6 +317,8 @@ class RoutingStamp:
     has_signals: bool = False
     scrutiny: str = ""
     backend: str = ""
+    rules: tuple[tuple[str, str], ...] = ()  # (field, the derivation written after ``#`` on its line)
+    values: tuple[tuple[str, str], ...] = ()  # (signal key, value)
 
     @classmethod
     def parse(cls, text: str) -> "RoutingStamp":
@@ -324,6 +326,8 @@ class RoutingStamp:
             return cls()
         head = text.split("---", 2)[1]
         signals: list[str] = []
+        values: list[tuple[str, str]] = []
+        rules: list[tuple[str, str]] = []
         has_signals = False
         fields = {"scrutiny": "", "backend": ""}
         in_signals = False
@@ -331,16 +335,22 @@ class RoutingStamp:
             m = _FM_KEY_RE.match(line)
             if not m:
                 continue
-            key, val = m.group("key"), m.group("val").split("#", 1)[0].strip()
+            raw = m.group("val")
+            key, val = m.group("key"), raw.split("#", 1)[0].strip()
             if m.group("indent"):
                 if in_signals:
                     signals.append(key)
+                    values.append((key, val))
                 continue
             in_signals = key == "signals"
             has_signals = has_signals or in_signals
             if key in fields:
                 fields[key] = val
-        return cls(signals=tuple(signals), has_signals=has_signals, **fields)
+                rules.append((key, raw.split("#", 1)[1].strip() if "#" in raw else ""))
+        return cls(signals=tuple(signals), has_signals=has_signals, rules=tuple(rules), values=tuple(values), **fields)
+
+    def rule(self, field: str) -> str:
+        return next((r for f, r in self.rules if f == field), "")
 
     def missing(self) -> tuple[str, ...]:
         out = []

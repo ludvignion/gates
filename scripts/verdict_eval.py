@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Compare verdict seats on a project's archived packets. Run: verdict_eval.py <project> [--arm packet] [--verdict-cmd "<template>"]
 
+`record_decision(project, tid, decision)` is what runner.py and board.py call on every Gate 2
+decision: the packet's item is appended or replaced with expected = that decision, so the eval
+only ever runs experiments. The CLI still loads every archived packet on demand.
+
 Loads every traces/verdict/<id>.input.md under the project into an Opik dataset (one item per
 packet, its id derived from the packet sha so a rerun replaces and never duplicates, and items
 whose packet is gone are deleted: ticket, packet text, its arm and sha, and the expected gate-2
@@ -22,6 +26,7 @@ line each plus the summary, which is what CI does over tests/fixtures/project wi
 scripts/verdict_canned.py as the command.
 """
 import argparse
+import json
 import re
 import sys
 import tempfile
@@ -90,6 +95,33 @@ def sync_dataset(dataset, rows: list[dict]) -> list[str]:
     if stale:
         dataset.delete(stale)
     return stale
+
+
+def item_for(project: Path, tid: str, expected: str | None) -> dict | None:
+    """The dataset item for the ticket's current packet, with `expected` as given."""
+    ppath = project / "traces" / "verdict" / f"{tid}.input.md"
+    vpath = project / "traces" / "verdict" / f"{tid}.json"
+    if not ppath.exists():
+        return None
+    text = ppath.read_text(encoding="utf-8")
+    sha = schemas.sha256(ppath.read_bytes())
+    verdict = json.loads(vpath.read_text(encoding="utf-8")) if vpath.exists() else None
+    return {"id": item_id(sha), "ticket": tid, "packet": text, "packet_arm": schemas.Packet.parse(text).arm, "packet_sha": sha,
+            "expected": expected, "verdict": verdict}
+
+
+def record_decision(project: Path, tid: str, decision: str) -> str:
+    """Gate 2 happened: append or replace the Opik dataset item for this packet with the decision
+    as `expected`. No model call. Returns one line saying what happened."""
+    item = item_for(project, tid, decision)
+    if item is None:
+        return f"dataset: no packet for {tid}, nothing recorded"
+    client = runner.opik_client()
+    if client is None:
+        return f"dataset: skipped ({runner.opik_status()[1]})"
+    name = f"verdict-packets-{project.name}"
+    client.get_or_create_dataset(name=name).insert([item])
+    return f"dataset: {name} item {item['id']} expected={decision}"
 
 
 # --- one run ------------------------------------------------------------------------------

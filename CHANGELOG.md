@@ -36,6 +36,39 @@ every item; each slice is one tag (v0.6.3-s1, -s2, -s3), v0.6.3 on the last.
   `runner.py` and `render_verdict.py` share it.
 - `tests/` — 9 new tests.
 
+### Slice 2 — runner behaves like a runner (v0.6.3-s2)
+
+- `scripts/runner.py` — **branch in place by default**: `ticket/<id>` checked out in the main
+  checkout (tree must be clean; original branch restored at the end); `--parallel` keeps a
+  worktree under `.worktrees/<id>/`, listed in `.git/info/exclude`, removed by the board's ship
+  (E9). **Build skipped** when the ticket is `in_review` and the branch carries the
+  `test(<id>)`, `feat(<id>)` and close-out commits: straight to CI + verdict (E1). **The build
+  session ends at the close-out**: `--append-system-prompt` says so, the session streams
+  (`--output-format stream-json`), and once the status line is committed any
+  further tool call is logged on the ticket as `### [runner] … — orbit after close-out: <cmd>`
+  (committed; the verdict shows it as a C-warn), the session is terminated, and the runner
+  proceeds. Permission denials are fatal (exit 4) only when the close-out was not reached (E2).
+  **Phase lines** `[runner hh:mm:ss +m:ss] branch|worktree · ci-pre · build attempt n · tests
+  commit · feat commit · build close-out · ci · verdict · close-out`, the builder's text and tool
+  calls streamed under them. **Board re-rendered into the main checkout after every phase**,
+  from the worktree's kanban under `--parallel` (E7). **Build traced to Opik** per attempt: input
+  = ticket + plan ACs, output = commits + CI + close-out/orbit/denials, metadata = attempt, cost,
+  seconds per phase. **Gate 2 decision recorded**: `verdict_eval.record_decision` appends or
+  replaces the Opik dataset item for the packet with expected = the decision; no model call
+  (E10). **`--override backend=<x>|scrutiny=<y>`** restamps the plan, marks the derivation as
+  overridden, appends the plan Log `router miss` entry, records the miss in
+  `traces/grill-misses.jsonl` with the signals, commits (E8).
+- `scripts/kanban_ops.py` — new. The writes a human made by hand: `append_log`, `set_status`,
+  `override_plan`, `commit`. The one Log-entry writer; runner and board use it.
+- `scripts/render_board.py` — Gate 1 (the plan row) shows the routing stamp and the rule that
+  produced it, as the grill wrote them; `main(root, out_path)` renders elsewhere.
+- `scripts/schemas.py` — `RoutingStamp.rules`, `.values`, `.rule(field)`.
+- `scripts/verdict_checks.py` — `orbit after close-out` Log entries become C-warns.
+- `skills/build/SKILL.md` — branch location is the runner's choice; the session ends at the
+  status line.
+- `tests/fixtures/fake_claude.py` — a stand-in `claude` that plays a stream-json scenario.
+- `tests/` — 7 new tests.
+
 ## 0.6.2.1 — 2026-09-03
 
 Patch. The headless build session the runner spawns could not run shell commands: it printed

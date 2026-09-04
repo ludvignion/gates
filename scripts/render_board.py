@@ -103,12 +103,25 @@ def progress_html(records: list[dict]) -> str:
     return "".join(parts) or "<p>no plans</p>"
 
 
-def main(root: Path) -> None:
+def stamp_line(plan_text: str) -> str:
+    """Gate 1 shows the routing stamp and the rule that produced it, as the grill wrote them."""
+    st = schemas.RoutingStamp.parse(plan_text)
+    if not (st.scrutiny or st.backend):
+        return ""
+    parts = [f"{f}: {getattr(st, f)}" + (f" ({st.rule(f)})" if st.rule(f) else "") for f in ("scrutiny", "backend") if getattr(st, f)]
+    sig = ", ".join(f"{k}={v}" for k, v in st.values)
+    return " · ".join(parts) + (f" · signals {sig}" if sig else "")
+
+
+def main(root: Path, out_path: Path | None = None) -> None:
+    """Render root/kanban into root/traces/board.html, or into `out_path` (the runner renders a
+    worktree's kanban into the main checkout)."""
     kanban = root / "kanban"
     if not kanban.is_dir():
         return
     rows = _fm.tickets(kanban)
     plans = {p.stem.split(".")[0]: _fm.read(p) for p in kanban.rglob("*.plan.md")}
+    plan_texts = {p.stem.split(".")[0]: p.read_text() for p in kanban.rglob("*.plan.md")}
     cols = {s: [] for s in STATUSES}
     edges = []
     for p, fm, body in rows:
@@ -127,21 +140,23 @@ def main(root: Path) -> None:
         col_html += f'<div class="col"><h3 style="color:{COLORS[s]}">{s} ({len(cols.get(s, []))})</h3><ul>{items}</ul></div>'
     plan_html = "".join(
         f"<li>Brief {k}: {html.escape(v.get('status', '?'))}"
-        f"{' — approved ' + html.escape(v['approved']) if v.get('approved') else ''}</li>"
+        f"{' — approved ' + html.escape(v['approved']) if v.get('approved') else ''}"
+        f"{'<div class=stamp>' + html.escape(stamp_line(plan_texts[k])) + '</div>' if stamp_line(plan_texts[k]) else ''}</li>"
         for k, (v, _) in sorted(plans.items(), key=lambda kv: _plan_key(kv[0]))
     )
     out = f"""<!doctype html><meta charset=utf-8><title>Board</title>
 <style>body{{font-family:system-ui;margin:2rem}}.cols{{display:flex;gap:1rem}}.col{{flex:1;background:#f6f6f6;padding:.5rem 1rem;border-radius:8px}}ul{{padding-left:1rem}}
 .plan{{margin:0 0 1rem}}.row{{font-weight:600}}.bar{{display:flex;height:.6rem;width:100%;max-width:40rem;background:#e4e4e4;border-radius:4px;overflow:hidden;margin:.3rem 0}}
-.bar .done{{background:{COLORS["done"]}}}.bar .review{{background:{COLORS["in_review"]}}}.acs{{font-size:.9em;color:#444}}</style>
+.bar .done{{background:{COLORS["done"]}}}.bar .review{{background:{COLORS["in_review"]}}}.acs{{font-size:.9em;color:#444}}.stamp{{font-size:.85em;color:#555}}</style>
 <h1>Board</h1><h2>Plans</h2><ul>{plan_html}</ul>
 <h2>Progress</h2>{progress_html(progress(plans, rows))}
 <h2>Tickets</h2><div class=cols>{col_html}</div>
 <h2>Dependencies</h2><pre class="mermaid">{html.escape(mermaid)}</pre>
 <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({{startOnLoad:true}});</script>"""
-    (root / "traces").mkdir(exist_ok=True)
-    (root / "traces" / "board.html").write_text(out)
-    print("traces/board.html")
+    target = out_path or root / "traces" / "board.html"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(out)
+    print(target if out_path else "traces/board.html")
 
 
 if __name__ == "__main__":

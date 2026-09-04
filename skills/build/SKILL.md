@@ -10,16 +10,14 @@ argument-hint: "<ticket id, e.g. 1.2>"
 ---
 
 # Build
-Input: `kanban/tickets/<id>.<slug>.md`. Output: commits on branch `ticket/<id>` inside the
-ticket worktree `../<repo>-<id>` (or on a normal branch under `backend: session`), plus ticket
-`## Log` entries.
+Input: `kanban/tickets/<id>.<slug>.md`. Output: commits on branch `ticket/<id>` (checked out by
+the runner, in place or in a worktree), plus ticket `## Log` entries.
 
 ## Sequence
-1. **Worktree check.** `git rev-parse --abbrev-ref HEAD` must be `ticket/<id>`. If not, stop:
-   `runner.py` creates the worktree; by hand it is `git worktree add -b ticket/<id> ../<repo>-<id>`.
-   Never build on the main checkout — parallel tickets share it.
-   Exception: if the parent plan is stamped `backend: session`, a normal branch named
-   `ticket/<id>` in the main checkout is allowed; the rest of the sequence applies unchanged.
+1. **Branch check.** `git rev-parse --abbrev-ref HEAD` must be `ticket/<id>`. If not, stop:
+   `runner.py` checks the branch out (in place by default, under `.worktrees/<id>/` with
+   `--parallel`); by hand it is `git checkout -b ticket/<id>`. Where the branch lives is the
+   runner's choice, not yours; never switch branches or touch another checkout.
    Under `scrutiny: light` there is no per-ticket verdict — close-out still applies, and the
    whole branch gets one verdict before ship.
 2. **Gate check.** Open the parent `<n>.plan.md`. If it has no `approved:` line, stop and say so.
@@ -46,8 +44,10 @@ ticket worktree `../<repo>-<id>` (or on a normal branch under `backend: session`
     pack don't resolve it; the reason line must name the AC and the question — it feeds grill
     tuning. BLOCKED = cannot finish for a reason outside the ticket (dependency, access, baseline).
     On either, stop immediately: do not commit implementation, do not guess.
-    Then print the worktree path (or branch), the commit list, and the one-line command to run
-    the thing.
+    Then print the branch, the commit list, and the one-line command to run the thing.
+    **The session ends here.** The status line is the last write and the report is the last
+    output: no tool call after it. Under the runner every call after the close-out commit is
+    logged as `orbit after close-out` and the session is terminated.
 
 ## After compaction
 If context was compacted mid-build, the re-anchor hook injects the active ticket. Re-read the
@@ -66,6 +66,6 @@ Append `### [build] — finding: ...` to the ticket. Do not touch it. The hook w
 - Self-report test status. Run `make ci`.
 - Add `pytest.skip`, `xfail`, or `only` without a linked finding.
 - Commit implementation before the test commit.
-- Build outside `../<repo>-<id>` (except `backend: session`), or remove the worktree — the human
-  does that after merge.
+- Switch branches, create or remove a worktree, or merge — the runner and the board do that.
+- Keep working after the status line.
 - Review your own work. That is `/verdict`, in a fresh session.

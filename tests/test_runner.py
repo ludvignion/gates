@@ -286,33 +286,42 @@ class RunnerSeatTest(unittest.TestCase):
             self.assertIn(s, r.stdout)
 
 
-FAKE_CLAUDE = """#!/bin/sh
-# stand-in claude: records the call, prints the envelope from $FAKE_CLAUDE_ENVELOPE
-echo "$*" >> "$FAKE_CLAUDE_LOG"
-[ -n "$FAKE_CLAUDE_BREAK" ] && rm -f green   # a build that leaves ci red
-cat "$FAKE_CLAUDE_ENVELOPE"
-"""
+FAKE_CLAUDE = REPO / "tests" / "fixtures" / "fake_claude.py"
+GIT_ID = ["-c", "user.email=t@t", "-c", "user.name=t"]
+
+
+def closeout_steps(tid: str = "1.1") -> list[dict]:
+    """What a well-behaved build does: tests commit, feat commit, close-out (status line, tree clean)."""
+    return [
+        {"text": "Tests first."},
+        {"cmd": f"printf 'def test_run():\\n    \"\"\"AC-1\"\"\"\\n    assert True\\n' > tests/test_run.py && git {' '.join(GIT_ID)} add -A && git {' '.join(GIT_ID)} commit -q -m 'test({tid}): ACs as tests'"},
+        {"cmd": f"printf 'def run(x):\\n    return x + 1\\n' > src/app/run.py && git {' '.join(GIT_ID)} add -A && git {' '.join(GIT_ID)} commit -q -m 'feat({tid}): impl'"},
+        {"cmd": f"sed -i 's/^status: .*/status: in_review/' kanban/tickets/{tid}.tracer-bullet.md && printf '### [build] 2026-09-04 10:00 — close-out\\n- src/app/run.py: AC-1\\n### [build] 2026-09-04 10:01 — status: DONE\\nbuilt\\n' >> kanban/tickets/{tid}.tracer-bullet.md && git {' '.join(GIT_ID)} add -A && git {' '.join(GIT_ID)} commit -q -m 'chore({tid}): close-out log, status in_review'"},
+    ]
 
 
 class RunnerBuildSeatTest(unittest.TestCase):
-    """The headless build session: allowlisted shell, prompts denied not hung, denial stops the run."""
+    """The build seat: streamed session, close-out enforcement, in-place branch, phases, override."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.repo = self.tmp / "proj"
         for rel, text in {
-            "kanban/plans/1.plan.md": PLAN, "kanban/tickets/1.1.tracer-bullet.md": TICKET,
-            "Makefile": "ci:\n\t@test -f green\n",
+            "kanban/plans/1.plan.md": PLAN, "kanban/tickets/1.1.tracer-bullet.md": TICKET.replace("status: in_review", "status: ready"),
+            "docs/domain-pack/charter.md": CHARTER, "Makefile": "ci:\n\t@test -f green\n",
+            "src/app/run.py": "def run(x):\n    return x\n", "tests/test_run.py": "def test_run():\n    assert True\n",
+            ".claude/settings.json": "{}\n", ".gitignore": "traces/board.html\ntraces/verdict/*.html\n",
         }.items():
             (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
             (self.repo / rel).write_text(text)
-        (self.repo / "green").write_text("")  # baseline ci green; the fake build turns it red
+        (self.repo / "green").write_text("")
         git(self.repo, "init", "-q", "-b", "main"); git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "base")
         bin_dir = self.tmp / "bin"; bin_dir.mkdir()
-        (bin_dir / "claude").write_text(FAKE_CLAUDE); (bin_dir / "claude").chmod(0o755)
-        self.log = self.tmp / "calls.log"; self.envelope = self.tmp / "envelope.json"
-        self.env = mock.patch.dict(os.environ, {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-                                                "FAKE_CLAUDE_LOG": str(self.log), "FAKE_CLAUDE_ENVELOPE": str(self.envelope)})
+        (bin_dir / "claude").write_text(f"#!/bin/sh\nexec {sys.executable} {FAKE_CLAUDE} \"$@\"\n"); (bin_dir / "claude").chmod(0o755)
+        self.log = self.tmp / "calls.log"; self.envelope = self.tmp / "envelope.json"; self.scenario = self.tmp / "scenario.json"
+        self.scenario.write_text(json.dumps(closeout_steps()))
+        self.env = mock.patch.dict(os.environ, {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_CLAUDE_LOG": str(self.log),
+                                                "FAKE_CLAUDE_ENVELOPE": str(self.envelope), "FAKE_CLAUDE_SCENARIO": str(self.scenario)})
         self.env.start()
         for k in runner.OPIK_ENV:
             os.environ.pop(k, None)
@@ -328,49 +337,157 @@ class RunnerBuildSeatTest(unittest.TestCase):
             rc = runner.main()
         return rc, out.getvalue()
 
-    def test_build_cmd_is_headless_with_shell_allowlist(self):
+    def _calls(self) -> list[str]:
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def _branch(self) -> str:
+        return subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.repo, capture_output=True, text=True).stdout.strip()
+
+    def _subjects(self, ref: str = "ticket/1.1") -> list[str]:
+        return subprocess.run(["git", "log", f"main..{ref}", "--format=%s"], cwd=self.repo, capture_output=True, text=True).stdout.split("\n")
+
+    def test_build_cmd_is_headless_streamed_with_shell_allowlist(self):
         cmd = runner.build_cmd("1.1", "sonnet")
         self.assertEqual(cmd[:3], ["claude", "-p", "/build 1.1"])
         self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "acceptEdits")
         self.assertEqual(cmd[cmd.index("--permission-prompts") + 1], "none")
-        self.assertEqual(cmd[cmd.index("--output-format") + 1], "json")
+        self.assertEqual(cmd[cmd.index("--output-format") + 1], "stream-json"); self.assertIn("--verbose", cmd)
+        self.assertIn("ends at the build close-out", cmd[cmd.index("--append-system-prompt") + 1])
         allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
         self.assertEqual(tuple(allowed), runner.BUILD_ALLOWED_TOOLS)
         for tool in ("Bash(make *)", "Bash(uv *)", "Bash(git *)", "Bash(pytest *)"):
             self.assertIn(tool, allowed)
         self.assertNotIn("--dangerously-skip-permissions", cmd)
 
-    def test_permission_denial_stops_without_retry(self):
-        self.envelope.write_text(json.dumps({
-            "type": "result", "is_error": False, "num_turns": 4, "result": "Blocked on git add approval",
-            "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "git add -A"}}]}))
-        (self.repo / "green").unlink()  # ci would be red too: the denial must win
+    def test_full_run_in_place_orbit_logged_and_build_skipped_on_rerun(self):
+        """E1, E2, E7, E9, E11 in one run: branch in place, build streamed, orbit after close-out
+        terminated and logged, verdict artifacts committed, board in the main checkout, branch
+        restored; a second run skips the build."""
+        steps = closeout_steps() + [{"cmd": "cat .claude/settings.json"}, {"cmd": "ls hooks"}]
+        self.scenario.write_text(json.dumps(steps))
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        for ph in ("] branch", "] ci-pre", "] build attempt 1", "] tests commit", "] feat commit", "] build close-out", "] ci", "] verdict", "] close-out"):
+            self.assertIn(ph, out)
+        self.assertLess(out.index("] tests commit"), out.index("] feat commit")); self.assertLess(out.index("] feat commit"), out.index("] build close-out"))
+        self.assertIn("  Tests first.", out)  # builder text streamed under the phase line
+        self.assertIn("  ! orbit after close-out: $ cat .claude/settings.json — session terminated", out)
+        self.assertNotIn("ls hooks", out)  # terminated before the second orbit call
+        self.assertEqual(len(self._calls()), 2)  # one build, one verdict
+        self.assertEqual(self._branch(), "main")  # restored
+        subjects = self._subjects()
+        self.assertIn("test(1.1): ACs as tests", subjects); self.assertIn("feat(1.1): impl", subjects)
+        self.assertIn("docs(1.1): runner — orbit after close-out", subjects); self.assertIn("docs(1.1): verdict ship", subjects)
+        ticket = subprocess.run(["git", "show", "ticket/1.1:kanban/tickets/1.1.tracer-bullet.md"], cwd=self.repo, capture_output=True, text=True).stdout
+        self.assertIn("### [runner] ", ticket); self.assertIn("— orbit after close-out: $ cat .claude/settings.json", ticket)
+        self.assertTrue((self.repo / "traces" / "board.html").exists())  # E7: the main checkout's board
+        self.assertIn("dataset: skipped (untraced (OPIK_URL_OVERRIDE unset))", out)
+        self.assertEqual(subprocess.run(["git", "status", "--porcelain"], cwd=self.repo, capture_output=True, text=True).stdout.strip(), "")
+        # second run: in_review with the commits → no build session
+        self.log.unlink()
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("] build skipped: in_review with tests/feat/close-out commits", out)
+        self.assertEqual(len(self._calls()), 1)
+        self.assertNotIn("stream-json", self._calls()[0])
+
+    def test_permission_denial_before_closeout_is_fatal(self):
+        self.scenario.write_text(json.dumps([{"text": "Blocked on git add approval"}]))
+        self.envelope.write_text(json.dumps({"type": "result", "is_error": False, "num_turns": 4, "result": "Blocked on git add approval",
+                                             "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "git add -A"}}]}))
+        self.scenario.write_text(json.dumps([{"text": "Blocked on git add approval"}, {"cmd": "rm -f green"}]))  # ci red too: the denial must win
         rc, out = self._main()
         self.assertEqual(rc, 4, out)
-        self.assertTrue(out.startswith("[runner] opik: untraced (OPIK_URL_OVERRIDE unset)\n"), out[:80])
         self.assertIn("[runner] permission denied: Bash(git add -A)", out)
         self.assertNotIn("ci red", out)
-        self.assertEqual(len(self.log.read_text().splitlines()), 1)  # one build call, no retry
-        self.assertIn("--permission-prompts none", self.log.read_text())
+        self.assertEqual(len(self._calls()), 1)  # no retry
+        self.assertEqual(self._branch(), "main")
 
-    def test_clean_build_with_red_ci_still_retries(self):
-        self.envelope.write_text(json.dumps({"type": "result", "is_error": False, "num_turns": 2, "result": "done", "permission_denials": []}))
-        with mock.patch.dict(os.environ, {"FAKE_CLAUDE_BREAK": "1"}):
-            rc, out = self._main()
-        self.assertEqual(rc, 1, out)  # retry cap: the fake build never turns ci green
+    def test_permission_denial_after_closeout_is_ignored(self):
+        self.envelope.write_text(json.dumps({"type": "result", "is_error": False, "num_turns": 6, "result": "done",
+                                             "permission_denials": [{"tool_name": "WebFetch", "tool_input": {"url": "x"}}]}))
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[runner] permission denied after close-out, ignored: WebFetch", out)
+        self.assertIn("] verdict", out)
+
+    def test_red_ci_after_build_retries_then_skips_build(self):
+        self.scenario.write_text(json.dumps(closeout_steps() + [{"cmd": "rm -f green && git " + " ".join(GIT_ID) + " commit -qam 'chore(1.1): drop green'"}]))
+        rc, out = self._main()
+        self.assertEqual(rc, 1, out)
         self.assertEqual(out.count("[runner] ci red"), 2)
-        self.assertEqual(len(self.log.read_text().splitlines()), 2)
-        self.assertNotIn("permission denied", out)
+        self.assertEqual(len(self._calls()), 1)  # attempt 2 skipped the build: in_review with the commits
+        self.assertIn("build skipped", out)
 
-    def test_build_call_parses_envelope(self):
-        self.envelope.write_text(json.dumps({"result": "ok", "permission_denials": [{"tool_name": "WebFetch", "tool_input": {"url": "x"}}, "junk"]}))
+    def test_parallel_uses_worktrees_dir(self):
+        rc, out = self._main("--parallel")
+        self.assertEqual(rc, 0, out)
+        self.assertTrue((self.repo / ".worktrees" / "1.1" / "kanban").is_dir())
+        self.assertIn(".worktrees/", (self.repo / ".git" / "info" / "exclude").read_text())
+        self.assertEqual(self._branch(), "main")
+        self.assertIn("] worktree", out)
+        self.assertTrue((self.repo / "traces" / "board.html").exists())
+        self.assertIn("in_review (1)", (self.repo / "traces" / "board.html").read_text())  # rendered from the worktree's kanban
+
+    def test_dirty_tree_refused(self):
+        (self.repo / "Makefile").write_text("ci:\n\ttrue\n")  # a modified tracked file; untracked scratch does not count
+        with self.assertRaises(SystemExit) as cm:
+            self._main()
+        self.assertIn("dirty", str(cm.exception))
+
+    def test_override_restamps_plan_and_logs_router_miss(self):
+        rc, out = self._main("--override", "scrutiny=full")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[runner] override: plan 1 scrutiny light → full", out)
+        plan = (self.repo / "kanban/plans/1.plan.md").read_text()
+        self.assertIn("scrutiny: full   # overridden by human, was light", plan)
+        self.assertIn("### [human] ", plan); self.assertIn("— router miss: scrutiny light → full", plan)
+        miss = json.loads((self.repo / "traces/grill-misses.jsonl").read_text().splitlines()[-1])
+        self.assertEqual((miss["plan"], miss["field"], miss["from"], miss["to"], miss["signals"]["spend"]), ("1", "scrutiny", "light", "full", "false"))
+        self.assertIn("docs(plan 1): router miss — scrutiny light → full", subprocess.run(["git", "log", "--format=%s", "main"], cwd=self.repo, capture_output=True, text=True).stdout)
+        self.assertIn("scrutiny: full (overridden by human, was light)", (self.repo / "traces/board.html").read_text())
+        with self.assertRaises(ValueError):
+            runner.kanban_ops.override_plan(self.repo, "1", "tickets", "9")
+
+    def test_build_call_reads_envelope_and_orbit(self):
+        self.envelope.write_text(json.dumps({"type": "result", "result": "ok", "total_cost_usd": 0.7, "permission_denials": [{"tool_name": "WebFetch", "tool_input": {"url": "x"}}, "junk"]}))
+        self.scenario.write_text(json.dumps([{"text": "hi"}]))
         with contextlib.redirect_stdout(io.StringIO()):
             call = runner.build(self.repo, "1.1", "sonnet")
-        self.assertEqual((call.returncode, call.result, call.denied), (0, "ok", "WebFetch"))
-        self.envelope.write_text("not an envelope")
+        self.assertEqual((call.returncode, call.result, call.denied, call.closed_out, call.orbit, call.cost_usd), (0, "ok", "WebFetch", False, (), 0.7))
+        git(self.repo, "checkout", "-q", "-b", "ticket/1.1")
+        self.scenario.write_text(json.dumps(closeout_steps() + [{"cmd": "echo probe"}]))
+        marks = []
         with contextlib.redirect_stdout(io.StringIO()):
-            call = runner.build(self.repo, "1.1", "sonnet")
-        self.assertEqual((call.denials, call.result), ((), "not an envelope"))
+            call = runner.build(self.repo, "1.1", "sonnet", phase=marks.append)
+        self.assertEqual(marks, ["tests commit", "feat commit", "build close-out"])
+        self.assertEqual((call.closed_out, call.orbit), (True, ("$ echo probe",)))
+
+
+class RecordDecisionTest(unittest.TestCase):
+    def test_record_decision_upserts_dataset_item(self):
+        project = REPO / "tests" / "fixtures" / "project"
+        with mock.patch.dict(os.environ, {k: "" for k in runner.OPIK_ENV}):
+            for k in runner.OPIK_ENV:
+                os.environ.pop(k, None)
+            self.assertEqual(verdict_eval.record_decision(project, "1.1", "reject"), "dataset: skipped (untraced (OPIK_URL_OVERRIDE unset))")
+            self.assertEqual(verdict_eval.record_decision(project, "9.9", "ship"), "dataset: no packet for 9.9, nothing recorded")
+        calls = {}
+
+        class Dataset:
+            def insert(self, items): calls["items"] = items
+
+        class Client:
+            def get_or_create_dataset(self, name): calls["name"] = name; return Dataset()
+
+        fake = types.ModuleType("opik"); fake.Opik = Client
+        with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}):
+            line = verdict_eval.record_decision(project, "1.1", "ship")
+        item = calls["items"][0]
+        self.assertEqual(calls["name"], "verdict-packets-project")
+        self.assertEqual((item["ticket"], item["expected"], item["verdict"]["decision"]), ("1.1", "ship", "reject"))
+        self.assertEqual(item["id"], verdict_eval.item_id(item["packet_sha"]))
+        self.assertIn(f"item {item['id']} expected=ship", line)
 
 
 class VerdictEvalTest(unittest.TestCase):

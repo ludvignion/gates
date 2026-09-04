@@ -125,5 +125,25 @@ class StopHookTest(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+class StampTest(unittest.TestCase):
+    def test_gate_1_shows_stamp_and_rule(self):
+        text = (FIXTURE / "plans" / "1.plan.md").read_text()
+        st = schemas.RoutingStamp.parse(text)
+        self.assertEqual((st.scrutiny, st.backend), ("light", "session"))
+        self.assertEqual(st.rule("scrutiny"), "full iff spend or partner_facing")
+        self.assertEqual(dict(st.values)["spend"], "false")
+        line = render_board.stamp_line(text)
+        self.assertIn("scrutiny: light (full iff spend or partner_facing)", line)
+        self.assertIn("signals spend=false", line)
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            shutil.copytree(FIXTURE, tmp / "kanban")
+            render_board.main(tmp, tmp / "elsewhere" / "board.html")
+            self.assertIn("scrutiny: light (full iff spend or partner_facing)", (tmp / "elsewhere" / "board.html").read_text())
+            self.assertFalse((tmp / "traces" / "board.html").exists())
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
