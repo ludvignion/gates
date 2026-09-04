@@ -1,0 +1,55 @@
+{
+ "ticket": "1.2",
+ "decision": "reject",
+ "held": [
+  "AC-1",
+  "charter-1",
+  "charter-2"
+ ],
+ "findings": [
+  {
+   "id": "C1",
+   "severity": "block",
+   "status": "open",
+   "ac": "AC-2",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "no test names AC-2"
+  },
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "open",
+   "ac": "AC-2",
+   "charter": null,
+   "home": null,
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": "python3 -c \"from pipeline.match.run import match; print(match({'name': 'z'}, []))\"",
+   "waived_by": null,
+   "text": "AC-2 unmet: a record with no candidate returns None and is dropped, src/pipeline/match/run.py:6; its own slice"
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.6.3",
+  "prompt_sha": "44c7b7ca97e9620c685d79f7c9174cd40c65b934303208d82b24f663ff3cd1ff",
+  "packet_sha": "74da0f38f3771ba75a6a3100dd27246e21e1b3562358126d6c3c6c639ab92a6d",
+  "cost_usd": 0.041,
+  "tokens": {
+   "input_tokens": 9000,
+   "output_tokens": 400
+  },
+  "seconds": 31.0,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}

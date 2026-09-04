@@ -286,6 +286,24 @@ def main(root: Path, tid: str, vendor_name: str = DEFAULT_VENDOR, cost_usd: floa
     return violations
 
 
+def view(root: Path, tid: str) -> Path | None:
+    """The Gate 2 page from what is on disk, writing nothing but the html: no stamp, no model call
+    (the board serves this when only the JSON is there). None when there is no verdict."""
+    vpath = root / "traces" / "verdict" / f"{tid}.json"
+    if not vpath.exists():
+        return None
+    v = schemas.Verdict.load(vpath)
+    ppath = root / "traces" / "verdict" / f"{tid}.input.md"
+    packet = schemas.Packet.load(ppath) if ppath.exists() else schemas.Packet(fm={}, sections=())
+    spath = summary_path(root, tid)
+    try:
+        summary = json.loads(spath.read_text(encoding="utf-8")) if spath.exists() else {"error": "no summary yet"}
+    except json.JSONDecodeError:
+        summary = {"error": "unreadable summary"}
+    return render(root, tid, v, [], summary, recommendations(v, tickets_of(root)), closeout_entry(root, packet),
+                  packet.section("Diff stat").strip("`\n "))
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("ticket")

@@ -16,8 +16,14 @@ def now() -> str:
     return time.strftime("%Y-%m-%d %H:%M")
 
 
+def is_ticket_file(name: str, tid: str) -> bool:
+    """`<tid>.<slug>.md` and not a child `<tid>.<n>.<slug>.md`: slugs never start with a digit."""
+    rest = name[len(tid) + 1:] if name.startswith(tid + ".") else ""
+    return bool(rest) and name.endswith(".md") and not name.endswith(".plan.md") and not rest[0].isdigit()
+
+
 def find_ticket(root: Path, tid: str) -> Path | None:
-    return next((p for p in sorted((root / "kanban").rglob(f"{tid}.*.md")) if not p.name.endswith(".plan.md")), None)
+    return next((p for p in sorted((root / "kanban").rglob("*.md")) if is_ticket_file(p.name, tid)), None)
 
 
 def find_plan(root: Path, n: str) -> Path | None:

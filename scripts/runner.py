@@ -138,10 +138,10 @@ def ci(cwd: Path) -> bool:
 
 def build_status(cwd: Path, tid: str) -> str:
     """Last build status line in the ticket Log; DONE if the builder wrote none."""
-    tickets = sorted((cwd / "kanban" / "tickets").glob(f"{tid}.*.md"))
-    if not tickets:
+    ticket = kanban_ops.find_ticket(cwd, tid)
+    if ticket is None:
         return "DONE"
-    found = STATUS_RE.findall(tickets[0].read_text())
+    found = STATUS_RE.findall(ticket.read_text())
     return found[-1] if found else "DONE"
 
 
@@ -284,10 +284,10 @@ def closed_out(cwd: Path, tid: str) -> bool:
     """The build reached its close-out: the committed ticket (HEAD) carries the status line.
     Committed state only: the builder's next command may already be running while the runner
     reads the previous result, so the working tree is never consulted here."""
-    tickets = sorted((cwd / "kanban" / "tickets").glob(f"{tid}.*.md"))
-    if not tickets:
+    ticket = kanban_ops.find_ticket(cwd, tid)
+    if ticket is None:
         return False
-    rel = tickets[0].relative_to(cwd).as_posix()
+    rel = ticket.relative_to(cwd).as_posix()
     committed = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=cwd, capture_output=True, text=True).stdout
     return bool(STATUS_RE.search(committed))
 

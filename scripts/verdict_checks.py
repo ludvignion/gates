@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import _fm  # noqa: E402
+import kanban_ops  # noqa: E402
 import lint_kanban  # noqa: E402
 import schemas  # noqa: E402
 
@@ -41,10 +42,10 @@ def default_base(root: Path) -> str:
 
 
 def find_ticket(root: Path, tid: str) -> Path:
-    m = [p for p in (root / "kanban").rglob(f"{tid}.*.md") if not p.name.endswith(".plan.md")]
-    if not m:
+    p = kanban_ops.find_ticket(root, tid)
+    if p is None:
         raise SystemExit(f"no ticket {tid} under kanban/")
-    return m[0]
+    return p
 
 
 def finding(cid: str, severity: str, text: str, ac: str | None = None, repro: str | None = None) -> dict:

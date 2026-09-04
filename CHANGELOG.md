@@ -69,6 +69,38 @@ every item; each slice is one tag (v0.6.3-s1, -s2, -s3), v0.6.3 on the last.
 - `tests/fixtures/fake_claude.py` — a stand-in `claude` that plays a stream-json scenario.
 - `tests/` — 7 new tests.
 
+### Slice 3 — the board acts (v0.6.3-s3, v0.6.3)
+
+- `scripts/board.py` — new. `board.py serve [--port 8765]` in a project: a stdlib HTTP server,
+  localhost only, no auth, refuses a dirty tree. Serves the board with an actions panel and the
+  Gate 2 pages (rendered from the JSON on demand, nothing else written). Every action is the
+  code path runner and lint already use: **Gate 1** approve (refused without the routing
+  stamp; `approved: <who> <date>`, `[human]` Log entry, commit) and override (`kanban_ops.
+  override_plan`, as `runner --override`). **Gate 2** ship (refused past an open block that is
+  neither waived nor a child; status done, Log entry listing the open findings, commit on the
+  ticket branch, dataset item expected=ship, `merge --no-ff` into the current branch, push when
+  a remote exists, branch deleted, `.worktrees/<id>/` removed), reject with reason (status
+  in_progress, commit, dataset item expected=reject), child from finding (a `<id>.<n>` ticket
+  from the finding's text, citation and repro, `depends_on` the parent, the parent's `writes`;
+  the finding gets `spawn_child` and `home`; Log entries on both; the ticket's format is
+  `templates/ticket.md`), home a warn (`— finding: … home: <id>` entry lint reads), waive with
+  reason (`[human] — waive F# by <who>: …`, the entry lint reads; `waived_by` set), rerun.
+  **Run** a ticket, or a plan: tickets in `depends_on` order, one runner each, pausing at every
+  Gate 2 until the board ships the ticket; the runner's phase lines stream live from
+  `traces/runs/<id>.log`. Every Log entry the board writes carries the `[human]` role with
+  `who` in the head.
+- `scripts/kanban_ops.py` — `find_ticket` no longer matches a child's file for its parent
+  (`1.2.1.*.md` is not `1.2`); `verdict_checks` and `runner` resolve tickets through it.
+- `scripts/render_verdict.py` — `view(root, tid)`: the page from disk, no stamp, no call.
+- `tests/fixtures/project/` — ticket 1.2 in_review with a rejected verdict whose block spawns a
+  child; 1.1 is in_review (its verdict rejects). The recommendation and the child action are
+  tested end to end on a git copy.
+- `tests/test_board.py` — 9 tests; 1 more elsewhere.
+
+Consuming projects (project-template): pin `v0.6.3`. `make board` is now `board.py serve` for
+the acting board; `render_board.py` stays for the static page. Add `.worktrees/` to nothing:
+the runner keeps it in `.git/info/exclude`. Human `/verdict` sessions still work as before.
+
 ## 0.6.2.1 — 2026-09-03
 
 Patch. The headless build session the runner spawns could not run shell commands: it printed

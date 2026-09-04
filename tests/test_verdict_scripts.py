@@ -433,6 +433,16 @@ class VerdictSchemaTest(unittest.TestCase):
             {"id": "F1", "severity": "block"}]}), "blind")[0].decision, "reject")
 
 
+class TicketFileTest(unittest.TestCase):
+    def test_find_ticket_ignores_children(self):
+        import kanban_ops
+        self.assertTrue(kanban_ops.is_ticket_file("1.2.match-stage.md", "1.2"))
+        self.assertFalse(kanban_ops.is_ticket_file("1.2.1.ordered-lists.md", "1.2"))
+        self.assertTrue(kanban_ops.is_ticket_file("1.2.1.ordered-lists.md", "1.2.1"))
+        self.assertFalse(kanban_ops.is_ticket_file("1.plan.md", "1")); self.assertFalse(kanban_ops.is_ticket_file("1.21.x.md", "1.2"))
+        self.assertEqual(kanban_ops.find_ticket(REPO / "tests" / "fixtures" / "project", "1.2").name, "1.2.match-stage.md")
+
+
 class VerdictSkillTest(unittest.TestCase):
     """skills/verdict/SKILL.md: the packet-path flow ends at the verdict JSON."""
 
@@ -472,7 +482,11 @@ class VerdictEvalFixtureTest(unittest.TestCase):
         self.assertTrue(all(v.cited(f) for f in v.findings))
         self.assertEqual(v.meta.packet_sha, schemas.sha256(ppath.read_bytes()))
         rows = verdict_eval.items(FIXTURE_PROJECT)
-        self.assertEqual([(r["ticket"], r["expected"]) for r in rows], [("1.1", "reject")])
+        self.assertEqual([(r["ticket"], r["expected"]) for r in rows], [("1.1", "reject"), ("1.2", "reject")])
+        v2 = schemas.Verdict.load(FIXTURE_PROJECT / "traces" / "verdict" / "1.2.json")
+        self.assertTrue(any(f.get("spawn_child") for f in v2.open_blocks()))
+        self.assertEqual(render_verdict.recommendations(v2, render_verdict.tickets_of(FIXTURE_PROJECT)),
+                         [("C1", "rework in place"), ("F1", "ship, create child 1.2.1 from F1")])
 
     def test_canned_cmd_copies_verdict(self):
         tmp = Path(tempfile.mkdtemp())
@@ -502,18 +516,18 @@ class VerdictEvalFixtureTest(unittest.TestCase):
         self.assertEqual(rc, 0, out.getvalue())
         self.assertEqual(attempts, [])
         rows = verdict_eval.score_local(verdict_eval.items(FIXTURE_PROJECT), "packet", cmd)
-        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(rows), 2)  # 1.1 and 1.2; the canned verdict answers both
         self.assertEqual(sorted(k for k in rows[0] if k not in ("ticket", "error")), sorted(verdict_eval.METRICS))
         self.assertIsNone(rows[0]["error"])
         self.assertEqual({k: rows[0][k] for k in ("block_count", "finding_count", "citation_compliance", "decision_agreement")},
                          {"block_count": 1.0, "finding_count": 2.0, "citation_compliance": 1.0, "decision_agreement": 1.0})
         self.assertGreater(rows[0]["wall_seconds"], 0.0)
         text = out.getvalue()
-        self.assertIn("1 packets, 1 with an expected decision", text)
+        self.assertIn("2 packets, 2 with an expected decision", text)
         for name in verdict_eval.METRICS:
             self.assertIn(f"{name}=", text)
         self.assertIn("decision_agreement=1.0", text)
-        self.assertIn("[eval] 1 items, 0 errors, averages over 1: block_count=1.0 finding_count=2.0 citation_compliance=1.0 decision_agreement=1.0 wall_seconds=", text)
+        self.assertIn("[eval] 2 items, 0 errors, averages over 2: block_count=1.0 finding_count=2.0 citation_compliance=1.0 decision_agreement=1.0 wall_seconds=", text)
         blind = verdict_eval.score_local(verdict_eval.items(FIXTURE_PROJECT), "blind", cmd)[0]
         self.assertEqual(blind["decision_agreement"], 1.0)  # a cited block survives the blind close-out
 

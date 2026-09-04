@@ -29,14 +29,17 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `skills/verdict/verdict-prompt.md` | the judging prompt, copied into every packet; its sha is in the verdict stamp. |
 | `scripts/verdict_prep.py` | the verdict packet: one self-contained input, `--arm blind\|packet\|repo` picks how much context. |
 | `scripts/verdict_checks.py` | mechanical verdict findings, zero model tokens; validates the written verdict for its arm. |
-| `scripts/render_verdict.py` | close-out: validate, stamp `meta` (arm, vendor, plugin_version, prompt_sha, packet_sha), gate 2 page. |
+| `scripts/render_verdict.py` | close-out and the Gate 2 page: what was built, what the reviewer said, recommended action (computed), stamp `meta`. |
 | `scripts/verdict_eval.py` | archived packets → Opik dataset; one arm × one verdict command as an Opik experiment. |
 | `scripts/verdict_canned.py` | verdict command that copies a prepared JSON to `{output}`; CI's model-free seat. |
-| `scripts/render_board.py` | progress per plan, status columns, dependency graph. Runs on every Stop. |
+| `scripts/render_board.py` | Gate 1: routing stamp with its rule, progress per plan, status columns, dependency graph. Runs on every Stop and after every runner phase. |
 | `scripts/lint_kanban.py` | CI check: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp. |
 | `scripts/grill_digest.py` | grill-misses → blind-spots the grill reads. |
 | `scripts/replay.py` | re-run grill on golden briefs, diff escalations. |
-| `scripts/runner.py` | headless build → ci → verdict state machine; `--arm`, `--verdict-cmd` pick the verdict seat. |
+| `scripts/runner.py` | headless build → ci → verdict state machine: branch in place (`--parallel` for worktrees), streamed build that ends at close-out, phase lines, board after every phase; `--arm`, `--verdict-cmd` pick the verdict seat; `--override` restamps routing. |
+| `scripts/board.py` | `board.py serve`: the board with actions — approve, override, ship, reject, child from finding, home, waive, run a ticket or a plan. Localhost, no auth. |
+| `scripts/kanban_ops.py` | the writes a human made by hand: Log entry, status, routing override, commit. The one Log writer. |
+| `scripts/vendor.py` | one shell model call and how its JSON envelope is read; runner and render_verdict share it. |
 | `templates/` | brief, plan, ticket, ADR skeletons. |
 
 `scripts/` is the runtime the skills and project Makefiles call; `tests/` tests it. Neither is
