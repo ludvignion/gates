@@ -8,7 +8,8 @@ a seat line, then the evidence sections: the ticket's ACs, Out of scope, human w
 plan's "Verdict must attack" items; the charter items; the previous verdict's blocks with their
 repro commands (the existing <id>.json is archived as <id>.prev.json first); `make ci` result;
 the mechanical findings from verdict_checks.py; tests added on the branch that name ACs; the
-diff. The arm picks the sections (schemas.Packet): blind = instructions, seat, CI, diff; packet =
+diff (files under tests/fixtures/ and files over 2000 diff lines are a stat line only). Refuses
+to build without a charter. The arm picks the sections (schemas.Packet): blind = instructions, seat, CI, diff; packet =
 everything; repo = everything plus leave to read the tree read-only. Shapes load through
 scripts/schemas.py.
 """
@@ -64,6 +65,8 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     attacks = schemas.Attacks.parse(plan_body).items
     charter_path = root / "docs" / "domain-pack" / "charter.md"
     charter = schemas.Charter.parse(charter_path.read_text(errors="ignore")).items if charter_path.exists() else ()
+    if not charter:
+        raise SystemExit(f"no charter: {charter_path.relative_to(root)} is missing or has no `## <n>. <title>` items; the verdict cannot judge without it")
     prev_path = root / "traces" / "verdict" / f"{tid}.prev.json"
     cur = root / "traces" / "verdict" / f"{tid}.json"
     if cur.exists():  # the last verdict on this ticket is the previous one; archive before the new run
@@ -72,7 +75,7 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     ci_green, ci_tail = run_ci(root) if ci else (None, "skipped (--no-ci)")
     found = vc.checks(root, tid, base, ci_green)
     rng = f"{base}...HEAD"
-    diff = vc.git(root, "diff", rng)
+    diff = fold_bulk(vc.git(root, "diff", rng))
     lines = diff.splitlines()
     if len(lines) > DIFF_CAP:
         diff = "\n".join(lines[:DIFF_CAP]) + f"\n... truncated: {len(lines) - DIFF_CAP} more lines; run `git diff {rng} -- <file>` for a file\n"
@@ -109,6 +112,35 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
 
 def build(root: Path, tid: str, base: str, ci: bool, arm: str = schemas.DEFAULT_ARM) -> str:
     return gather(root, tid, base, ci).rearm(arm).render()
+
+
+FILE_CAP = 2000  # diff lines per file; beyond this, or under tests/fixtures/, a file is a stat line only
+BULK_PREFIXES = ("tests/fixtures/",)
+
+
+def fold_bulk(diff: str) -> str:
+    """The diff with fixture files and any file over FILE_CAP diff lines reduced to one line each,
+    so an 8K-word fixture does not become 30K tokens of reviewer context."""
+    out: list[str] = []
+    chunk: list[str] = []
+    path = ""
+
+    def flush() -> None:
+        if not chunk:
+            return
+        if path.startswith(BULK_PREFIXES) or len(chunk) > FILE_CAP:
+            why = "fixture" if path.startswith(BULK_PREFIXES) else f"over {FILE_CAP} lines"
+            out.append(f"diff --git a/{path} b/{path}\n# {path}: {len(chunk)} diff lines omitted ({why}); see the diff stat\n")
+        else:
+            out.append("\n".join(chunk) + "\n")
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            flush()
+            chunk, path = [], line.split(" b/", 1)[-1] if " b/" in line else line[len("diff --git a/"):].split(" ")[0]
+        chunk.append(line)
+    flush()
+    return "".join(out)
 
 
 def _added_lines(diff: str):

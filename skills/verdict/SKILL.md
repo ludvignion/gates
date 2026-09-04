@@ -38,7 +38,9 @@ The argument is a ticket id: a human runs the verdict by hand. Three tool calls.
    the packet's frontmatter.
 3. Close out, one command: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/render_verdict.py <id>`. It
    checks the JSON against the seat (blind downgrades uncited blocks to warns; other arms
-   report them), stamps `meta`, and renders the page. Then set ticket `status` from the
+   report them; unaccounted ACs and charter items become C-warns), sets `ticket` from the
+   packet, stamps `meta` with vendor `claude-session` and cost null (a session has no cost
+   report), and renders the page. Then set ticket `status` from the
    decision (`ship` → `done`, `reject` → `in_progress`; no other value) and append to `## Log`
    `### [verdict] <timestamp> — <decision>`, one line per open block or warn:
    `- <severity> <id> <ac|charter|->: <text>`, suffixed ` → child` when `spawn_child`.

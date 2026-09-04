@@ -445,7 +445,7 @@ DECISIONS = ("ship", "reject")
 SEVERITIES = ("block", "warn", "note")
 STATUSES = ("open", "resolved")
 META_FIELDS = ("arm", "vendor", "plugin_version", "prompt_sha", "packet_sha")
-META_OPTIONAL = ("cost_usd", "tokens")  # what the vendor reported for the call; null when it reports nothing
+META_OPTIONAL = ("cost_usd", "tokens", "seconds", "opik")  # what the runner knew about the call; null when it did not
 
 
 @dataclass(frozen=True)
@@ -460,19 +460,21 @@ class VerdictMeta:
     packet_sha: str
     cost_usd: float | None = None
     tokens: dict | None = None
+    seconds: float | None = None  # wall time of the one model call
+    opik: str | None = None  # "tracing to <url>" or "untraced (<reason>)", as the runner printed it
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "VerdictMeta | None":
         if not isinstance(d, dict):
             return None
-        cost = d.get("cost_usd")
+        num = lambda x: float(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else None
         tokens = d.get("tokens")
         return cls(**{k: str(d.get(k, "")) for k in META_FIELDS},
-                   cost_usd=float(cost) if isinstance(cost, (int, float)) else None,
-                   tokens=dict(tokens) if isinstance(tokens, dict) else None)
+                   cost_usd=num(d.get("cost_usd")), tokens=dict(tokens) if isinstance(tokens, dict) else None,
+                   seconds=num(d.get("seconds")), opik=str(d["opik"]) if d.get("opik") is not None else None)
 
     def as_dict(self) -> dict:
-        return {**{k: getattr(self, k) for k in META_FIELDS}, "cost_usd": self.cost_usd, "tokens": self.tokens}
+        return {**{k: getattr(self, k) for k in META_FIELDS}, **{k: getattr(self, k) for k in META_OPTIONAL}}
 
 
 @dataclass(frozen=True)

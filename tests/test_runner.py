@@ -46,6 +46,7 @@ class RunnerSeatTest(unittest.TestCase):
         git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "feat(1.1)")
         (self.tmp / "fake_vendor.py").write_text(FAKE_VENDOR)
         self.cmd = f"{sys.executable} fake_vendor.py {{packet}} {{output}}"
+        self.verdict = lambda **kw: runner.verdict(self.tmp, "1.1", "opus", **{"template": self.cmd, "summary_model": "none", **kw})
         self.env = mock.patch.dict(os.environ, {k: "" for k in runner.OPIK_ENV})
         self.env.start()
         for k in runner.OPIK_ENV:
@@ -96,7 +97,7 @@ class RunnerSeatTest(unittest.TestCase):
             "text = sys.stdin.read()\nassert text.startswith('---\\nticket: 1.1'), text[:30]\n"
             "print(json.dumps({'type': 'result', 'result': " + repr(reply) + ", 'total_cost_usd': 0.01, 'usage': {'output_tokens': 9}}))\n")
         template = f"{sys.executable} reply_vendor.py --model {{model}} < {{packet}}"
-        decision, retryable, progressed = runner.verdict(self.tmp, "1.1", "opus", template=template)
+        decision, retryable, progressed = self.verdict(template=template)
         self.assertEqual((decision, retryable, progressed), ("reject", True, True))
         v = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json")
         self.assertEqual(v.findings[0]["id"], "F1"); self.assertEqual(v.meta.cost_usd, 0.01)
@@ -125,7 +126,7 @@ class RunnerSeatTest(unittest.TestCase):
                 out.unlink(missing_ok=True)
                 with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}), \
                         contextlib.redirect_stdout(io.StringIO()) as printed:
-                    self.assertEqual(runner.verdict(self.tmp, "1.1", "opus", template=template), ("reject", True, True))
+                    self.assertEqual(self.verdict(template=template), ("reject", True, True))
                 self.assertIn(f"[runner] verdict error: {expected_error}", printed.getvalue())
                 err = calls["trace"]["output"]["error"]
                 self.assertTrue(err["reason"].startswith(expected_error))
@@ -148,7 +149,7 @@ class RunnerSeatTest(unittest.TestCase):
         fake = types.ModuleType("opik"); fake.Opik = Client
         with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(runner.verdict(self.tmp, "1.1", "opus", template=f"{sys.executable} failing_vendor.py < {{packet}}"), ("reject", True, True))
+            self.assertEqual(self.verdict(template=f"{sys.executable} failing_vendor.py < {{packet}}"), ("reject", True, True))
         err = calls["trace"]["output"]["error"]
         self.assertEqual(err, {"reason": "exit 1", "stop_reason": "max_turns", "num_turns": 3, "is_error": True,
                                "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "ls"}}],
@@ -177,20 +178,20 @@ class RunnerSeatTest(unittest.TestCase):
 
         fake = types.ModuleType("opik"); fake.Opik = Client
         with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}):
-            runner.verdict(self.tmp, "1.1", "opus", template=self.cmd)
+            self.verdict()
         meta = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json").meta
         self.assertEqual((meta.cost_usd, meta.tokens), (0.05, {"input_tokens": 7, "output_tokens": 8}))
         self.assertEqual(calls["trace"]["metadata"]["cost_usd"], 0.05)
         self.assertEqual(calls["trace"]["metadata"]["tokens"], {"input_tokens": 7, "output_tokens": 8})
 
     def test_other_vendor_leaves_usage_null(self):
-        runner.verdict(self.tmp, "1.1", "opus", template=self.cmd)
+        self.verdict()
         meta = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json").meta
         self.assertEqual((meta.cost_usd, meta.tokens), (None, None))
         self.assertIn('"cost_usd": null', (self.tmp / "traces/verdict/1.1.json").read_text())
 
     def test_verdict_runs_cmd_stamps_and_reads_decision(self):
-        decision, retryable, progressed = runner.verdict(self.tmp, "1.1", "opus", arm="packet", template=self.cmd)
+        decision, retryable, progressed = self.verdict(arm="packet")
         self.assertEqual((decision, retryable, progressed), ("reject", True, True))
         v = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json")
         self.assertEqual(v.meta.arm, "packet"); self.assertEqual(v.meta.vendor, Path(sys.executable).stem)
@@ -199,20 +200,20 @@ class RunnerSeatTest(unittest.TestCase):
         self.assertEqual(schemas.Packet.load(self.tmp / "traces/verdict/1.1.input.md").arm, "packet")
 
     def test_blind_arm_downgrades_and_ships(self):
-        decision, retryable, progressed = runner.verdict(self.tmp, "1.1", "opus", arm="blind", template=self.cmd)
+        decision, retryable, progressed = self.verdict(arm="blind")
         self.assertEqual(decision, "ship")
         self.assertEqual(schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json").meta.arm, "blind")
         self.assertEqual(schemas.Packet.load(self.tmp / "traces/verdict/1.1.input.md").arm, "blind")
 
     def test_missing_output_is_reject(self):
         with contextlib.redirect_stdout(io.StringIO()) as printed:
-            self.assertEqual(runner.verdict(self.tmp, "1.1", "opus", template="true"), ("reject", True, True))
+            self.assertEqual(self.verdict(template="true"), ("reject", True, True))
         self.assertIn("[runner] verdict error: empty result", printed.getvalue())
 
     def test_previous_verdict_archived_and_progress_tracked(self):
         vd = self.tmp / "traces/verdict"; vd.mkdir(parents=True)
         (vd / "1.1.json").write_text(json.dumps({"decision": "reject", "findings": [{"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "text": "same"}]}))
-        decision, retryable, progressed = runner.verdict(self.tmp, "1.1", "opus", template=self.cmd)
+        decision, retryable, progressed = self.verdict()
         self.assertEqual((decision, progressed), ("reject", False))
         self.assertTrue((vd / "1.1.prev.json").exists())
         self.assertIn("F1 open (AC-1): same", (vd / "1.1.input.md").read_text())
@@ -225,7 +226,7 @@ class RunnerSeatTest(unittest.TestCase):
             self.assertIsNone(runner.opik_client())  # api key alone is not a signal
         with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": None}):
             self.assertIsNone(runner.opik_client())  # env set, package missing
-        runner.verdict(self.tmp, "1.1", "opus", template=self.cmd)
+        self.verdict()
         self.assertTrue((self.tmp / "traces/verdict/1.1.json").exists())
 
     def test_opik_configured_wraps_one_trace(self):
@@ -237,16 +238,46 @@ class RunnerSeatTest(unittest.TestCase):
 
         fake = types.ModuleType("opik"); fake.Opik = Client
         with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}):
-            runner.verdict(self.tmp, "1.1", "opus", arm="blind", template=self.cmd)
+            self.verdict(arm="blind")
         packet = (self.tmp / "traces/verdict/1.1.input.md").read_text()
         self.assertEqual(calls["trace"]["name"], "verdict")
         self.assertEqual(calls["trace"]["input"], {"packet": packet})
         md = calls["trace"]["metadata"]
         self.assertEqual(md["ticket"], "1.1"); self.assertEqual(md["arm"], "blind"); self.assertIn("wall_seconds", md)
         self.assertEqual(sorted(k for k in md if k in schemas.META_FIELDS), sorted(schemas.META_FIELDS))
-        self.assertEqual(calls["trace"]["output"], json.loads((self.tmp / "traces/verdict/1.1.json").read_text()))
+        expected = json.loads((self.tmp / "traces/verdict/1.1.json").read_text())
+        expected["summary"] = json.loads((self.tmp / "traces/verdict/1.1.summary.json").read_text())
+        self.assertEqual(calls["trace"]["output"], expected)
+        self.assertIn("summary skipped", expected["summary"]["error"])
         self.assertGreaterEqual(calls["trace"]["end_time"], calls["trace"]["start_time"])
         self.assertEqual(calls["n"], 1); self.assertTrue(calls["flushed"])
+
+    def test_verdict_artifacts_committed_on_the_branch(self):
+        """E11: the four verdict files are committed on ticket/1.1 right after the verdict."""
+        (self.tmp / ".gitignore").write_text("traces/verdict/*.html\n")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "ignore html")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.verdict()
+        self.assertIn("[runner] verdict artifacts committed ", out.getvalue())
+        log = subprocess.run(["git", "log", "--format=%s %an", "-1"], cwd=self.tmp, capture_output=True, text=True).stdout
+        self.assertEqual(log.strip(), "docs(1.1): verdict reject harness-runner")
+        tracked = subprocess.run(["git", "ls-files", "traces/verdict"], cwd=self.tmp, capture_output=True, text=True).stdout.split()
+        self.assertEqual(sorted(tracked), ["traces/verdict/1.1.html", "traces/verdict/1.1.input.md", "traces/verdict/1.1.json", "traces/verdict/1.1.summary.json"])
+        self.assertEqual(subprocess.run(["git", "status", "--short"], cwd=self.tmp, capture_output=True, text=True).stdout.strip(), "")
+
+    def test_opik_line_printed_and_stamped(self):
+        """E12: the runner says whether it traces, at start and in the seat line."""
+        self.assertEqual(runner.opik_status()[1], "untraced (OPIK_URL_OVERRIDE unset)")
+        with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": None}):
+            self.assertEqual(runner.opik_status()[1], "untraced (opik package not importable)")
+        fake = types.ModuleType("opik"); fake.Opik = lambda: object()
+        with mock.patch.dict(os.environ, {"OPIK_URL_OVERRIDE": "http://localhost:5173/api"}), mock.patch.dict(sys.modules, {"opik": fake}):
+            self.assertEqual(runner.opik_status()[1], "tracing to http://localhost:5173/api")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.verdict()
+        meta = schemas.Verdict.load(self.tmp / "traces/verdict/1.1.json").meta
+        self.assertEqual(meta.opik, "untraced (OPIK_URL_OVERRIDE unset)"); self.assertGreater(meta.seconds, 0)
+        self.assertIn("untraced (OPIK_URL_OVERRIDE unset)", (self.tmp / "traces/verdict/1.1.html").read_text())
 
     def test_cli_help_documents_placeholders(self):
         r = subprocess.run([sys.executable, str(REPO / "scripts/runner.py"), "--help"], capture_output=True, text=True)
@@ -292,7 +323,7 @@ class RunnerBuildSeatTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _main(self, *extra: str) -> tuple[int, str]:
-        with mock.patch.object(sys, "argv", ["runner.py", "1.1", "--cwd", str(self.repo), "--max-retries", "2", *extra]), \
+        with mock.patch.object(sys, "argv", ["runner.py", "1.1", "--cwd", str(self.repo), "--max-retries", "2", "--summary-model", "none", *extra]), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
             rc = runner.main()
         return rc, out.getvalue()
@@ -316,6 +347,7 @@ class RunnerBuildSeatTest(unittest.TestCase):
         (self.repo / "green").unlink()  # ci would be red too: the denial must win
         rc, out = self._main()
         self.assertEqual(rc, 4, out)
+        self.assertTrue(out.startswith("[runner] opik: untraced (OPIK_URL_OVERRIDE unset)\n"), out[:80])
         self.assertIn("[runner] permission denied: Bash(git add -A)", out)
         self.assertNotIn("ci red", out)
         self.assertEqual(len(self.log.read_text().splitlines()), 1)  # one build call, no retry

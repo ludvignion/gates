@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.6.3 — 2026-09-04
+
+The board is the interface. Evidence from the text-render pilot (5 tickets, plan 1) drives
+every item; each slice is one tag (v0.6.3-s1, -s2, -s3), v0.6.3 on the last.
+
+### Slice 1 — the record is in the repo, and every run ends on a readable page (v0.6.3-s1)
+
+- `scripts/runner.py` — after the verdict the runner commits
+  `traces/verdict/<id>.{input.md,json,summary.json,html}` on the ticket branch (`git add -f`:
+  projects ignore the html) as `docs(<id>): verdict <decision>`, author `harness-runner`, before
+  Gate 2 (E11: four runner-path verdicts vanished with their worktrees). It prints
+  `[runner] opik: tracing to <url>` or `opik: untraced (<reason>)` first thing and stamps the
+  same line into `meta.opik` (E12). `--summary-model` (default `haiku`, `none` skips).
+- `scripts/render_verdict.py` — the Gate 2 page opens with **What was built** (≤3 sentences
+  from the close-out Log entry and the diff stat), **What the reviewer said** (decision, held,
+  each block and where it belongs, warns; plain language plus the facts), and **Recommended
+  action**, computed from the findings and never by a model: open block with `spawn_child` →
+  "ship, create child <id>.<n> from F#"; open block without → "rework in place"; each open warn
+  → "home to <id>" when another open ticket's `writes:` cover the file the warn names, else
+  "waive". The two prose sections are one cheap model call (`claude -p --model haiku --tools ""`)
+  cached in `traces/verdict/<id>.summary.json` by input sha; the runner puts it in the Opik
+  trace output. Seat line: vendor · seat · cost · tokens in/out · seconds · traced/untraced.
+  "Notes" is gone. Close-out sets `ticket` from the packet (E4: a session wrote "1" for 1.1) and
+  the default vendor for the skill path is `claude-session`, cost null.
+- `scripts/verdict_checks.py` — `validate(verdict, arm, packet)`: every AC and charter item
+  the packet showed must be in `held` or cited by a finding, else a C-warn
+  `unaccounted: <id>` is appended, once (E6). The one-caller check exempts files new in the
+  diff (E5).
+- `scripts/verdict_prep.py` — files under `tests/fixtures/` and any file over 2000 diff lines
+  are one stat line in the packet (E3). Refuses to build a packet when
+  `docs/domain-pack/charter.md` is missing or has no items.
+- `scripts/schemas.py` — `VerdictMeta.seconds`, `VerdictMeta.opik`.
+- `scripts/vendor.py` — new. The one place a shell model call is run and its JSON envelope read;
+  `runner.py` and `render_verdict.py` share it.
+- `tests/` — 9 new tests.
+
 ## 0.6.2.1 — 2026-09-03
 
 Patch. The headless build session the runner spawns could not run shell commands: it printed

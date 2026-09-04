@@ -148,7 +148,7 @@ class VerdictScriptsTest(unittest.TestCase):
     def test_render_shows_held(self):
         vd = self.tmp / "traces" / "verdict"; vd.mkdir(parents=True)
         (vd / "1.1.json").write_text(json.dumps({"ticket": "1.1", "decision": "ship", "held": ["AC-1"], "findings": [], "ci": {"green": True}}))
-        render_verdict.main(self.tmp, "1.1")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
         self.assertIn("Held: AC-1", (vd / "1.1.html").read_text())
 
     def test_live_call_check_blocks(self):
@@ -229,7 +229,7 @@ class VerdictScriptsTest(unittest.TestCase):
 
     def test_stamp_meta_on_close_out(self):
         vpath = self._verdict_and_packet("repo", [{"id": "F1", "severity": "block", "status": "open", "ac": "AC-2", "text": "x"}])
-        violations = render_verdict.main(self.tmp, "1.1", vendor="codex")
+        violations = render_verdict.main(self.tmp, "1.1", "codex", summary_model="none")
         self.assertEqual(violations, [])
         v = schemas.Verdict.load(vpath)
         self.assertEqual(v.meta.as_dict(), {
@@ -237,48 +237,152 @@ class VerdictScriptsTest(unittest.TestCase):
             "plugin_version": json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())["version"],
             "prompt_sha": schemas.sha256((REPO / "skills" / "verdict" / "verdict-prompt.md").read_text()),
             "packet_sha": schemas.sha256((vpath.with_name("1.1.input.md")).read_bytes()),
-            "cost_usd": None, "tokens": None,
+            "cost_usd": None, "tokens": None, "seconds": None, "opik": None,
         })
-        render_verdict.main(self.tmp, "1.1", vendor="codex", cost_usd=0.5, tokens={"input_tokens": 10})
+        render_verdict.main(self.tmp, "1.1", "codex", cost_usd=0.5, tokens={"input_tokens": 10, "output_tokens": 3}, seconds=12.4,
+                            opik="untraced (OPIK_URL_OVERRIDE unset)", summary_model="none")
         self.assertEqual(schemas.Verdict.load(vpath).meta.cost_usd, 0.5)
-        render_verdict.main(self.tmp, "1.1", vendor="codex")  # a re-run without usage keeps it
-        self.assertEqual(schemas.Verdict.load(vpath).meta.tokens, {"input_tokens": 10})
-        self.assertIn("cost_usd 0.5", vpath.with_suffix(".html").read_text())
+        render_verdict.main(self.tmp, "1.1", "codex", summary_model="none")  # a re-run without usage keeps it
+        m = schemas.Verdict.load(vpath).meta
+        self.assertEqual((m.tokens, m.seconds, m.opik), ({"input_tokens": 10, "output_tokens": 3}, 12.4, "untraced (OPIK_URL_OVERRIDE unset)"))
+        self.assertIn("Seat: codex · repo seat · cost $0.5000 · tokens in/out 10/3 · 12 s · untraced (OPIK_URL_OVERRIDE unset)", vpath.with_suffix(".html").read_text())
         self.assertEqual(v.raw["quality"], {"a.py": {"srp": True}})  # unknown keys survive the round trip
         self.assertEqual(v.decision, "reject")
         html = vpath.with_suffix(".html").read_text()
-        self.assertIn("Seat: arm repo · vendor codex", html)
-        render_verdict.main(self.tmp, "1.1", vendor="codex")  # idempotent
+        self.assertIn("Seat: codex · repo seat", html)
+        self.assertNotIn("<h2>Notes", html)
+        render_verdict.main(self.tmp, "1.1", "codex", summary_model="none")  # idempotent
         self.assertEqual(schemas.Verdict.load(vpath).meta.packet_sha, v.meta.packet_sha)
 
     def test_blind_downgrades_uncited_block(self):
         vpath = self._verdict_and_packet("blind", [
             {"id": "F1", "severity": "block", "status": "open", "ac": None, "charter": None, "text": "no citation"},
             {"id": "F2", "severity": "block", "status": "open", "ac": "AC-1", "charter": None, "text": "cited"}])
-        self.assertEqual(render_verdict.main(self.tmp, "1.1"), [])
+        self.assertEqual(render_verdict.main(self.tmp, "1.1", summary_model="none"), [])
         v = schemas.Verdict.load(vpath)
         self.assertEqual([(f["id"], f["severity"]) for f in v.findings], [("F1", "warn"), ("F2", "block")])
         self.assertEqual(v.decision, "reject")
-        self.assertEqual(v.meta.vendor, "claude")
+        self.assertEqual(v.meta.vendor, "claude-session"); self.assertIsNone(v.meta.cost_usd)
+        self.assertEqual(v.ticket, "1.1")
 
     def test_blind_downgrade_recomputes_decision(self):
         vpath = self._verdict_and_packet("blind", [{"id": "F1", "severity": "block", "status": "open", "text": "no citation"}])
-        render_verdict.main(self.tmp, "1.1")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
         v = schemas.Verdict.load(vpath)
         self.assertEqual(v.open_blocks(), ()); self.assertEqual(v.decision, "ship")
+        self.assertFalse([f for f in v.findings if "unaccounted" in f["text"]])  # blind shows no ACs: nothing to account for
 
     def test_packet_arm_reports_uncited_block(self):
         vpath = self._verdict_and_packet("packet", [{"id": "F1", "severity": "block", "status": "open", "text": "no citation"}])
-        violations = render_verdict.main(self.tmp, "1.1")
+        violations = render_verdict.main(self.tmp, "1.1", summary_model="none")
         self.assertEqual(violations, ["F1: block without an ac or charter citation (packet seat)"])
         v = schemas.Verdict.load(vpath)
         self.assertEqual(v.findings[0]["severity"], "block"); self.assertEqual(v.meta.arm, "packet")
         self.assertIn("Invalid: F1: block without", vpath.with_suffix(".html").read_text())
 
+    def test_ticket_id_comes_from_the_packet(self):
+        """E4: the /verdict session wrote ticket "1" for 1.1; close-out sets it from the packet."""
+        vpath = self._verdict_and_packet("packet", [])
+        vpath.write_text(json.dumps({"ticket": "1", "decision": "ship", "held": ["AC-1", "AC-2", "charter-1", "charter-2"], "findings": [], "ci": {"green": True}}))
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        self.assertEqual(schemas.Verdict.load(vpath).ticket, "1.1")
+
+    def test_unaccounted_items_become_c_warns(self):
+        """E6: an AC or charter item in neither held nor a finding is a C-warn, not silence."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "C1", "severity": "warn", "status": "open", "ac": "AC-2", "text": "no test names AC-2"},
+            {"id": "F1", "severity": "warn", "status": "open", "charter": "charter-2", "text": "evidence"}], decision="ship")
+        v = json.loads(vpath.read_text()); v["held"] = ["AC-1"]; vpath.write_text(json.dumps(v))
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual([(f["id"], f["severity"], f["text"], f.get("ac"), f.get("charter")) for f in v.findings[2:]],
+                         [("C2", "warn", "unaccounted: charter-1", None, "charter-1")])
+        render_verdict.main(self.tmp, "1.1", summary_model="none")  # idempotent: no second C2
+        self.assertEqual(len(schemas.Verdict.load(vpath).findings), 3)
+        self.assertEqual(verdict_checks.unaccounted(v, schemas.Packet.load(vpath.with_name("1.1.input.md"))), [])
+
+    def test_lonely_check_skips_new_files(self):
+        """E5: a new module is all one-caller defs by construction; only defs added to existing files count."""
+        found = verdict_checks.checks(self.tmp, "1.1", "main", ci_green=True)
+        lonely = [f for f in found if "one caller" in f["text"]]
+        self.assertEqual(len(lonely), 1)
+        self.assertIn("lonely", lonely[0]["text"])  # added to the existing src/app/run.py
+        (self.tmp / "src/app/fresh.py").write_text("def alone():\n    return 1\n\n\nclass Solo:\n    pass\n")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "new module")
+        found = verdict_checks.checks(self.tmp, "1.1", "main", ci_green=True)
+        lonely = [f for f in found if "one caller" in f["text"]]
+        self.assertEqual(len(lonely), 1); self.assertNotIn("alone", lonely[0]["text"]); self.assertNotIn("Solo", lonely[0]["text"])
+
+    def test_prep_folds_fixtures_and_large_files(self):
+        """E3: a fixture in the diff is one line, not 30K tokens of reviewer context."""
+        (self.tmp / "tests/fixtures").mkdir(parents=True)
+        (self.tmp / "tests/fixtures/big.txt").write_text("word\n" * 3000)
+        (self.tmp / "src/app/large.py").write_text("\n".join(f"x{i} = {i}" for i in range(2500)) + "\n")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "bulk")
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        diff = schemas.Packet.parse(text).section("Diff")
+        self.assertIn("# tests/fixtures/big.txt: ", diff); self.assertIn("omitted (fixture)", diff)
+        self.assertIn("# src/app/large.py: ", diff); self.assertIn("omitted (over 2000 lines)", diff)
+        self.assertNotIn("+word", diff); self.assertNotIn("+x2499", diff)
+        self.assertIn("+class Widget", diff)  # ordinary files stay whole
+        self.assertIn("tests/fixtures/big.txt", schemas.Packet.parse(text).section("Diff stat"))
+
+    def test_prep_refuses_without_charter(self):
+        (self.tmp / "docs/domain-pack/charter.md").write_text("# Charter\n\nno numbered items\n")
+        with self.assertRaises(SystemExit) as cm:
+            verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        self.assertIn("no charter", str(cm.exception))
+        (self.tmp / "docs/domain-pack/charter.md").unlink()
+        with self.assertRaises(SystemExit):
+            verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+
+    def test_recommendations_are_computed(self):
+        tickets = [("1.1", "in_review", ["src/app/", "tests/"]), ("1.2", "ready", ["src/export/"]), ("1.3", "done", ["src/app/"]),
+                   ("1.1.1", "ready", [])]
+        v = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "reject", "findings": [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-2", "spawn_child": True, "text": "needs its own slice"},
+            {"id": "F2", "severity": "block", "status": "open", "ac": "AC-1", "spawn_child": False, "text": "wrong"},
+            {"id": "F3", "severity": "warn", "status": "open", "text": "export path unset, src/export/write.py:12"},
+            {"id": "F4", "severity": "warn", "status": "open", "text": "naming in src/app/run.py:3"},
+            {"id": "F5", "severity": "warn", "status": "open", "home": "2.1", "text": "already homed"},
+            {"id": "F6", "severity": "block", "status": "resolved", "ac": "AC-1", "text": "fixed"}]})
+        self.assertEqual(render_verdict.recommendations(v, tickets), [
+            ("F1", "ship, create child 1.1.2 from F1"), ("F2", "rework in place"),
+            ("F3", "home to 1.2"), ("F4", "waive"), ("F5", "home to 2.1")])
+        self.assertEqual(render_verdict.recommendations(schemas.Verdict.from_dict({"ticket": "1.1", "decision": "ship", "findings": []}), tickets), [])
+
+    def test_summary_call_is_cached_and_shown(self):
+        vpath = self._verdict_and_packet("packet", [{"id": "F1", "severity": "warn", "status": "open", "ac": "AC-2", "text": "thin test"}], decision="ship")
+        v = json.loads(vpath.read_text()); v["held"] = ["AC-1", "charter-1", "charter-2"]; vpath.write_text(json.dumps(v))
+        bin_dir = self.tmp / "bin"; bin_dir.mkdir()
+        log = self.tmp / "calls.log"
+        (bin_dir / "claude").write_text(
+            "#!/bin/sh\necho \"$*\" >> \"$FAKE_LOG\"\ncat > \"$FAKE_LOG.prompt\"\n"
+            "printf '%s' '{\"type\":\"result\",\"total_cost_usd\":0.002,\"usage\":{\"output_tokens\":40},"
+            "\"result\":\"{\\\"built\\\": \\\"Stages now write three files.\\\", \\\"review\\\": \\\"Ship. One thin test.\\\"}\"}'\n")
+        (bin_dir / "claude").chmod(0o755)
+        with mock.patch.dict(os.environ, {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_LOG": str(log)}):
+            render_verdict.main(self.tmp, "1.1", "codex", summary_model="haiku")
+            summary = json.loads(render_verdict.summary_path(self.tmp, "1.1").read_text())
+            self.assertEqual((summary["built"], summary["review"], summary["cost_usd"], summary["model"]),
+                             ("Stages now write three files.", "Ship. One thin test.", 0.002, "haiku"))
+            self.assertIn("-p --model haiku --output-format json --tools", log.read_text())
+            prompt = (self.tmp / "calls.log.prompt").read_text()
+            self.assertIn("close-out", prompt); self.assertIn("Diff stat", prompt); self.assertIn('"decision": "ship"', prompt)
+            self.assertNotIn("packet_sha", prompt)
+            render_verdict.main(self.tmp, "1.1", "codex", summary_model="haiku")  # cached: no second call
+            self.assertEqual(len(log.read_text().splitlines()), 1)
+        html = vpath.with_suffix(".html").read_text()
+        self.assertIn("<h2>What was built</h2><p>Stages now write three files.</p>", html)
+        self.assertIn("Ship. One thin test.", html); self.assertIn("<b>Ship.</b>", html)
+        self.assertIn("<h2>Recommended action</h2><ul><li><b>F1</b> waive</li></ul>", html)
+        render_verdict.main(self.tmp, "1.1", "codex", summary_model="none")
+        self.assertIn("summary unavailable: summary skipped", vpath.with_suffix(".html").read_text())
+
     def test_legacy_verdict_without_packet_renders_unstamped(self):
         vd = self.tmp / "traces" / "verdict"; vd.mkdir(parents=True)
         (vd / "1.1.json").write_text(json.dumps({"ticket": "1.1", "decision": "ship", "held": [], "findings": [], "ci": {"green": True}}))
-        render_verdict.main(self.tmp, "1.1")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
         self.assertIsNone(schemas.Verdict.load(vd / "1.1.json").meta)
         self.assertNotIn("meta", json.loads((vd / "1.1.json").read_text()))
         self.assertIn("Seat: unstamped", (vd / "1.1.html").read_text())
@@ -308,7 +412,8 @@ class VerdictSchemaTest(unittest.TestCase):
         meta = schemas.VerdictMeta.from_dict({"arm": "blind", "vendor": "codex", "plugin_version": "0.6.2", "prompt_sha": "a", "packet_sha": "b"})
         self.assertEqual(v.with_meta(meta).as_dict()["meta"], meta.as_dict())
         self.assertEqual(sorted(meta.as_dict()), sorted(schemas.META_FIELDS + schemas.META_OPTIONAL))
-        self.assertIsNone(meta.cost_usd); self.assertIsNone(meta.tokens)
+        self.assertIsNone(meta.cost_usd); self.assertIsNone(meta.tokens); self.assertIsNone(meta.seconds); self.assertIsNone(meta.opik)
+        self.assertEqual(schemas.VerdictMeta.from_dict({**meta.as_dict(), "seconds": 3, "opik": "tracing to x"}).seconds, 3.0)
         rich = schemas.VerdictMeta.from_dict({**meta.as_dict(), "cost_usd": 0.25, "tokens": {"output_tokens": 3}})
         self.assertEqual((rich.cost_usd, rich.tokens), (0.25, {"output_tokens": 3}))
         self.assertIsNone(schemas.VerdictMeta.from_dict({**meta.as_dict(), "cost_usd": "n/a"}).cost_usd)

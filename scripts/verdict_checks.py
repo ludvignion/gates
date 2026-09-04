@@ -3,13 +3,14 @@
 
 Checks (ids C1..): files written outside the ticket's `writes:` (block), CI red (block), each
 ticket AC that no test added on this branch names (block, one per AC), new src defs with one caller or none
-(warn, Phase B q4), new public names absent from docs/glossary.md when the diff does not touch
+(warn, Phase B q4; files new in the diff are exempt), new public names absent from docs/glossary.md when the diff does not touch
 it (warn), closed tickets edited (warn). Findings use the verdict JSON shape so the model copies
 them verbatim. Loads ticket shape through scripts/schemas.py; git for everything else.
 
-Also the check on the written verdict, `validate(verdict, arm)`: a block without an `ac` or
-`charter` citation is a violation — except under the blind arm, which cannot cite by design, so
-there the block is downgraded to a warn instead.
+Also the check on the written verdict, `validate(verdict, arm, packet)`: a block without an `ac`
+or `charter` citation is a violation — except under the blind arm, which cannot cite by design, so
+there the block is downgraded to a warn instead — and every AC / charter item the packet showed
+must be in `held` or cited by a finding, else a C-warn "unaccounted: <id>" is appended.
 """
 import json
 import os
@@ -88,13 +89,19 @@ def checks(root: Path, tid: str, base: str, ci_green: bool | None = None) -> lis
     if src_py:
         corpus = "\n".join(p.read_text(errors="ignore") for p in src_py)
         new_defs: list[str] = []
-        cur = None
+        in_new_file: list[str] = []  # defs in files new in the diff: a new module is all "lonely" by construction
+        cur, new_file = None, False
         for l in diff.splitlines():
-            if l.startswith("+++ b/"):
+            if l.startswith("--- "):
+                new_file = l.startswith("--- /dev/null")
+            elif l.startswith("+++ b/"):
                 cur = l[6:]
             elif cur and cur.startswith("src/") and (m := DEF_RE.match(l)):
                 new_defs.append(m.group(1))
-        lonely = [d for d in new_defs if not d.startswith("_" * 2) and len(re.findall(rf"\b{re.escape(d)}\(", corpus)) <= 2]
+                if new_file:
+                    in_new_file.append(m.group(1))
+        lonely = [d for d in new_defs if d not in in_new_file and not d.startswith("_" * 2)
+                  and len(re.findall(rf"\b{re.escape(d)}\(", corpus)) <= 2]
         if lonely:
             add("warn", f"New defs with one caller or none: {', '.join(lonely[:8])} (Phase B q4)")
         glossary = root / "docs" / "glossary.md"
@@ -115,19 +122,51 @@ def checks(root: Path, tid: str, base: str, ci_green: bool | None = None) -> lis
     return out
 
 
-def validate(v: schemas.Verdict, arm: str) -> tuple[schemas.Verdict, list[str]]:
+_CHARTER_ID_RE = re.compile(r"\bcharter-\d+\b")
+
+
+def packet_items(packet: "schemas.Packet | None") -> list[str]:
+    """Every AC id and charter id the packet put in front of the reviewer."""
+    if packet is None:
+        return []
+    acs = [m.group(0) for it in schemas._items(packet.section("Acceptance criteria")) if (m := schemas.AC_ID_RE.search(it))]
+    charter = [m.group(0) for it in schemas._items(packet.section("Charter items")) if (m := _CHARTER_ID_RE.search(it))]
+    return acs + charter
+
+
+def unaccounted(v: schemas.Verdict, packet: "schemas.Packet | None") -> list[str]:
+    """Packet items in neither `held` nor any finding's ac/charter. Silence is not a pass."""
+    held = set(v.held)
+    cited = {f.get("ac") for f in v.findings} | {f.get("charter") for f in v.findings}
+    return [i for i in packet_items(packet) if i not in held and i not in cited]
+
+
+def validate(v: schemas.Verdict, arm: str, packet: "schemas.Packet | None" = None) -> tuple[schemas.Verdict, list[str]]:
     """The verdict as it should be stored, and the violations found. Blind cannot cite, so its
     uncited blocks become warns (text unchanged); under any other arm they are violations and
-    the verdict is returned as written."""
+    the verdict is returned as written. Every AC and charter item the packet showed must be in
+    `held` or cited by a finding; the rest become C-warns "unaccounted: <id>" (appended once;
+    a re-run does not duplicate them)."""
+    violations: list[str] = []
     uncited = v.uncited_blocks()
-    if not uncited:
-        return v, []
-    if arm != "blind":
-        return v, [f"{f.get('id')}: block without an ac or charter citation ({arm} seat)" for f in uncited]
-    ids = {id(f) for f in uncited}
-    v = v.with_findings(tuple({**f, "severity": "warn"} if id(f) in ids else f for f in v.findings))
-    # the prompt's rule, applied mechanically after the downgrade: reject iff an open block or CI red
-    return v.with_decision("reject" if v.open_blocks() or v.ci.get("green") is False else "ship"), []
+    if uncited and arm != "blind":
+        violations = [f"{f.get('id')}: block without an ac or charter citation ({arm} seat)" for f in uncited]
+    elif uncited:
+        ids = {id(f) for f in uncited}
+        v = v.with_findings(tuple({**f, "severity": "warn"} if id(f) in ids else f for f in v.findings))
+        # the prompt's rule, applied mechanically after the downgrade: reject iff an open block or CI red
+        v = v.with_decision("reject" if v.open_blocks() or v.ci.get("green") is False else "ship")
+    missing = unaccounted(v, packet)
+    if missing:
+        n = max((int(f["id"][1:]) for f in v.findings if isinstance(f.get("id"), str) and re.fullmatch(r"C\d+", f["id"])), default=0)
+        extra = []
+        for item in missing:
+            n += 1
+            extra.append(finding(f"C{n}", "warn", f"unaccounted: {item}", ac=item if item.startswith("AC-") else None))
+            if item.startswith("charter-"):
+                extra[-1]["charter"] = item
+        v = v.with_findings(v.findings + tuple(extra))
+    return v, violations
 
 
 def live_calls(root: Path) -> list[str]:

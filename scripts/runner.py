@@ -14,8 +14,10 @@ stamp is the template's executable name. A non-zero exit, an empty result, or JS
 the Verdict schema is an error: logged, traced with the CLI envelope (stop_reason, num_turns,
 permission_denials, is_error) and the stderr tail, treated as a reject to retry. If the opik
 package is importable and OPIK_URL_OVERRIDE is set, the one model call is one Opik trace:
-input = packet, output = verdict, metadata = stamp + ticket + wall seconds. Otherwise nothing
-changes.
+input = packet, output = verdict + summary, metadata = stamp + ticket + wall seconds. The runner
+prints "opik: tracing to <url>" or "opik: untraced (<reason>)" at start, stamps the same into
+meta.opik, and commits traces/verdict/<id>.{input.md,json,summary.json,html} on the ticket
+branch right after the verdict, before Gate 2.
 
 Exit codes: 0 ship (human reviews and pushes from the worktree) · 1 red baseline or retry cap ·
 2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) ·
@@ -40,6 +42,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import render_verdict  # noqa: E402
 import schemas  # noqa: E402
+import vendor  # noqa: E402
 
 STATUS_RE = re.compile(r"^### \[build\] .*— status: (NEEDS_CONTEXT|BLOCKED|DONE)\b", re.M)
 SCRIPTS = Path(__file__).resolve().parent
@@ -114,41 +117,14 @@ def verdict_cmd(template: str, *, packet: str, output: str, model: str, ticket: 
     return template.format(packet=packet, output=output, model=model, ticket=ticket)
 
 
-def vendor_report(stdout: str) -> dict | None:
-    """stdout as one JSON object (claude --output-format json), else None."""
-    try:
-        d = json.loads(stdout.strip() or "null")
-    except json.JSONDecodeError:
-        return None
-    return d if isinstance(d, dict) else None
-
-
-def vendor_usage(stdout: str) -> tuple[float | None, dict | None]:
-    """(cost_usd, tokens) from a vendor's report carrying total_cost_usd / usage; (None, None) for
-    anything else."""
-    d = vendor_report(stdout)
-    if d is None:
-        return None, None
-    cost, usage = d.get("total_cost_usd"), d.get("usage")
-    return (float(cost) if isinstance(cost, (int, float)) else None), (dict(usage) if isinstance(usage, dict) else None)
+vendor_report = vendor.report  # stdout as one JSON object (claude --output-format json), else None
+vendor_usage = vendor.usage  # (cost_usd, tokens) from that report; (None, None) otherwise
 
 
 def verdict_from_result(stdout: str) -> dict | None:
     """The verdict JSON object inside the report's `result` text (the model's reply), fenced or
     bare; None when there is no report, no result, or no object with a `decision` in it."""
-    d = vendor_report(stdout)
-    text = d.get("result") if d else None
-    if not isinstance(text, str):
-        return None
-    decoder = json.JSONDecoder()
-    for m in re.finditer(r"\{", text):
-        try:
-            obj, _ = decoder.raw_decode(text, m.start())
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and "decision" in obj:
-            return obj
-    return None
+    return vendor.object_in_result(stdout, "decision")
 
 
 ENVELOPE_FIELDS = ("stop_reason", "num_turns", "permission_denials", "is_error")  # claude --output-format json
@@ -261,38 +237,65 @@ def prep(cwd: Path, tid: str, arm: str) -> Path:
     return cwd / r.stdout.strip().splitlines()[-1]
 
 
-def opik_client():
-    """An Opik client when the package is importable and OPIK_URL_OVERRIDE (the SDK's own env
-    name for the server) is set; else None and nothing is traced. OPIK_API_KEY alone is not a
-    signal."""
-    if not any(os.environ.get(k) for k in OPIK_ENV):
-        return None
+def opik_status() -> tuple[object | None, str]:
+    """(client, line). The client exists when the package is importable and OPIK_URL_OVERRIDE
+    (the SDK's own env name for the server) is set; OPIK_API_KEY alone is not a signal. The line
+    is what the runner prints and the Gate 2 page shows: "tracing to <url>" or
+    "untraced (<reason>)"."""
+    url = next((os.environ.get(k) for k in OPIK_ENV if os.environ.get(k)), None)
+    if not url:
+        return None, f"untraced ({OPIK_ENV[0]} unset)"
     try:
         import opik
     except ImportError:
-        return None
-    return opik.Opik()
+        return None, "untraced (opik package not importable)"
+    return opik.Opik(), f"tracing to {url}"
+
+
+def opik_client():
+    return opik_status()[0]
 
 
 def trace_verdict(client, *, tid: str, packet: Path, verdict: "schemas.Verdict | None", started: datetime, wall: float,
-                  vendor: str, arm: str, error: dict | None = None) -> None:
+                  vendor_name: str, arm: str, error: dict | None = None, summary: dict | None = None) -> None:
     """One trace per model call, created whole after the call (the SDK batches; an end() right
     after create can lose data). Never raises into the state machine."""
     if client is None:
         return
-    meta = verdict.meta.as_dict() if verdict and verdict.meta else {"arm": arm, "vendor": vendor}
+    meta = verdict.meta.as_dict() if verdict and verdict.meta else {"arm": arm, "vendor": vendor_name}
+    output = verdict.as_dict() if verdict else {"error": error or {"reason": "missing"}}
+    if summary is not None:
+        output["summary"] = summary
     try:
         client.trace(name="verdict", start_time=started, end_time=started + timedelta(seconds=wall),
                      input={"packet": packet.read_text(encoding="utf-8")},
-                     output=verdict.as_dict() if verdict else {"error": error or {"reason": "missing"}},
+                     output=output,
                      metadata={**meta, "ticket": tid, "wall_seconds": round(wall, 3)})
         client.flush()
     except Exception as e:  # tracing is observability, not a gate
         print(f"[runner] opik trace failed: {e}", file=sys.stderr)
 
 
+VERDICT_ARTIFACTS = ("{tid}.input.md", "{tid}.json", "{tid}.summary.json", "{tid}.html")
+GIT_IDENTITY = ["-c", "user.name=harness-runner", "-c", "user.email=runner@harness"]
+
+
+def commit_verdict(cwd: Path, tid: str, decision: str) -> str | None:
+    """Commit the verdict artifacts on the ticket branch (git add -f: projects ignore the html).
+    Returns the short sha, or None when there was nothing new to commit."""
+    files = [f"traces/verdict/{name.format(tid=tid)}" for name in VERDICT_ARTIFACTS if (cwd / "traces" / "verdict" / name.format(tid=tid)).exists()]
+    subprocess.run(["git", "add", "-f", *files], cwd=cwd, capture_output=True)
+    if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=cwd).returncode == 0:
+        return None
+    r = subprocess.run(["git", *GIT_IDENTITY, "commit", "-q", "-m", f"docs({tid}): verdict {decision}"], cwd=cwd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"[runner] verdict artifacts not committed: {r.stderr.strip()[-200:]}")
+        return None
+    return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=cwd, capture_output=True, text=True).stdout.strip()
+
+
 def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
-            template: str = DEFAULT_VERDICT_CMD) -> tuple[str, bool, bool]:
+            template: str = DEFAULT_VERDICT_CMD, summary_model: str = render_verdict.DEFAULT_SUMMARY_MODEL) -> tuple[str, bool, bool]:
     """Returns (decision, retryable, progressed).
     retryable: an open block the builder can fix here (not spawn_child).
     progressed: at least one open block is new since the previous verdict; False means the
@@ -305,7 +308,7 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
         prev_open = {f["id"] for f in schemas.Verdict.load(prev).open_blocks()}
     packet = prep(cwd, tid, arm)
     cmd = verdict_cmd(template, packet=str(packet.relative_to(cwd)), output=str(p.relative_to(cwd)), model=model, ticket=tid)
-    client = opik_client()
+    client, opik_line = opik_status()
     call = call_vendor(cmd, cwd, p)
     if vendor_report(call.stdout) is None:
         sys.stdout.write(call.stdout)  # not a report: pass the vendor's output through
@@ -314,13 +317,19 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
     if call.error:
         print(f"[runner] verdict error: {call.error}")
         trace_verdict(client, tid=tid, packet=packet, verdict=None, started=call.started, wall=call.wall,
-                      vendor=vendor_of(template), arm=arm, error=call.envelope)
+                      vendor_name=vendor_of(template), arm=arm, error=call.envelope)
         return "reject", True, True
-    violations = render_verdict.main(cwd, tid, vendor=vendor_of(template), cost_usd=call.cost_usd, tokens=call.tokens)
+    violations = render_verdict.main(cwd, tid, vendor_of(template), cost_usd=call.cost_usd, tokens=call.tokens,
+                                     seconds=call.wall, opik=opik_line, summary_model=summary_model)
     for x in violations:
         print(f"[runner] verdict invalid: {x}")
     v = schemas.Verdict.load(p)
-    trace_verdict(client, tid=tid, packet=packet, verdict=v, started=call.started, wall=call.wall, vendor=vendor_of(template), arm=arm)
+    spath = render_verdict.summary_path(cwd, tid)
+    summary = json.loads(spath.read_text(encoding="utf-8")) if spath.exists() else None
+    sha = commit_verdict(cwd, tid, v.decision)
+    print(f"[runner] verdict artifacts committed {sha}" if sha else "[runner] verdict artifacts unchanged")
+    trace_verdict(client, tid=tid, packet=packet, verdict=v, started=call.started, wall=call.wall,
+                  vendor_name=vendor_of(template), arm=arm, summary=summary)
     blocks = v.open_blocks()
     retryable = any(not f.get("spawn_child", False) for f in blocks)
     progressed = not blocks or any(f.get("id") not in prev_open for f in blocks)
@@ -337,8 +346,11 @@ def main() -> int:
     ap.add_argument("--arm", choices=schemas.ARMS, default=schemas.DEFAULT_ARM,
                     help="how much context the verdict sees: blind = diff + prompt; packet = everything (default); repo = packet + read-only tree")
     ap.add_argument("--verdict-cmd", default=DEFAULT_VERDICT_CMD, metavar="TEMPLATE", help=VERDICT_CMD_HELP)
+    ap.add_argument("--summary-model", default=render_verdict.DEFAULT_SUMMARY_MODEL,
+                    help="model for the Gate 2 page's two prose sections (default the cheapest Claude); `none` skips the call")
     a = ap.parse_args()
     repo = Path(a.cwd).resolve()
+    print(f"[runner] opik: {opik_status()[1]}")
 
     wt, created = worktree(repo, a.ticket)
     print(f"[runner] worktree {wt} ({'new' if created else 'existing'})")
@@ -363,7 +375,7 @@ def main() -> int:
         if not ci(wt):
             print("[runner] ci red")
             continue
-        decision, retryable, progressed = verdict(wt, a.ticket, a.verdict_model, a.arm, a.verdict_cmd)
+        decision, retryable, progressed = verdict(wt, a.ticket, a.verdict_model, a.arm, a.verdict_cmd, a.summary_model)
         print(f"[runner] verdict: {decision}{' (retryable)' if retryable else ''}")
         if decision == "ship":
             print(f"[runner] ship — review and push from {wt}")
