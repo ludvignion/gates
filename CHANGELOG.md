@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.5.1 — 2026-09-07
+
+- `skills/grill/SKILL.md` — Evidence discipline: a `capability` node claiming a provider keeps
+  or supports a set of things is closed only by a probe that exercises every member named in
+  the ACs.
+- `tests/test_grill_skill.py` — new: that sentence is in its section; the routing default is
+  runner.
+
+Consuming projects (project-template): pin `v0.6.5.1`.
+
 ## 0.6.5 — 2026-09-07
 
 One seat, one door, one view. Evidence from the plan 2 pilot (E13–E19) drives every item.

@@ -128,7 +128,9 @@ quotes its first line and its line count. For a schema, it quotes the header row
 as read, not as described in the brief. If the path does not exist, the node is
 `resolved_by: human` with a question. A brief describing a file is not evidence the file exists.
 Cite files, or directories with a trailing slash — a bare directory path without the slash
-is not checked by lint.
+is not checked by lint. A `capability` node claiming a provider keeps or supports a set of
+things is closed only by a probe that exercises every member named in the ACs.
+
 ## Brief shape
 Refuse a brief whose Outcome is a code property — validation, typing, models, a refactor,
 "add X across stages" — rather than a behaviour observable in the CLI or an output file. That is
