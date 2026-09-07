@@ -90,6 +90,29 @@ class KanbanOpsCliTest(unittest.TestCase):
         return subprocess.run([sys.executable, str(REPO / "scripts" / "kanban_ops.py"), *args, "--cwd", str(self.root)],
                               capture_output=True, text=True)
 
+    def test_gate1_approve_and_override_are_the_board_path(self):
+        r = self._cli("approve", "1", "--who", "ada")
+        self.assertEqual(r.returncode, 1); self.assertIn("already approved", r.stderr)
+        r = self._cli("override", "1", "backend", "runner", "--who", "ada")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("plan 1 backend session → runner", r.stdout)
+        plan = (self.root / "kanban/plans/1.plan.md").read_text()
+        self.assertIn("backend: runner", plan); self.assertIn("### [ada] ", plan); self.assertIn("— router miss: backend session → runner", plan)
+        self.assertIn('"by": "ada"', (self.root / "traces/grill-misses.jsonl").read_text())
+        r = self._cli("override", "1", "tickets", "9")
+        self.assertEqual(r.returncode, 1); self.assertIn("override field", r.stderr)
+        draft = self.root / "kanban/plans/3.plan.md"
+        draft.write_text("---\nbrief: 3\nstatus: draft\napproved:\nsignals:\n  spend: false\n  partner_facing: false\n  parallel_ready: 0\n  tickets: 1\nscrutiny: light   # full iff spend or partner_facing\nbackend: runner   # runner: default; session only by override\n---\n# 3 third\n## Acceptance criteria\n- AC-1 (behavioral): x\n## Slices\n1. `3.1` — y\n")
+        git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "plan 3 draft")
+        r = self._cli("approve", "3", "--who", "ada")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("plan 3 approved by ada", r.stdout)
+        text = draft.read_text()
+        self.assertIn("status: approved", text); self.assertIn("approved: ada 20", text); self.assertIn("— approved by ada", text)
+        self.assertIn("docs(plan 3): approved by ada", subprocess.run(["git", "log", "--format=%s"], cwd=self.root, capture_output=True, text=True).stdout)
+        r = self._cli("approve")
+        self.assertEqual(r.returncode, 2); self.assertIn("<plan>", r.stderr)
+
     def test_order_and_usage(self):
         r = self._cli("order", "1")
         self.assertEqual(r.returncode, 0, r.stderr)

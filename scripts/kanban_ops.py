@@ -1,8 +1,8 @@
 """The writes a human used to make by hand in kanban/: a Log entry, a status flip, a routing
 override, a commit. runner.py and board.py call these; nothing else writes Log lines in code.
 Shapes match what scripts/schemas.py parses (Log, RoutingStamp); the format lives here once.
-From a shell, `kanban_ops.py ship|reject|child|home|waive <id> ...` runs the board's Gate 2
-actions through board.act; `order <n>` lists a plan's tickets in depends_on order (the runner's
+From a shell, `kanban_ops.py approve|override <n> ...` runs Gate 1 and
+`kanban_ops.py ship|reject|child|home|waive <id> ...` Gate 2, all through board.act; `order <n>` lists a plan's tickets in depends_on order (the runner's
 --plan walk and the runner skill use both). plan_order lives here so runner.py and board.py read
 the plan one way.
 """
@@ -130,26 +130,28 @@ def plan_order(root: Path, n: str) -> list[str]:
 
 
 # --- the command line: the Gate 2 words a session executes ------------------------------------
+GATE1 = ("approve", "override")
 GATE2 = ("ship", "reject", "child", "home", "waive")
 
 
 def main(argv: list[str]) -> int:
-    """`kanban_ops.py <action> <ticket> ... [--who <name>] [--cwd .]`: the Gate 2 actions the
-    board performs, from a shell. Each call is `board.act` with the same form the board posts,
-    so the Log entries, commits and dataset items are identical; nothing here writes on its
-    own. `order <n>` prints the plan's tickets in depends_on order, one per line.
+    """`kanban_ops.py <action> ... [--who <name>] [--cwd .]`: the Gate 1 and Gate 2 actions,
+    from a shell. Each call is `board.act` with the form the board used to post, so the Log
+    entries, commits and dataset items are identical; nothing here writes on its own. `order <n>`
+    prints the plan's tickets in depends_on order, one per line.
+      approve <n> · override <n> <scrutiny|backend> <value> ·
       ship <id> · reject <id> <reason> · child <id> <F#> · home <id> <F#> <target> ·
       waive <id> <F#> <reason> · order <n>"""
     import argparse
 
     ap = argparse.ArgumentParser(description=main.__doc__.splitlines()[0])
-    ap.add_argument("action", choices=(*GATE2, "order"))
+    ap.add_argument("action", choices=(*GATE1, *GATE2, "order"))
     ap.add_argument("args", nargs="*")
     ap.add_argument("--who", default="human")
     ap.add_argument("--cwd", default=".")
     a = ap.parse_args(argv[1:])
     root = Path(a.cwd).resolve()
-    shapes = {"ship": ("ticket",), "reject": ("ticket", "reason"), "child": ("ticket", "finding"),
+    shapes = {"approve": ("plan",), "override": ("plan", "field", "value"), "ship": ("ticket",), "reject": ("ticket", "reason"), "child": ("ticket", "finding"),
               "home": ("ticket", "finding", "target"), "waive": ("ticket", "finding", "reason"), "order": ("plan",)}
     keys = shapes[a.action]
     if len(a.args) < len(keys):
@@ -168,7 +170,7 @@ def main(argv: list[str]) -> int:
 
     try:
         print(board.act(root, {"action": a.action, "who": a.who, **form}))
-    except board.BoardError as e:
+    except (board.BoardError, ValueError, FileNotFoundError) as e:  # override_plan raises ValueError / FileNotFoundError
         print(f"[kanban] {e}", file=sys.stderr)
         return 1
     return 0

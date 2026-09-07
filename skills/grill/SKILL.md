@@ -51,7 +51,11 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    outcome, ACs (Given/When/Then, tagged behavioral / property / critical), out of scope,
    named modules, and the **assumptions list** — every node you resolved yourself, with its evidence.
    Stamp `signals:`, `scrutiny:`, and `backend:` per the Routing section.
-   The human approves the plan, not the questions. Do not create tickets until they say so.
+   The human approves the plan, not the questions. When they say so, run
+   `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py approve <n> --who <git config user.name>`
+   and print its output; it sets `status:` and `approved:`, writes the `[human]` Log entry and
+   commits. Never write those fields yourself. A refusal (missing routing stamp) is printed as
+   is; fix the stamp, then approve again. Do not create tickets until the approve succeeded.
 8. **Success and failure lines.** If the brief has "Success looks like", it becomes at
    least one AC in the plan. If it has "Not this", it becomes an out-of-scope line AND is
    written into the plan under "## Verdict must attack" so the verdict's adversarial pass

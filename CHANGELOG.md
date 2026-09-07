@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.5.2 — 2026-09-07
+
+Gate 1 gets its door back (0.6.5 removed the board's buttons and left approve without one).
+
+- `scripts/kanban_ops.py` — `approve <n>` and `override <n> <scrutiny|backend> <value>` through
+  `board.act`, next to the Gate 2 words; a refusal is the board's message on stderr, exit 1.
+- `skills/grill/SKILL.md` — rule 7: when the human approves, the grill runs
+  `kanban_ops.py approve <n>` and prints its output; it never writes `status:` or `approved:`
+  itself.
+- `tests/` — the CLI approve (refused when already approved, refused without a stamp, the
+  `[human]` entry and commit on a stamped draft) and override (the router miss, a bad field);
+  the grill text names the command.
+
+Consuming projects (project-template): pin `v0.6.5.2`; `make approve N=<n>`.
+
 ## 0.6.5.1 — 2026-09-07
 
 - `skills/grill/SKILL.md` — Evidence discipline: a `capability` node claiming a provider keeps

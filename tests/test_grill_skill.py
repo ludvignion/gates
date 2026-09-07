@@ -19,6 +19,11 @@ class GrillSkillTextTest(unittest.TestCase):
             " ".join(evidence.split()),
         )
 
+    def test_rule_7_approves_through_kanban_ops(self):
+        rules = schemas.section(SKILL.read_text(encoding="utf-8"), "Rules")
+        self.assertIn("kanban_ops.py approve <n>", rules)
+        self.assertIn("Never write those fields yourself", rules)
+
     def test_routing_default_is_runner(self):
         routing = schemas.section(SKILL.read_text(encoding="utf-8"), "Routing")
         self.assertIn("backend: runner | workflow | session", routing)
