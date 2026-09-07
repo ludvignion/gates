@@ -1,17 +1,13 @@
-"""board.py: the actions a human used to do by hand, each through the code runner and lint use."""
-import contextlib
-import http.client
-import io
+"""board.py: the actions a human used to do by hand, each through the code runner and lint use.
+No server: kanban_ops.py's command line is the door (tests/test_run_skill.py covers it)."""
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
-from urllib.parse import urlencode
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
@@ -58,22 +54,25 @@ class BoardActionsTest(unittest.TestCase):
     def _subjects(self, ref: str = "HEAD") -> str:
         return subprocess.run(["git", "log", "--format=%s", ref], cwd=self.root, capture_output=True, text=True).stdout
 
+    def _branch(self) -> str:
+        return subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout.strip()
+
     def test_approve_needs_stamp_and_writes_log(self):
         with self.assertRaises(board.BoardError):
             board.approve(self.root, "1", "reviewer")  # already approved
-        draft = self.root / "kanban" / "plans" / "2.plan.md"
-        draft.write_text("---\nbrief: 2\nstatus: draft\napproved:\n---\n# 2 second\n## Acceptance criteria\n- AC-1 (behavioral): x\n## Slices\n1. `2.1` — y\n")
-        git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "plan 2 draft")
+        draft = self.root / "kanban" / "plans" / "3.plan.md"  # plan 3: the fixture project has plans 1 and 2
+        draft.write_text("---\nbrief: 3\nstatus: draft\napproved:\n---\n# 3 third\n## Acceptance criteria\n- AC-1 (behavioral): x\n## Slices\n1. `3.1` — y\n")
+        git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "plan 3 draft")
         with self.assertRaises(board.BoardError) as cm:
-            board.approve(self.root, "2", "reviewer")
+            board.approve(self.root, "3", "reviewer")
         self.assertIn("routing stamp", str(cm.exception))
-        draft.write_text(draft.read_text().replace("approved:\n", "approved:\nsignals:\n  spend: false\n  partner_facing: false\n  parallel_ready: 0\n  tickets: 1\nscrutiny: light   # full iff spend or partner_facing\nbackend: session\n"))
+        draft.write_text(draft.read_text().replace("approved:\n", "approved:\nsignals:\n  spend: false\n  partner_facing: false\n  parallel_ready: 0\n  tickets: 1\nscrutiny: light   # full iff spend or partner_facing\nbackend: runner\n"))
         git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "stamped")
-        line = board.approve(self.root, "2", "reviewer")
-        self.assertIn("plan 2 approved by reviewer", line)
+        line = board.approve(self.root, "3", "reviewer")
+        self.assertIn("plan 3 approved by reviewer", line)
         text = draft.read_text()
         self.assertIn("status: approved", text); self.assertIn("approved: reviewer 20", text); self.assertIn("### [human] ", text); self.assertIn("— approved by reviewer", text)
-        self.assertIn("docs(plan 2): approved by reviewer", self._subjects())
+        self.assertIn("docs(plan 3): approved by reviewer", self._subjects())
         self.assertEqual(lint_kanban.lint(self.root), [])
 
     def test_override_is_the_runner_path(self):
@@ -94,13 +93,34 @@ class BoardActionsTest(unittest.TestCase):
         self.assertIn("no remote: not pushed", line); self.assertIn("deleted ticket/1.2", line)
         self.assertIn("dataset: skipped", line)
         self.assertEqual(self._status("1.2"), "done")
-        self.assertEqual(subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout.strip(), "main")
+        self.assertEqual(self._branch(), "main")
         subjects = self._subjects()
         self.assertIn("merge(1.2): 1.2 match stage", subjects); self.assertIn("docs(1.2): ship — gate 2 by reviewer", subjects); self.assertIn("feat(1.2): match", subjects)
         self.assertEqual(subprocess.run(["git", "branch", "--list", "ticket/1.2"], cwd=self.root, capture_output=True, text=True).stdout.strip(), "")
         entry = self._log("1.2").entries[-1]
         self.assertEqual(entry.role, "human"); self.assertIn("ship by reviewer (gate 2, from the board)", entry.head); self.assertIn("- block F1 AC-2:", entry.text)
         self.assertTrue((self.root / "src/pipeline/match.py").exists())  # the merge brought the work
+
+    def test_ship_from_the_ticket_branch_ends_on_main(self):
+        """E16: the runner now stays on ticket/<id> after the verdict; a ship from there merges and
+        leaves the checkout on main."""
+        board.waive(self.root, "1.2", "C1", "AC-2 goes to the child", who="reviewer")
+        git(self.root, "checkout", "-q", "ticket/1.2")
+        line = board.ship(self.root, "1.2", who="reviewer")
+        self.assertIn("1.2 shipped", line); self.assertIn("merged ticket/1.2 --no-ff into main", line); self.assertIn("deleted ticket/1.2", line)
+        self.assertEqual(self._branch(), "main")
+        self.assertEqual(self._status("1.2"), "done")
+        self.assertIn("merge(1.2): 1.2 match stage", self._subjects())
+        self.assertTrue((self.root / "src/pipeline/match.py").exists())
+
+    def test_ship_from_an_unrelated_branch_is_refused(self):
+        board.waive(self.root, "1.2", "C1", "AC-2 goes to the child", who="reviewer")
+        git(self.root, "checkout", "-q", "-b", "feature/other")
+        with self.assertRaises(board.BoardError) as cm:
+            board.ship(self.root, "1.2", who="reviewer")
+        self.assertEqual(str(cm.exception), "ship 1.2 from the ticket branch or main, not feature/other")
+        self.assertEqual(self._branch(), "feature/other")
+        self.assertTrue(subprocess.run(["git", "rev-parse", "--verify", "-q", "ticket/1.2"], cwd=self.root, capture_output=True).returncode == 0)  # nothing merged, nothing deleted
 
     def test_ship_refused_past_open_block_then_waive_then_ship(self):
         with self.assertRaises(board.BoardError) as cm:
@@ -124,6 +144,13 @@ class BoardActionsTest(unittest.TestCase):
         self.assertEqual(subprocess.run(["git", "show", "ticket/1.2:kanban/tickets/1.2.match-stage.md"], cwd=self.root, capture_output=True, text=True).stdout.count("status: in_progress"), 1)
         self.assertIn("docs(1.2): reject — gate 2 by reviewer", self._subjects("ticket/1.2"))
         self.assertEqual(self._status("1.2"), "in_review")  # main is untouched until a merge
+        self.assertEqual(self._branch(), "main")  # started on main: back on main
+
+    def test_reject_from_the_ticket_branch_stays_there(self):
+        git(self.root, "checkout", "-q", "ticket/1.2")
+        board.reject(self.root, "1.2", "unmatched path must be in this slice", who="reviewer")
+        self.assertEqual(self._branch(), "ticket/1.2")
+        self.assertEqual(self._status("1.2"), "in_progress")
 
     def test_child_from_finding_end_to_end(self):
         line = board.child(self.root, "1.2", "F1", who="reviewer")
@@ -164,33 +191,19 @@ class BoardActionsTest(unittest.TestCase):
             board.home(self.root, "1.1", "F2", "9.9")
 
     def test_plan_order_and_dirty_refusal(self):
+        self.assertIs(board.plan_order, board.kanban_ops.plan_order)  # contract D: one walk order
         self.assertEqual(board.plan_order(self.root, "1"), ["1.1", "1.2"])
         (self.root / "kanban/tickets/1.1.tracer-bullet.md").write_text("x")
-        with self.assertRaises(board.BoardError):
-            board.serve(self.root, 0)
+        with self.assertRaises(board.BoardError) as cm:
+            board.reject(self.root, "1.2", "not yet")  # needs a checkout of ticket/1.2: refused on a dirty tree
+        self.assertIn("dirty", str(cm.exception))
 
-    def test_http_round_trip(self):
-        server = board.serve(self.root, 0)
-        port = server.server_address[1]
-        t = threading.Thread(target=server.serve_forever, daemon=True); t.start()
-        try:
-            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-            c.request("GET", "/"); r = c.getresponse(); page = r.read().decode()
-            self.assertEqual(r.status, 200)
-            self.assertIn("Plan 1", page); self.assertIn("gate 2 page", page); self.assertIn("ship, create child 1.2.1 from F1", page)
-            self.assertIn('name=action value=ship', page); self.assertIn("scrutiny: light", page)
-            c.request("GET", "/verdict/1.2"); r = c.getresponse(); self.assertEqual(r.status, 200); self.assertIn("REJECT — 1.2", r.read().decode())
-            c.request("GET", "/verdict/9.9"); r = c.getresponse(); self.assertEqual(r.status, 404); r.read()
-            body = urlencode({"action": "reject", "ticket": "1.2", "reason": "not yet", "who": "reviewer"})
-            c.request("POST", "/action", body=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
-            r = c.getresponse(); self.assertEqual(r.status, 303); self.assertIn("1.2+rejected", r.getheader("Location")); r.read()
-            self.assertIn("docs(1.2): reject — gate 2 by reviewer", self._subjects("ticket/1.2"))
-            body = urlencode({"action": "ship", "ticket": "1.1"})
-            c.request("POST", "/action", body=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
-            r = c.getresponse(); self.assertIn("refused", r.getheader("Location")); r.read()
-            c.request("GET", "/progress?ticket=1.2"); r = c.getresponse(); self.assertEqual(r.status, 200); self.assertEqual(r.read().decode(), "")
-        finally:
-            server.shutdown(); server.server_close()
+    def test_no_server_and_act_is_the_only_door(self):
+        for name in ("serve", "Board", "Walker", "start_run", "run_log", "panel", "main"):
+            self.assertFalse(hasattr(board, name), name)
+        self.assertEqual(set(board.ACTIONS), {"approve", "override", "ship", "reject", "child", "home", "waive"})
+        with self.assertRaises(board.BoardError):
+            board.act(self.root, {"action": "run", "ticket": "1.2"})
 
 
 if __name__ == "__main__":

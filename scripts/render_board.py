@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""kanban/ → traces/board.html. Progress per plan + status columns + dependency graph.
+"""kanban/ → traces/board.html. Progress per plan + running tickets + status columns + dependency graph.
 
-Runs on every Stop hook (hooks/hooks.json) and on `make board`. No-op when the project has
-no kanban/ directory. AC citations and slice lists load through scripts/schemas.py.
+Runs on every Stop hook (hooks/hooks.json), by hand (`python3 scripts/render_board.py .`), and
+after every runner phase. No-op
+when the project has no kanban/ directory. AC citations and slice lists load through
+scripts/schemas.py. The Runs section reads traces/runs/<id>.state (one line per phase change,
+"<hh:mm:ss> <+m:ss> <phase> [detail]"; the last line starts with "done " once the run is over)
+and the last builder lines of traces/runs/<id>.log; the page refreshes itself every 5 s while
+any ticket is running. This is the board; there is no server.
 """
 import html
 import sys
@@ -113,6 +118,48 @@ def stamp_line(plan_text: str) -> str:
     return " · ".join(parts) + (f" · signals {sig}" if sig else "")
 
 
+def _run_key(tid: str):
+    return [(0, int(x)) if x.isdigit() else (1, x) for x in tid.split(".")]
+
+
+def runs(root: Path) -> list[dict]:
+    """One record per traces/runs/<id>.state (plan-<n>.state left out): id, phase (the last line's
+    phase plus detail), elapsed (its +m:ss), lines (the last 5 builder lines of the .log: the ones
+    indented by two spaces, stripped; else the log's last 5 lines; empty without a log), running
+    (the last line does not start with "done "). The runner and the tests share this parser."""
+    out = []
+    for sp in sorted((root / "traces" / "runs").glob("*.state"), key=lambda p: _run_key(p.stem)):
+        if sp.stem.startswith("plan-"):
+            continue
+        lines = [l for l in sp.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
+        if not lines:
+            continue
+        parts = lines[-1].split(" ", 2)  # contract A: "<hh:mm:ss> <+m:ss> <phase> [detail]"
+        if len(parts) < 3:
+            continue
+        _, elapsed, phase = parts
+        log = sp.with_suffix(".log")
+        tail: list[str] = []
+        if log.exists():
+            raw = log.read_text(encoding="utf-8", errors="replace").splitlines()
+            builder = [l.strip() for l in raw if l.startswith("  ") and l.strip()]
+            tail = (builder or [l for l in raw if l.strip()])[-5:]
+        out.append({"id": sp.stem, "phase": phase.strip(), "elapsed": elapsed, "lines": tail, "running": phase.split(" ", 1)[0] != "done"})
+    return out
+
+
+def runs_html(records: list[dict]) -> str:
+    """The Runs section: running tickets only (a finished run shows in the status columns)."""
+    parts = []
+    for r in records:
+        if not r["running"]:
+            continue
+        tail = "".join(html.escape(l) + "\n" for l in r["lines"])
+        parts.append(f'<div class="run"><b>{html.escape(r["id"])}</b> · {html.escape(r["phase"])} · {html.escape(r["elapsed"])}'
+                     + (f'<pre class="tail">{tail}</pre>' if tail else "") + "</div>")
+    return "".join(parts) or "<p>nothing running</p>"
+
+
 def main(root: Path, out_path: Path | None = None) -> None:
     """Render root/kanban into root/traces/board.html, or into `out_path` (the runner renders a
     worktree's kanban into the main checkout)."""
@@ -144,12 +191,18 @@ def main(root: Path, out_path: Path | None = None) -> None:
         f"{'<div class=stamp>' + html.escape(stamp_line(plan_texts[k])) + '</div>' if stamp_line(plan_texts[k]) else ''}</li>"
         for k, (v, _) in sorted(plans.items(), key=lambda kv: _plan_key(kv[0]))
     )
-    out = f"""<!doctype html><meta charset=utf-8><title>Board</title>
+    # the runs live beside the board (traces/runs next to traces/board.html), also when the runner
+    # renders a worktree's kanban into the main checkout
+    run_records = runs(out_path.parent.parent if out_path else root)
+    refresh = '<meta http-equiv="refresh" content="5">' if any(r["running"] for r in run_records) else ""
+    out = f"""<!doctype html><meta charset=utf-8>{refresh}<title>Board</title>
 <style>body{{font-family:system-ui;margin:2rem}}.cols{{display:flex;gap:1rem}}.col{{flex:1;background:#f6f6f6;padding:.5rem 1rem;border-radius:8px}}ul{{padding-left:1rem}}
 .plan{{margin:0 0 1rem}}.row{{font-weight:600}}.bar{{display:flex;height:.6rem;width:100%;max-width:40rem;background:#e4e4e4;border-radius:4px;overflow:hidden;margin:.3rem 0}}
-.bar .done{{background:{COLORS["done"]}}}.bar .review{{background:{COLORS["in_review"]}}}.acs{{font-size:.9em;color:#444}}.stamp{{font-size:.85em;color:#555}}</style>
+.bar .done{{background:{COLORS["done"]}}}.bar .review{{background:{COLORS["in_review"]}}}.acs{{font-size:.9em;color:#444}}.stamp{{font-size:.85em;color:#555}}
+.run{{margin:0 0 .6rem}}.tail{{background:#111;color:#ddd;padding:.5rem;font-size:.8em;max-width:60rem;overflow:auto;margin:.3rem 0 0}}</style>
 <h1>Board</h1><h2>Plans</h2><ul>{plan_html}</ul>
 <h2>Progress</h2>{progress_html(progress(plans, rows))}
+<h2>Runs</h2>{runs_html(run_records)}
 <h2>Tickets</h2><div class=cols>{col_html}</div>
 <h2>Dependencies</h2><pre class="mermaid">{html.escape(mermaid)}</pre>
 <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({{startOnLoad:true}});</script>"""

@@ -191,7 +191,7 @@ class VerdictScriptsTest(unittest.TestCase):
         self.assertEqual(packet.arm, "blind")
         self.assertEqual(tuple(t for t, _ in packet.sections), schemas.BLIND_SECTIONS)
         for gone in ("AC-1 (behavioral)", "real matching", "waive F1", "too expensive to repeat", "charter-1: Unknown",
-                     "ids drift", '"id": "C1"', "tests/test_run.py: ", "writes: [", "ticket_file:", "status: in_review"):
+                     "ids drift", '"id": "C1"', "tests/test_run.py: ", "writes: [", "always_writable:", "ticket_file:", "status: in_review"):
             self.assertNotIn(gone, text, gone)
         for kept in ("+class Widget", "## Diff stat", "## CI", "Guardrail: fix nothing.", schemas.SEAT_LINE["blind"], "ticket: 1.1"):
             self.assertIn(kept, text, kept)
@@ -313,19 +313,65 @@ class VerdictScriptsTest(unittest.TestCase):
         lonely = [f for f in found if "one caller" in f["text"]]
         self.assertEqual(len(lonely), 1); self.assertNotIn("alone", lonely[0]["text"]); self.assertNotIn("Solo", lonely[0]["text"])
 
-    def test_prep_folds_fixtures_and_large_files(self):
-        """E3: a fixture in the diff is one line, not 30K tokens of reviewer context."""
-        (self.tmp / "tests/fixtures").mkdir(parents=True)
-        (self.tmp / "tests/fixtures/big.txt").write_text("word\n" * 3000)
+    def test_prep_folds_large_included_file(self):
+        """E3: an included file over FILE_CAP diff lines is one stat line, not 30K tokens of reviewer context."""
         (self.tmp / "src/app/large.py").write_text("\n".join(f"x{i} = {i}" for i in range(2500)) + "\n")
         git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "bulk")
         text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
         diff = schemas.Packet.parse(text).section("Diff")
-        self.assertIn("# tests/fixtures/big.txt: ", diff); self.assertIn("omitted (fixture)", diff)
         self.assertIn("# src/app/large.py: ", diff); self.assertIn("omitted (over 2000 lines)", diff)
-        self.assertNotIn("+word", diff); self.assertNotIn("+x2499", diff)
+        self.assertNotIn("+x2499", diff)
         self.assertIn("+class Widget", diff)  # ordinary files stay whole
-        self.assertIn("tests/fixtures/big.txt", schemas.Packet.parse(text).section("Diff stat"))
+        self.assertIn("src/app/large.py", schemas.Packet.parse(text).section("Diff stat"))
+
+    def test_prep_diff_excludes_lock_fixture_kanban_traces(self):
+        """E17: the packet for ticket 1 carried 532 lines of uv.lock; the reviewer read hashes."""
+        (self.tmp / "src/app/x.py").write_text("def x():\n    return 1\n")
+        (self.tmp / "tests/test_x.py").write_text('def test_x():\n    """AC-2: ids verbatim."""\n    assert True\n')
+        (self.tmp / "uv.lock").write_text("".join(f"[[package]]\nname = \"p{i}\"\n" for i in range(150)))
+        (self.tmp / "tests/fixtures").mkdir(parents=True)
+        (self.tmp / "tests/fixtures/big.txt").write_text("word\n" * 3000)
+        with (self.tmp / "kanban/tickets/1.1.tracer-bullet.md").open("a") as f:
+            f.write("### [build] 2026-09-03 09:00 — note\nedited on the branch\n")
+        (self.tmp / "traces").mkdir(); (self.tmp / "traces/foo.json").write_text("{}\n")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "bulk")
+        packet = schemas.Packet.parse(verdict_prep.build(self.tmp, "1.1", "main", ci=False))
+        diff, stat = packet.section("Diff"), packet.section("Diff stat")
+        self.assertIn("+++ b/src/app/x.py", diff); self.assertIn("+def x():", diff)
+        self.assertIn("+++ b/tests/test_x.py", diff); self.assertIn("+def test_x():", diff)
+        self.assertIn("+class Widget", diff)
+        for gone in ("uv.lock", "big.txt", "+word", "[[package]]", "kanban/", "traces/", "edited on the branch"):
+            self.assertNotIn(gone, diff, gone); self.assertNotIn(gone, stat, gone)
+        self.assertIn(" src/app/x.py ", stat); self.assertIn(" tests/test_x.py ", stat)
+        self.assertEqual(stat.strip().splitlines()[-2], "4 files excluded (lock, fixture, kanban)")  # then the closing fence
+        self.assertIn("tests/test_x.py: ", packet.section("Tests added on this branch that name an AC"))  # AC-2 is named on an included file
+
+    def test_included_and_exclusion_reason(self):
+        for path in ("src/app/x.py", "src/app/data.json", "docs/glossary.md", "tests/test_x.py", "pyproject.toml", ".importlinter", "setup.cfg"):
+            self.assertTrue(verdict_prep.included(path), path)
+        for path, why in (("uv.lock", "lock"), ("package-lock.json", "lock"), ("poetry.lock", "lock"), ("src/x.lock", "lock"),
+                          ("tests/fixtures/big.txt", "fixture"), ("tests/fixtures/project/src/a.py", "fixture"), ("tests/data.csv", "fixture"),
+                          ("kanban/tickets/1.1.x.md", "kanban"), ("traces/foo.json", "kanban"), ("Makefile", "other"), ("README.md", "other")):
+            self.assertFalse(verdict_prep.included(path), path)
+            self.assertEqual(verdict_prep.exclusion_reason(path), why, path)
+
+    def test_prep_diff_with_no_included_file(self):
+        git(self.tmp, "checkout", "-q", "main"); git(self.tmp, "checkout", "-q", "-b", "ticket/1.1-lock")
+        (self.tmp / "uv.lock").write_text("x\n")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "lock only")
+        packet = schemas.Packet.parse(verdict_prep.build(self.tmp, "1.1", "main", ci=False))
+        self.assertIn("no included files changed", packet.section("Diff"))
+        self.assertEqual(packet.section("Diff stat").strip(), "```\n1 files excluded (lock, fixture, kanban)\n```")
+
+    def test_prep_frontmatter_always_writable(self):
+        """Item 8: the reviewer does not warn on the glossary or the parent plan's Log."""
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        self.assertIn("writes: ['src/app/', 'tests/']\nalways_writable: ['docs/glossary.md', 'kanban/plans/1.plan.md (Log)']\n", text)
+        packet = schemas.Packet.parse(text)
+        self.assertEqual(packet.fm["always_writable"], ["docs/glossary.md", "kanban/plans/1.plan.md (Log)"])
+        self.assertEqual(schemas.Packet.parse(packet.render()).fm["always_writable"], packet.fm["always_writable"])
+        self.assertNotIn("always_writable", packet.rearm("blind").fm)
+        self.assertIn("always_writable", schemas.BLIND_FRONTMATTER_DROPPED)
 
     def test_prep_refuses_without_charter(self):
         (self.tmp / "docs/domain-pack/charter.md").write_text("# Charter\n\nno numbered items\n")

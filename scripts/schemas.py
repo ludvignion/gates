@@ -16,8 +16,9 @@ Shapes here:
                          entries and the ticket ids each is homed to.
 - ``RoutingStamp``    — a plan's ``signals``/``scrutiny``/``backend`` frontmatter stamp.
 - ``Packet``          — ``traces/verdict/<id>.input.md``: the one input of the single-call
-                         verdict. Frontmatter names the seat (``arm``) and the ``output`` path;
-                         the body is ``## `` sections, and the arm says which sections exist.
+                         verdict. Frontmatter names the seat (``arm``), the ``output`` path and
+                         the write scope (``writes``, ``always_writable``); the body is ``## ``
+                         sections, and the arm says which sections exist.
 - ``Verdict``, ``VerdictMeta`` — ``traces/verdict/<id>.json`` and its optional ``meta`` stamp
                          (arm, vendor, plugin_version, prompt_sha, packet_sha).
 """
@@ -377,7 +378,7 @@ PACKET_SECTIONS = (
 )
 # Blind is diff + prompt: nothing derived from the ticket, plan, charter, or a previous verdict.
 BLIND_SECTIONS = ("Instructions", "Seat", "CI", "Diff stat", "Diff")
-BLIND_FRONTMATTER_DROPPED = ("status", "writes", "ticket_file")
+BLIND_FRONTMATTER_DROPPED = ("status", "writes", "always_writable", "ticket_file")  # blind sees no ticket, so no write scope either
 SEAT_LINE = {
     "blind": "Blind seat: this packet holds the diff and CI only. No ticket, plan, charter, or "
              "previous verdict is available, so a block cannot cite `ac` or `charter`; write the "

@@ -1,4 +1,5 @@
-"""skills/run/SKILL.md is a wrapper: runner.py runs, kanban_ops.py acts, the session edits nothing.
+"""skills/runner/SKILL.md is a wrapper: one background runner.py start, the state file relayed, the result
+block printed, kanban_ops.py at Gate 2; the session edits nothing (E13, E14, E19).
 kanban_ops.py's command line is board.act with the board's form."""
 import os
 import re
@@ -17,7 +18,7 @@ import schemas  # noqa: E402
 FIXTURE_PROJECT = REPO / "tests" / "fixtures" / "project"
 from test_verdict_scripts import git  # noqa: E402
 
-SKILL = REPO / "skills" / "run" / "SKILL.md"
+SKILL = REPO / "skills" / "runner" / "SKILL.md"
 EDITING = re.compile(r"\b(edit|write|append|modify|rewrite|patch|sed)\b", re.I)
 
 
@@ -32,14 +33,40 @@ class RunSkillTextTest(unittest.TestCase):
         self.assertEqual(offending, [], offending)
         for word in ("ship", "reject:", "child from F#", "home F# to", "waive F#:"):
             self.assertIn(word, body, word)
-        self.assertNotIn("/build", schemas.section(body, "One ticket: `/run <id>`"))
-        self.assertIn("kanban_ops.py order", schemas.section(body, "A plan: `/run plan <n>`"))
+
+    def test_one_runner_invocation_and_no_other_command(self):
+        """E13: the session never explores, builds or branches; one background start, Gate 2 through kanban_ops.py."""
+        lines = SKILL.read_text(encoding="utf-8").splitlines()
+        starts = [l for l in lines if "runner.py" in l]
+        self.assertEqual(len(starts), 1, starts)
+        self.assertIn("traces/runs/", starts[0])
+        self.assertIn("&", starts[0])
+        self.assertIn("--plan <n>", starts[0])
+        self.assertIn("--override backend=runner", starts[0])
+        for l in lines:
+            if "python3 " in l and l is not starts[0]:
+                self.assertIn("kanban_ops.py", l, l)
+        body = "\n".join(lines)
+        for banned in ("/build", "/verdict", "worktree", "git checkout"):
+            self.assertNotIn(banned, body, banned)
+
+    def test_result_format_and_refusals(self):
+        """E19: the end of a run is the decision plus one line per finding with its action, all from the runner's result file."""
+        body = SKILL.read_text(encoding="utf-8")
+        for fmt in ("verdict: SHIP|REJECT", "Recommended:", "\u2192 child", "\u2192 home", "\u2192 waive", ".result", ".state"):
+            self.assertIn(fmt, body, fmt)
+        never = schemas.section(body, "Never")
+        self.assertIn("session stamp", never)
+        self.assertIn("dirty tree", never)
+        self.assertIn("/harness-plugin:runner", body)
 
     def test_manifest_lists_the_skill(self):
         import json
         manifest = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
-        self.assertIn("./skills/run", manifest["skills"])
+        self.assertIn("./skills/runner", manifest["skills"])
+        self.assertNotIn("./skills/run", manifest["skills"])
         self.assertTrue(SKILL.exists())
+        self.assertFalse((REPO / "skills" / "run").exists())
 
 
 class KanbanOpsCliTest(unittest.TestCase):

@@ -74,6 +74,70 @@ class ProgressTest(unittest.TestCase):
         self.assertIn("<b>2.2</b>", self.html)
 
 
+class RunsTest(unittest.TestCase):
+    """The Runs section reads traces/runs/<id>.state (contract A) and the builder tail of the .log."""
+
+    STATE = "10:42:07 +0:00 branch\n10:42:08 +0:01 ci-pre\n10:42:09 +0:02 build 1\n"
+    LOG = ("[runner] opik: untraced (no OPIK_API_KEY)\n[runner 10:42:07 +0:00] branch\n[runner 10:42:09 +0:02] build 1\n"
+           "  reading the ticket\n  wrote src/pipeline/match.py\n  ran tests: 3 passed\n  wrote tests/test_match.py\n"
+           "  ran tests: 4 passed\n  committing\n")
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        shutil.copytree(FIXTURE, self.tmp / "kanban")
+        self.runs = self.tmp / "traces" / "runs"
+        self.runs.mkdir(parents=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _render(self) -> str:
+        render_board.main(self.tmp)
+        return (self.tmp / "traces" / "board.html").read_text()
+
+    def test_running_ticket_shows_phase_elapsed_tail_and_refresh(self):
+        (self.runs / "1.2.state").write_text(self.STATE)
+        (self.runs / "1.2.log").write_text(self.LOG)
+        (self.runs / "plan-1.state").write_text("10:42:07 +0:00 ticket 1.2\n" + self.STATE)  # plan walks are not rows
+        recs = render_board.runs(self.tmp)
+        self.assertEqual(len(recs), 1)
+        self.assertEqual({k: recs[0][k] for k in ("id", "phase", "elapsed", "running")}, {"id": "1.2", "phase": "build 1", "elapsed": "+0:02", "running": True})
+        self.assertEqual(recs[0]["lines"], ["wrote src/pipeline/match.py", "ran tests: 3 passed", "wrote tests/test_match.py", "ran tests: 4 passed", "committing"])
+        page = self._render()
+        self.assertIn('<meta charset=utf-8><meta http-equiv="refresh" content="5">', page)
+        self.assertIn("<h2>Runs</h2>", page)
+        self.assertIn("<b>1.2</b> · build 1 · +0:02", page)
+        self.assertIn("wrote src/pipeline/match.py\nran tests: 3 passed\nwrote tests/test_match.py\nran tests: 4 passed\ncommitting\n", page)
+        self.assertNotIn("reading the ticket", page)  # only the last 5 builder lines
+        self.assertLess(page.index("<h2>Progress</h2>"), page.index("<h2>Runs</h2>")); self.assertLess(page.index("<h2>Runs</h2>"), page.index("<h2>Tickets</h2>"))
+
+    def test_phase_detail_and_log_fallbacks(self):
+        (self.runs / "1.3.state").write_text(self.STATE + "10:44:31 +2:24 build 1 close-out\n")
+        (self.runs / "1.3.log").write_text("[runner] opik: untraced (no OPIK_API_KEY)\n[runner 10:42:07 +0:00] branch\n")
+        (self.runs / "1.4.state").write_text("10:50:00 +0:00 branch\n")
+        recs = {r["id"]: r for r in render_board.runs(self.tmp)}
+        self.assertEqual((recs["1.3"]["phase"], recs["1.3"]["elapsed"]), ("build 1 close-out", "+2:24"))
+        self.assertEqual(recs["1.3"]["lines"], ["[runner] opik: untraced (no OPIK_API_KEY)", "[runner 10:42:07 +0:00] branch"])  # no builder lines: the log's tail
+        self.assertEqual(recs["1.4"]["lines"], [])  # no log yet
+        self.assertIn("<b>1.3</b> · build 1 close-out · +2:24", self._render())
+
+    def test_finished_run_is_not_a_row_and_no_refresh(self):
+        (self.runs / "1.2.state").write_text(self.STATE + "10:51:00 +8:53 done ship\n")
+        (self.runs / "1.2.log").write_text(self.LOG)
+        recs = render_board.runs(self.tmp)
+        self.assertEqual((recs[0]["running"], recs[0]["phase"]), (False, "done ship"))
+        page = self._render()
+        self.assertNotIn("http-equiv", page)
+        self.assertIn("<h2>Runs</h2><p>nothing running</p>", page)
+        self.assertNotIn("<b>1.2</b> · ", page)
+
+    def test_no_runs_directory(self):
+        shutil.rmtree(self.runs)
+        self.assertEqual(render_board.runs(self.tmp), [])
+        page = self._render()
+        self.assertNotIn("http-equiv", page); self.assertIn("nothing running", page)
+
+
 class SchemaTest(unittest.TestCase):
     def test_citation_groups_parse_as_written(self):
         body = (

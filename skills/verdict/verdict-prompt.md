@@ -17,8 +17,8 @@ packet is not enough to judge an AC, that AC gets a `warn` saying what evidence 
 3. each charter item reachable in this diff;
 4. previous blocks — re-run each `repro`; still failing → `open`, else `resolved`.
 
-Severity: `block` = an AC unmet, a test drifting from its AC, a write outside `writes:`, a
-charter violation reachable here; every block cites `ac` or `charter`. `warn` = anything else
+Severity: `block` = an AC unmet, a test drifting from its AC, a write outside `writes:` (the
+frontmatter's `always_writable` paths never count), a charter violation reachable here; every block cites `ac` or `charter`. `warn` = anything else
 worth a human's eye. No `note`s: what holds goes into `held` as its label (`AC-3`,
 `charter-2`, `attack-1`, `retry-safety`), what belongs to another ticket goes into `warn` with
 `home` set. `text` is at most 20 words, terse, `file:line` where it applies. `repro` is a

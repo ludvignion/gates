@@ -2,7 +2,9 @@
 override, a commit. runner.py and board.py call these; nothing else writes Log lines in code.
 Shapes match what scripts/schemas.py parses (Log, RoutingStamp); the format lives here once.
 From a shell, `kanban_ops.py ship|reject|child|home|waive <id> ...` runs the board's Gate 2
-actions through board.act; `order <n>` lists a plan's tickets in depends_on order (/run uses both).
+actions through board.act; `order <n>` lists a plan's tickets in depends_on order (the runner's
+--plan walk and the runner skill use both). plan_order lives here so runner.py and board.py read
+the plan one way.
 """
 import json
 import re
@@ -108,6 +110,25 @@ def commit(root: Path, paths: list[str], message: str, force: bool = False) -> s
     return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
 
 
+def plan_order(root: Path, n: str) -> list[str]:
+    """Tickets of plan n in depends_on order (a dependency before its dependants), done and
+    superseded ones out. Raises ValueError on a depends_on cycle."""
+    import _fm  # local import, as in override_plan
+    import schemas
+
+    rows = [(fm["id"], fm.get("status", "ready"), list(fm.get("depends_on") or [])) for _, fm, _ in _fm.tickets(root / "kanban") if str(fm.get("parent", "")) == str(n)]
+    order: list[str] = []
+    pending = {tid: deps for tid, status, deps in rows if status not in schemas.CLOSED_STATUSES}
+    while pending:
+        ready = [tid for tid, deps in pending.items() if all(d in order or d not in pending for d in deps)]
+        if not ready:
+            raise ValueError(f"plan {n}: depends_on cycle among {', '.join(sorted(pending))}")
+        for tid in sorted(ready, key=lambda t: [int(x) for x in t.split(".")]):
+            order.append(tid)
+            pending.pop(tid)
+    return order
+
+
 # --- the command line: the Gate 2 words a session executes ------------------------------------
 GATE2 = ("ship", "reject", "child", "home", "waive")
 
@@ -136,13 +157,17 @@ def main(argv: list[str]) -> int:
         return 2
     form = dict(zip(keys, a.args[:len(keys) - 1]))
     form[keys[-1]] = " ".join(a.args[len(keys) - 1:])  # the last field may be a multi-word reason
+    if a.action == "order":
+        try:
+            print("\n".join(plan_order(root, form["plan"])))
+        except ValueError as e:
+            print(f"[kanban] {e}", file=sys.stderr)
+            return 1
+        return 0
     import board  # here, not at the top: board imports kanban_ops
 
     try:
-        if a.action == "order":
-            print("\n".join(board.plan_order(root, form["plan"])))
-        else:
-            print(board.act(root, {"action": a.action, "who": a.who, **form}))
+        print(board.act(root, {"action": a.action, "who": a.who, **form}))
     except board.BoardError as e:
         print(f"[kanban] {e}", file=sys.stderr)
         return 1

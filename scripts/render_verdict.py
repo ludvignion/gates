@@ -190,6 +190,53 @@ def recommendations(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]
     return out
 
 
+def action_word(action: str) -> str:
+    """The arrow's word in the end-of-run lines (E19), from a recommendations() action:
+    "ship, create child 2.2.1 from F1" → "child 2.2.1", "rework in place" → "rework",
+    "home to 2.3" → "home 2.3", "waive" → "waive"."""
+    if action.startswith("ship, create child "):
+        return "child " + action[len("ship, create child "):].split(" from ")[0]
+    if action.startswith("home to "):
+        return "home " + action[len("home to "):]
+    return "rework" if action == "rework in place" else action
+
+
+def finding_file(text: str) -> str:
+    """The first path[:line] named in a finding's text, "—" when none."""
+    m = _FILE_RE.search(text)
+    return m.group(0) if m else "—"
+
+
+def result_lines(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], cost_usd: float | None,
+                 seconds: float, page: str) -> list[str]:
+    """The end of a run as the skill prints it and traces/runs/<id>.result stores it (E19): the
+    header, one line per open block or warn in verdict order with its citation, file:line and
+    the recommended action, the "Recommended:" line, then the page path. Pure code from
+    verdict.json; the actions are recommendations(), never a model call."""
+    acts = dict(recommendations(v, tickets))
+    open_ = [f for f in v.findings if v.is_open(f) and f.get("severity") in ("block", "warn")]
+    blocks = [f for f in open_ if f["severity"] == "block"]
+    warns = [f for f in open_ if f["severity"] == "warn"]
+    cost = f"${cost_usd:.4f}" if cost_usd is not None else "n/a"
+    out = [f"{v.ticket} · verdict: {v.decision.upper()} · {len(blocks)} blocks · {len(warns)} warns · {cost} · {int(seconds)}s"]
+    words = []
+    for f in open_:
+        fid = str(f.get("id"))
+        cite = f.get("ac") or f.get("charter") or "—"
+        word = action_word(acts[fid]) if fid in acts else "—"
+        out.append(f'{fid} {f["severity"]} ({cite}) {finding_file(str(f.get("text", "")))} — "{f.get("text", "")}" → {word}')
+        if word != "—":
+            verb, _, target = word.partition(" ")
+            words.append(f"{verb} {fid} → {target}" if target else f"{verb} {fid}")
+    if not open_:
+        out.append("Recommended: ship as is")
+    else:
+        decision = "reject" if any(not f.get("spawn_child") for f in blocks) else "ship"
+        out.append(f"Recommended: {decision}, " + ", ".join(words))
+    out.append(page)
+    return out
+
+
 # --- page -------------------------------------------------------------------------------------
 def seat_line(v: schemas.Verdict) -> str:
     if not v.meta:

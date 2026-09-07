@@ -5,7 +5,7 @@ ticket scope, scripts that render the only pages a human reads.
 
 ```
 brief → /grill → plan page (gate 1) → tickets → /build → /verdict → verdict page (gate 2) → merge
-                                    or: /run <id> | /run plan <n> → runner → gate 2 in words → ship
+                                    or: /harness-plugin:runner <id> | plan <n> → runner → gate 2 in words → ship
 ```
 
 ## Install
@@ -25,7 +25,7 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `skills/build` | tests-first, scope-bound implementation. CI is the authority. |
 | `skills/verdict` | fresh-context review in one model call over a prepared input → verdict page. |
 | `skills/briefing` | opt-in response style: what changed, then lettered options. |
-| `skills/run` | `/run <id>` or `/run plan <n>`: wraps `runner.py`, streams its phases, ends on decision + page; Gate 2 in words (ship, reject, child, home, waive) through `kanban_ops.py`. |
+| `skills/runner` | `/harness-plugin:runner <id>` or `plan <n>`: starts `runner.py` in the background, relays its phases from the state file, prints the result block (verdict, findings with file:line and recommended action); Gate 2 in words (ship, reject, child, home, waive) through `kanban_ops.py`. |
 | `hooks/guard_writes.py` | blocks writes to closed tickets, and outside the active ticket's `writes:`. |
 | `hooks/trace_stop.py` | one JSONL line per agent turn into `traces/sessions.jsonl`. |
 | `skills/verdict/verdict-prompt.md` | the judging prompt, copied into every packet; its sha is in the verdict stamp. |
@@ -34,12 +34,12 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `scripts/render_verdict.py` | close-out and the Gate 2 page: what was built, what the reviewer said, recommended action (computed), stamp `meta`. |
 | `scripts/verdict_eval.py` | archived packets → Opik dataset; one arm × one verdict command as an Opik experiment. |
 | `scripts/verdict_canned.py` | verdict command that copies a prepared JSON to `{output}`; CI's model-free seat. |
-| `scripts/render_board.py` | Gate 1: routing stamp with its rule, progress per plan, status columns, dependency graph. Runs on every Stop and after every runner phase. |
+| `scripts/render_board.py` | the board: routing stamp with its rule (Gate 1), progress per plan, status columns, dependency graph, and per running ticket its phase, elapsed time and last builder lines, auto-refreshing while a run is on. Runs on every Stop and after every runner phase. |
 | `scripts/lint_kanban.py` | CI check: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp. |
 | `scripts/grill_digest.py` | grill-misses → blind-spots the grill reads. |
 | `scripts/replay.py` | re-run grill on golden briefs, diff escalations. |
-| `scripts/runner.py` | headless build → ci → verdict state machine: branch in place (`--parallel` for worktrees), streamed build that ends at close-out, phase lines, board after every phase; `--arm`, `--verdict-cmd` pick the verdict seat; `--override` restamps routing. |
-| `scripts/board.py` | `board.py serve`: the board with actions — approve, override, ship, reject, child from finding, home, waive, run a ticket or a plan. Localhost, no auth. |
+| `scripts/runner.py` | headless build → ci → verdict state machine: loads the project's `.env`, branches in place and stays on the ticket branch after the verdict (`--parallel` for worktrees), streamed build that ends at close-out, phase lines, board after every phase; `--plan <n>` walks a plan in depends_on order and pauses at Gate 2; writes `traces/runs/<id>.{log,state,result}`; `--arm`, `--verdict-cmd` pick the verdict seat; `--override` restamps routing. |
+| `scripts/board.py` | the Gate 1 and Gate 2 action functions — approve, override, ship, reject, child from finding, home, waive; no server. `kanban_ops.py` is the command line. |
 | `scripts/kanban_ops.py` | the writes a human made by hand: Log entry, status, routing override, commit. The one Log writer. `kanban_ops.py ship\|reject\|child\|home\|waive\|order` is the board's Gate 2 from a shell. |
 | `scripts/vendor.py` | one shell model call and how its JSON envelope is read; runner and render_verdict share it. |
 | `templates/` | brief, plan, ticket, ADR skeletons. |

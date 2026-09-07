@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
-"""Headless state machine for one ticket, run from the main checkout.
-Usage: python runner.py <ticket id> [--max-retries 2] [--cwd .] [--build-model sonnet] [--verdict-model opus]
-                        [--arm blind|packet|repo] [--verdict-cmd "<template>"] [--summary-model haiku]
-                        [--parallel] [--override backend=<x>|scrutiny=<y>]
+"""Headless state machine for one ticket, or a plan's tickets in order, run from the main checkout.
+Usage: python runner.py <ticket id> | --plan <n> [--max-retries 2] [--cwd .] [--build-model sonnet]
+                        [--verdict-model opus] [--arm blind|packet|repo] [--verdict-cmd "<template>"]
+                        [--summary-model haiku] [--parallel] [--override backend=<x>|scrutiny=<y>]
 States: branch → ci-pre → build (skipped when in_review with tests/feat/close-out commits) →
-status → ci → verdict → close-out → (ship | block→retry | child→human). Phase lines:
-branch|worktree · ci-pre · build attempt n · tests commit · feat commit · build close-out · ci ·
-verdict · close-out.
+status → ci → verdict → close-out → (ship | block→retry | child→human). Phase names:
+branch|worktree · ci-pre · build <n> · build <n> close-out · build <n> skipped · tests-commit ·
+feat-commit · ci · verdict · close-out · done <decision>.
 Each state is a `claude -p` call or a shell command; transitions only on objective signals
 (exit codes, build status line in the ticket Log, verdict.json decision and findings).
 The machine, not the model, owns the loop. Every phase prints `[runner hh:mm:ss +m:ss] <phase>`
-with the builder's output streamed under it, and re-renders traces/board.html in the main
-checkout.
+with the builder's output streamed under it (two-space indent), appends
+`<hh:mm:ss> <+m:ss> <phase>` to traces/runs/<id>.state (the last line of a finished run starts
+with `done `: `done ship`, `done reject`, or `done error <reason>`), and re-renders
+traces/board.html in the main checkout. After the verdict, traces/runs/<id>.result holds the
+end-of-run lines (render_verdict.result_lines: header, one line per open finding with its
+citation, file:line and recommended action, the Recommended line, the page path), also printed
+last on stdout.
 
-Where it builds: branch ticket/<id> checked out in place (the tree must be clean; the original
-branch is restored at the end), or with --parallel a worktree under .worktrees/<id>/ (kept in
-.git/info/exclude; the board's ship removes it).
+Where it builds: branch ticket/<id> checked out in place (the tree must be clean); the run stays
+on ticket/<id> so the human sees what was built and the Gate 2 page in the folder (E16); ship
+from kanban_ops merges and returns to base. With --parallel a worktree under .worktrees/<id>/
+(kept in .git/info/exclude; ship removes it).
+
+The project's .env (KEY=value lines) is loaded first; the environment already set wins (E15).
 
 Build seat: /build streamed, with a shell allowlist and denied prompts. The session ends at the
 close-out (status line committed): any later tool call is logged on the ticket as
@@ -36,7 +44,14 @@ first line printed and lands in meta.opik.
 --override backend=<x>|scrutiny=<y> restamps the ticket's plan before the run, writes the router
 miss to the plan Log and traces/grill-misses.jsonl, and commits.
 
-Exit codes: 0 ship (review the Gate 2 page, merge from the board) · 1 red baseline or retry cap ·
+--plan <n> walks the plan's open tickets in depends_on order (kanban_ops.plan_order): one ticket
+runs, the walk stops at Gate 2 and polls the ticket file every POLL_SECONDS; status done means
+shipped (next ticket), in_progress means rejected (walk stopped, exit 2). A plan stamped
+backend: session is refused unless --override backend=runner restamps it (E14, E18). Progress
+lands in traces/runs/plan-<n>.state: `ticket <id>`, the ticket's phase lines, `gate2 <id>`, and
+`done <summary>` (`done ship 2.1 2.2`, `done stopped 2.2 rejected`, `done refused backend: session`).
+
+Exit codes: 0 ship (review the Gate 2 page, then say ship: kanban_ops merges) · 1 red baseline or retry cap ·
 2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) ·
 3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log) ·
 4 permission denied before the close-out (never retried; see BUILD_ALLOWED_TOOLS and the
@@ -82,45 +97,70 @@ VERDICT_CMD_HELP = (
     f"Default: {DEFAULT_VERDICT_CMD}"
 )
 OPIK_ENV = ("OPIK_URL_OVERRIDE",)
+POLL_SECONDS = 5.0  # --plan: how often the ticket file is read while the walk waits at Gate 2
+BASE_BRANCHES = ("main", "master")
+
+
+def load_dotenv(root: Path) -> dict[str, str]:
+    """Read root/.env — KEY=value lines, optional matching quotes, blanks and # comments skipped,
+    no `export` — into os.environ for the keys not already set (E15: a runner started from a
+    session had no OPIK env). Returns what was loaded."""
+    path = root / ".env"
+    loaded: dict[str, str] = {}
+    if not path.is_file():
+        return loaded
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if key.startswith("export "):  # `export KEY=value` is the same assignment
+            key = key[len("export "):].strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+            loaded[key] = value
+    return loaded
 
 
 def sh(args: list[str], cwd: Path) -> int:
     return subprocess.run(args, cwd=cwd).returncode
 
 
-def workspace(repo: Path, tid: str, parallel: bool) -> tuple[Path, bool, "callable"]:
+def git_exclude(repo: Path, pattern: str) -> None:
+    """Add a pattern to .git/info/exclude once: ignored without touching the project's .gitignore."""
+    exclude = repo / ".git" / "info" / "exclude"
+    if exclude.parent.is_dir() and pattern not in (exclude.read_text() if exclude.exists() else "").splitlines():
+        with exclude.open("a") as f:
+            f.write(pattern + "\n")
+
+
+def workspace(repo: Path, tid: str, parallel: bool) -> tuple[Path, bool]:
     """Where the ticket is built. Default: branch ticket/<id> checked out in place in the main
-    checkout, restored afterwards. --parallel: a worktree under .worktrees/<id>/ (excluded via
-    .git/info/exclude), kept until the board's ship removes it. Returns (path, fresh, restore).
-    Refuses a dirty tree."""
+    checkout, and left there (E16). --parallel: a worktree under .worktrees/<id>/ (excluded via
+    .git/info/exclude), kept until ship removes it. Returns (path, fresh). Refuses
+    a dirty tree."""
     if not clean_tree(repo):
         raise SystemExit("[runner] the tree is dirty; commit or stash before running a ticket")
+    git_exclude(repo, "traces/runs/")  # the state, log and result files: the builder's `git add -A` must not commit them
+    git_exclude(repo, ".env")  # the secrets the runner loads: never on a ticket branch
     branch = f"ticket/{tid}"
     branch_exists = sh(["git", "rev-parse", "--verify", "-q", branch], repo) == 0
     if parallel:
         path = repo / ".worktrees" / tid
-        exclude = repo / ".git" / "info" / "exclude"
-        if exclude.parent.is_dir() and ".worktrees/" not in (exclude.read_text() if exclude.exists() else ""):
-            with exclude.open("a") as f:
-                f.write(".worktrees/\n")
+        git_exclude(repo, ".worktrees/")
         if path.exists():
-            return path, False, lambda: None
+            return path, False
         cmd = (["git", "worktree", "add", str(path), branch] if branch_exists
                else ["git", "worktree", "add", "-b", branch, str(path), "HEAD"])
         if sh(cmd, repo) != 0:
             raise SystemExit(f"[runner] worktree add failed for {tid}")
-        return path, True, lambda: None
-    orig = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+        return path, True
     if sh(["git", "checkout", "-q", branch] if branch_exists else ["git", "checkout", "-q", "-b", branch], repo) != 0:
         raise SystemExit(f"[runner] checkout of {branch} failed")
-
-    def restore() -> None:
-        if orig and orig != branch:
-            r = subprocess.run(["git", "checkout", "-q", orig], cwd=repo, capture_output=True, text=True)
-            if r.returncode != 0:
-                print(f"[runner] could not switch back to {orig}; staying on {branch}: {r.stderr.strip()[-200:]}")
-
-    return repo, not branch_exists, restore
+    return repo, not branch_exists
 
 
 def ticket_base(cwd: Path, branch_from: str = "main") -> str:
@@ -292,13 +332,18 @@ def closed_out(cwd: Path, tid: str) -> bool:
     return bool(STATUS_RE.search(committed))
 
 
-def build(cwd: Path, tid: str, model: str, phase=None, out=None) -> BuildCall:
-    """Run one /build session, streamed. `phase(name)` is called when the tests commit, the
-    feat commit and the close-out appear. On the first tool call after close-out the session
-    is terminated and the call is recorded in `orbit`."""
+BOARD_TICK = 10.0  # seconds between board renders while the build streams (the page refreshes every 5 s)
+
+
+def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 1, tick=None) -> BuildCall:
+    """Run one /build session, streamed. `phase(name)` is called with `tests-commit`,
+    `feat-commit` and `build <attempt> close-out` as they appear. On the first tool call after
+    close-out the session is terminated and the call is recorded in `orbit`."""
     phase = phase or (lambda name: None)
+    tick = tick or (lambda: None)
     out = out or sys.stdout
     t0 = time.monotonic()
+    last_tick = t0
     proc = subprocess.Popen(build_cmd(tid, model), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     report: dict = {}
     orbit: list[str] = []
@@ -309,19 +354,22 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None) -> BuildCall:
     def after_tool() -> None:
         nonlocal done
         subject = head_subject(cwd)
-        for mark, prefix in (("tests commit", f"test({tid})"), ("feat commit", f"feat({tid})")):
+        for mark, prefix in (("tests-commit", f"test({tid})"), ("feat-commit", f"feat({tid})")):
             if subject.startswith(prefix) and mark not in seen:
                 seen.add(mark)
                 phase(mark)
         if not done and closed_out(cwd, tid):
             done = True
-            phase("build close-out")
+            phase(f"build {attempt} close-out")
 
     assert proc.stdout is not None
     for line in proc.stdout:
         line = line.strip()
         if not line:
             continue
+        if time.monotonic() - last_tick > BOARD_TICK:  # the board shows the last builder lines while the build runs
+            last_tick = time.monotonic()
+            tick()
         try:
             ev = json.loads(line)
         except json.JSONDecodeError:
@@ -354,7 +402,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None) -> BuildCall:
     sys.stderr.write(stderr or "")
     if not done and closed_out(cwd, tid):
         done = True
-        phase("build close-out")
+        phase(f"build {attempt} close-out")
     denials = tuple(d for d in (report.get("permission_denials") or ()) if isinstance(d, dict))
     result = report.get("result") if isinstance(report.get("result"), str) else "\n".join(texts)
     cost = report.get("total_cost_usd")
@@ -505,16 +553,41 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
     return v.decision, retryable, progressed
 
 
-class Phases:
-    """[runner hh:mm:ss +m:ss] <phase> lines, seconds per phase, and the board re-rendered into
-    the main checkout after every line."""
+def state_path(repo: Path, tid: str) -> Path:
+    return repo / "traces" / "runs" / f"{tid}.state"
 
-    def __init__(self, repo: Path, tree: Path, out=None):
-        self.repo, self.tree, self.out = repo, tree, out or sys.stdout
+
+def plan_state_path(repo: Path, n: str) -> Path:
+    return repo / "traces" / "runs" / f"plan-{n}.state"
+
+
+def state_line(path: Path, name: str, elapsed: int) -> None:
+    """Append `<hh:mm:ss> <+m:ss> <name>` to a state file (the skill's loop and the board read
+    these; a ticket is running iff its file exists and its last line does not start with `done `)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(f"{time.strftime('%H:%M:%S')} +{elapsed // 60}:{elapsed % 60:02d} {name}\n")
+
+
+class Phases:
+    """[runner hh:mm:ss +m:ss] <phase> lines, the same line into traces/runs/<id>.state (and the
+    plan's state when walking), seconds per phase, and the board re-rendered into the main
+    checkout after every line. `done(text)` writes the final `done <text>` line once."""
+
+    def __init__(self, repo: Path, tree: Path, tid: str, out=None, plan_state: Path | None = None):
+        self.repo, self.tree, self.tid, self.out = repo, tree, tid, out or sys.stdout
         self.t0 = time.monotonic()
         self.current: str | None = None
         self.started = self.t0
         self.seconds: dict[str, float] = {}
+        self.state = state_path(repo, tid)
+        self.plan_state = plan_state
+        self.finished = False
+        self.state.parent.mkdir(parents=True, exist_ok=True)
+        self.state.write_text("", encoding="utf-8")  # a new run: the previous run's lines go
+
+    def elapsed(self) -> int:
+        return int(time.monotonic() - self.t0)
 
     def mark(self, name: str) -> None:
         now = time.monotonic()
@@ -524,7 +597,16 @@ class Phases:
         elapsed = int(now - self.t0)
         self.out.write(f"[runner {time.strftime('%H:%M:%S')} +{elapsed // 60}:{elapsed % 60:02d}] {name}\n")
         self.out.flush()
+        state_line(self.state, name, elapsed)
+        if self.plan_state is not None:
+            state_line(self.plan_state, name, elapsed)
         self.board()
+
+    def done(self, text: str) -> None:
+        """The run's last line, `done <text>`; a second call is ignored."""
+        if not self.finished:
+            self.finished = True
+            self.mark(f"done {text}")
 
     def board(self) -> None:
         try:
@@ -541,7 +623,7 @@ class Phases:
 
 
 def trace_build(client, *, tid: str, cwd: Path, base: str, attempt: int, call: BuildCall, ci_green: bool, seconds: dict) -> None:
-    """One trace per build attempt: input = ticket + plan ACs, output = commits + CI, metadata =
+    """One trace per build <n>: input = ticket + plan ACs, output = commits + CI, metadata =
     attempts, cost, seconds per phase. Never raises into the state machine."""
     if client is None:
         return
@@ -560,9 +642,228 @@ def trace_build(client, *, tid: str, cwd: Path, base: str, attempt: int, call: B
         print(f"[runner] opik trace failed: {e}", file=sys.stderr)
 
 
+def read_verdict(cwd: Path, tid: str) -> "schemas.Verdict | None":
+    """The verdict as stored when it passes the schema, else None (a vendor error left none)."""
+    p = cwd / "traces" / "verdict" / f"{tid}.json"
+    if not p.exists():
+        return None
+    try:
+        v = schemas.Verdict.load(p)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return None if v.problems() else v
+
+
+def total_cost(*parts: "float | None") -> float | None:
+    known = [c for c in parts if c is not None]
+    return round(sum(known), 6) if known else None
+
+
+def write_result(tree: Path, repo: Path, tid: str, v: "schemas.Verdict", cost_usd: "float | None", seconds: float) -> list[str]:
+    """traces/runs/<id>.result: the end-of-run lines (contract C), from verdict.json and the
+    tickets' writes; returned for printing."""
+    lines = render_verdict.result_lines(v, render_verdict.tickets_of(tree), cost_usd, seconds, f"traces/verdict/{tid}.html")
+    path = repo / "traces" / "runs" / f"{tid}.result"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return lines
+
+
+def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: Path | None = None) -> int:
+    """One ticket through the machine. Every exit writes the `done ...` line (contract A) and,
+    when a verdict was read, the result file (contract C), printed last."""
+    try:
+        tree, fresh = workspace(repo, tid, a.parallel)
+    except SystemExit as e:  # a refusal (dirty tree, checkout failed): the state file says so, never a stale run
+        sp = state_path(repo, tid)
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        sp.write_text("", encoding="utf-8")
+        reason = str(e).strip().splitlines()[0] if str(e).strip() else "refused"
+        state_line(sp, f"done error {reason.removeprefix('[runner] ')[:120]}", 0)
+        if plan_state is not None:
+            state_line(plan_state, f"done stopped {tid} {reason.removeprefix('[runner] ')[:120]}", 0)
+        raise
+    phases = Phases(repo, tree, tid, plan_state=plan_state)
+    result: list[str] = []
+    build_cost: float | None = None
+
+    def finish(code: int, done: str, v: "schemas.Verdict | None" = None) -> int:
+        nonlocal result
+        if v is not None:
+            spath = render_verdict.summary_path(tree, tid)
+            summary_cost = json.loads(spath.read_text(encoding="utf-8")).get("cost_usd") if spath.exists() else None
+            result = write_result(tree, repo, tid, v, total_cost(build_cost, v.meta.cost_usd if v.meta else None, summary_cost), phases.elapsed())
+        phases.done(done)
+        return code
+
+    try:
+        phases.mark("branch worktree" if a.parallel else "branch")
+        print(f"  {tree} on ticket/{tid} ({'new' if fresh else 'existing'})")
+        base = ticket_base(tree)
+        if fresh:
+            phases.mark("ci-pre")
+            if not ci(tree):
+                print("[runner] baseline red on a fresh branch — not this ticket's fault; fix main first")
+                return finish(1, "error baseline red")
+        for attempt in range(1, a.max_retries + 1):
+            if already_built(tree, tid, base):
+                phases.mark(f"build {attempt} skipped in_review with tests/feat/close-out commits")
+                call = BuildCall(0, (), "", closed_out=True)
+            else:
+                phases.mark(f"build {attempt}")
+                call = build(tree, tid, a.build_model, phase=phases.mark, attempt=attempt, tick=phases.board)
+                build_cost = total_cost(build_cost, call.cost_usd)
+                if call.orbit:
+                    log_orbit(tree, tid, call.orbit)
+                if call.denials and not call.closed_out:
+                    print(f"[runner] permission denied: {call.denied} — the build session cannot proceed headless; widen BUILD_ALLOWED_TOOLS or the project allowlist")
+                    return finish(4, "error permission denied")
+                if call.denials:
+                    print(f"[runner] permission denied after close-out, ignored: {call.denied}")
+                st = build_status(tree, tid)
+                if st == "NEEDS_CONTEXT":
+                    print("[runner] build needs context — grill miss logged; human needed")
+                    log_grill_miss(tree, tid)
+                    return finish(3, "error needs context")
+                if st == "BLOCKED":
+                    print("[runner] build blocked — see ticket Log; human needed")
+                    return finish(3, "error blocked")
+            phases.mark("ci")
+            green = ci(tree)
+            trace_build(client, tid=tid, cwd=tree, base=base, attempt=attempt, call=call, ci_green=green, seconds=phases.finish())
+            if not green:
+                print("[runner] ci red")
+                continue
+            phases.mark("verdict")
+            decision, retryable, progressed = verdict(tree, tid, a.verdict_model, a.arm, a.verdict_cmd, a.summary_model)
+            phases.mark("close-out")
+            print(f"[runner] verdict: {decision}{' (retryable)' if retryable else ''}")
+            import verdict_eval  # here, not at the top: verdict_eval imports runner
+
+            print(f"[runner] {verdict_eval.record_decision(tree, tid, decision)}")
+            v = read_verdict(tree, tid)
+            if decision == "ship":
+                print(f"[runner] ship — review {tree / 'traces' / 'verdict' / (tid + '.html')}, then say ship")
+                return finish(0, "ship", v)
+            if not retryable:
+                print("[runner] blocking findings all spawn child tickets — human: create children, decide on this slice")
+                return finish(2, "reject", v)
+            if not progressed:
+                print("[runner] same blocks as previous verdict — build and verdict disagree; plan problem, human needed")
+                return finish(2, "reject", v)
+        print("[runner] retry cap reached — human needed")
+        return finish(1, "error retry cap", read_verdict(tree, tid))
+    except BaseException as e:  # noqa: BLE001 — the state file must end in `done` whatever stopped the run
+        reason = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
+        phases.done(f"error {reason[:120]}")
+        raise
+    finally:
+        if not phases.finished:
+            phases.done("error aborted")
+        phases.finish()
+        phases.board()
+        for line in result:
+            print(line)
+
+
+def ticket_status(root: Path, tid: str) -> str:
+    p = kanban_ops.find_ticket(root, tid)
+    return str(_fm.read(p)[0].get("status", "")) if p else "missing"
+
+
+def gate2_status(repo: Path, tid: str) -> str:
+    """What Gate 2 did, read from git, never from the working tree (ship writes the file, commits,
+    checks base out and merges in steps; the walk must not wake in between): "shipped" when the
+    ticket branch is gone (ship deletes it last), "rejected" when the branch's committed ticket
+    says in_progress, "missing" without a ticket file, else "waiting"."""
+    branch = f"ticket/{tid}"
+    if subprocess.run(["git", "rev-parse", "--verify", "-q", branch], cwd=repo, capture_output=True).returncode != 0:
+        return "shipped"
+    path = kanban_ops.find_ticket(repo, tid)
+    if path is None:
+        return "missing"
+    committed = subprocess.run(["git", "show", f"{branch}:{path.relative_to(repo).as_posix()}"], cwd=repo, capture_output=True, text=True).stdout
+    return "rejected" if _fm.parse(committed)[0].get("status") == "in_progress" else "waiting"
+
+
+class Tee:
+    """stdout during a plan walk: the plan's log (the process stdout) and traces/runs/<id>.log
+    both, so the board's last builder lines exist for a walked ticket too."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, s: str) -> int:
+        for st in self.streams:
+            st.write(s)
+        return len(s)
+
+    def flush(self) -> None:
+        for st in self.streams:
+            st.flush()
+
+
+def walk_plan(repo: Path, n: str, a: argparse.Namespace, client) -> int:
+    """--plan <n>: the tickets in depends_on order, one run each; after a ship exit the walk
+    waits at Gate 2 until the ticket file says done (shipped) and stops when it says
+    in_progress (rejected). Refuses a plan stamped backend: session (contract F)."""
+    state = plan_state_path(repo, n)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text("", encoding="utf-8")
+    t0 = time.monotonic()
+    plan = kanban_ops.find_plan(repo, n)
+    if plan is None:
+        print(f"[runner] no plan {n} under kanban/")
+        state_line(state, "done refused no plan", 0)
+        return 2
+    if schemas.RoutingStamp.parse(plan.read_text(encoding="utf-8")).backend == "session":
+        print(f"[runner] plan {n} is stamped backend: session; pass --override backend=runner to run it")
+        state_line(state, "done refused backend: session", 0)
+        return 2
+    shipped: list[str] = []
+    while True:
+        try:
+            order = [t for t in kanban_ops.plan_order(repo, n) if t not in shipped]
+        except ValueError as e:
+            print(f"[runner] {e}")
+            state_line(state, f"done error {e}", int(time.monotonic() - t0))
+            return 2
+        if not order:
+            break
+        tid = order[0]
+        state_line(state, f"ticket {tid}", int(time.monotonic() - t0))
+        log = repo / "traces" / "runs" / f"{tid}.log"
+        try:
+            with log.open("w", encoding="utf-8") as f, contextlib.redirect_stdout(Tee(sys.stdout, f)):
+                rc = run_ticket(repo, tid, a, client, plan_state=state)
+        except SystemExit as e:
+            state_line(state, f"done stopped {tid} {str(e).strip().splitlines()[0] if str(e).strip() else 'exit'}"[:160], int(time.monotonic() - t0))
+            raise
+        if rc != 0:
+            print(f"[runner] walk stopped: {tid} exit {rc}")
+            state_line(state, f"done stopped {tid} exit {rc}", int(time.monotonic() - t0))
+            return rc
+        state_line(state, f"gate2 {tid}", int(time.monotonic() - t0))
+        print(f"[runner] gate 2: {tid} awaits ship")
+        while True:
+            status = gate2_status(repo, tid)
+            if status == "shipped":
+                shipped.append(tid)
+                break
+            if status in ("rejected", "missing"):
+                print(f"[runner] walk stopped: {tid} {status}")
+                state_line(state, f"done stopped {tid} {status}", int(time.monotonic() - t0))
+                return 2
+            time.sleep(POLL_SECONDS)
+    print(f"[runner] plan {n} walked: {' '.join(shipped) or 'nothing to do'}")
+    state_line(state, f"done ship {' '.join(shipped)}".rstrip(), int(time.monotonic() - t0))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0], formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("ticket")
+    ap.add_argument("ticket", nargs="?", help="the ticket to run; or give --plan <n>")
+    ap.add_argument("--plan", metavar="N", help="walk plan N's open tickets in depends_on order, pausing at every Gate 2")
     ap.add_argument("--max-retries", type=int, default=2)
     ap.add_argument("--cwd", default=".")
     ap.add_argument("--build-model", default="sonnet")
@@ -575,79 +876,24 @@ def main() -> int:
     ap.add_argument("--parallel", action="store_true", help="build in a worktree under .worktrees/<id>/ instead of checking the branch out in place")
     ap.add_argument("--override", metavar="FIELD=VALUE", help="backend=<x> or scrutiny=<y>: restamp the ticket's plan, log the router miss, commit; then run")
     a = ap.parse_args()
+    if bool(a.ticket) == bool(a.plan):
+        ap.error("give a ticket id or --plan <n>, not both")
     repo = Path(a.cwd).resolve()
+    load_dotenv(repo)
     client, opik_line = opik_status()
     print(f"[runner] opik: {opik_line}")
 
     if a.override:
         field, _, value = a.override.partition("=")
-        n = a.ticket.split(".")[0]
+        n = a.plan or a.ticket.split(".")[0]
         old, new = kanban_ops.override_plan(repo, n, field.strip(), value.strip(), who="human")
         plan = kanban_ops.find_plan(repo, n)
         sha = kanban_ops.commit(repo, [str(plan.relative_to(repo)), "traces/grill-misses.jsonl"], f"docs(plan {n}): router miss — {field} {old} → {new}")
         print(f"[runner] override: plan {n} {field} {old} → {new} (committed {sha})")
 
-    tree, fresh, restore = workspace(repo, a.ticket, a.parallel)
-    phases = Phases(repo, tree)
-    try:
-        phases.mark("worktree" if a.parallel else "branch")
-        print(f"  {tree} on ticket/{a.ticket} ({'new' if fresh else 'existing'})")
-        base = ticket_base(tree)
-        if fresh:
-            phases.mark("ci-pre")
-            if not ci(tree):
-                print("[runner] baseline red on a fresh branch — not this ticket's fault; fix main first")
-                return 1
-        for attempt in range(1, a.max_retries + 1):
-            if already_built(tree, a.ticket, base):
-                phases.mark(f"build skipped: in_review with tests/feat/close-out commits (attempt {attempt})")
-                call = BuildCall(0, (), "", closed_out=True)
-            else:
-                phases.mark(f"build attempt {attempt}")
-                call = build(tree, a.ticket, a.build_model, phase=phases.mark)
-                if call.orbit:
-                    log_orbit(tree, a.ticket, call.orbit)
-                if call.denials and not call.closed_out:
-                    print(f"[runner] permission denied: {call.denied} — the build session cannot proceed headless; widen BUILD_ALLOWED_TOOLS or the project allowlist")
-                    return 4
-                if call.denials:
-                    print(f"[runner] permission denied after close-out, ignored: {call.denied}")
-                st = build_status(tree, a.ticket)
-                if st == "NEEDS_CONTEXT":
-                    print("[runner] build needs context — grill miss logged; human needed")
-                    log_grill_miss(tree, a.ticket)
-                    return 3
-                if st == "BLOCKED":
-                    print("[runner] build blocked — see ticket Log; human needed")
-                    return 3
-            phases.mark("ci")
-            green = ci(tree)
-            trace_build(client, tid=a.ticket, cwd=tree, base=base, attempt=attempt, call=call, ci_green=green, seconds=phases.finish())
-            if not green:
-                print("[runner] ci red")
-                continue
-            phases.mark("verdict")
-            decision, retryable, progressed = verdict(tree, a.ticket, a.verdict_model, a.arm, a.verdict_cmd, a.summary_model)
-            phases.mark("close-out")
-            print(f"[runner] verdict: {decision}{' (retryable)' if retryable else ''}")
-            import verdict_eval  # here, not at the top: verdict_eval imports runner
-
-            print(f"[runner] {verdict_eval.record_decision(tree, a.ticket, decision)}")
-            if decision == "ship":
-                print(f"[runner] ship — review {tree / 'traces' / 'verdict' / (a.ticket + '.html')}, then merge from the board")
-                return 0
-            if not retryable:
-                print("[runner] blocking findings all spawn child tickets — human: create children, decide on this slice")
-                return 2
-            if not progressed:
-                print("[runner] same blocks as previous verdict — build and verdict disagree; plan problem, human needed")
-                return 2
-        print("[runner] retry cap reached — human needed")
-        return 1
-    finally:
-        phases.finish()
-        phases.board()
-        restore()
+    if a.plan:
+        return walk_plan(repo, a.plan, a, client)
+    return run_ticket(repo, a.ticket, a, client)
 
 
 if __name__ == "__main__":

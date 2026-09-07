@@ -25,7 +25,8 @@ import kanban_ops  # noqa: E402
 import lint_kanban  # noqa: E402
 import schemas  # noqa: E402
 
-ALWAYS_ALLOWED = ("kanban/", "traces/", "docs/")
+ALWAYS_ALLOWED = ("kanban/", "traces/", "docs/")  # prefixes a write never blocks on (C1)
+ALWAYS_WRITABLE = ("docs/glossary.md", "kanban/plans/{n}.plan.md (Log)")  # the same scope as the packet names it to the reviewer (always_writable)
 AC_RE = re.compile(r"\bAC-\d+\b")
 DEF_RE = re.compile(r"^\+\s*(?:def|class)\s+([A-Za-z_]\w*)")
 

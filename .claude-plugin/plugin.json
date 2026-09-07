@@ -1,7 +1,7 @@
 {
   "name": "harness-plugin",
-  "version": "0.6.4",
-  "description": "Grill → plan gate → tests-first build → fresh-context verdict → run. Five skills, two human gates, hooks that enforce ticket scope, scripts that render the pages a human reads.",
+  "version": "0.6.5",
+  "description": "Grill → plan gate → runner (tests-first build → CI → fresh-context verdict) → Gate 2 in words. Five skills, two human gates, one headless runner, hooks that enforce ticket scope, scripts that render the pages a human reads.",
   "homepage": "https://github.com/ludvignion/harness-plugin",
   "license": "MIT",
   "skills": [
@@ -9,6 +9,6 @@
     "./skills/build",
     "./skills/verdict",
     "./skills/briefing",
-    "./skills/run"
+    "./skills/runner"
   ]
 }

@@ -1,0 +1,78 @@
+{
+ "ticket": "2.1",
+ "decision": "reject",
+ "held": [
+  "AC-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "open",
+   "ac": "AC-2",
+   "charter": null,
+   "home": null,
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "ids are rewritten on export, src/pipeline/export/run.py:36 slugifies them"
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": "charter-3",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "no test for the empty report path in src/pipeline/report/page.py"
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "the stage log line lacks the stage name"
+  },
+  {
+   "id": "F4",
+   "severity": "warn",
+   "status": "resolved",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "resolved, not listed src/pipeline/export/x.py"
+  },
+  {
+   "id": "N1",
+   "severity": "note",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "a note is not listed"
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ }
+}

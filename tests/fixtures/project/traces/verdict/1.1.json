@@ -42,8 +42,8 @@
   "arm": "packet",
   "vendor": "claude",
   "plugin_version": "0.6.2",
-  "prompt_sha": "44c7b7ca97e9620c685d79f7c9174cd40c65b934303208d82b24f663ff3cd1ff",
-  "packet_sha": "92ee3ba3e98aee789721a82e8d41bc9ec3e0219701ff30f54307fb88dc9df1a6",
+  "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
+  "packet_sha": "dd23e8d1bd2a219b4827942c7ff2029b62ada2365b8ad1ce24aa5f8b727c9ecf",
   "cost_usd": null,
   "tokens": null
  }

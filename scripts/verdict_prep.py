@@ -3,15 +3,24 @@
 
 Writes traces/verdict/<id>.input.md and prints its path. The packet is the seam between the
 harness and whichever vendor renders the verdict: frontmatter (ticket, arm, output path,
-prompt_sha, plugin_version), the judging instructions copied from skills/verdict/verdict-prompt.md,
-a seat line, then the evidence sections: the ticket's ACs, Out of scope, human waivers; the
-plan's "Verdict must attack" items; the charter items; the previous verdict's blocks with their
-repro commands (the existing <id>.json is archived as <id>.prev.json first); `make ci` result;
-the mechanical findings from verdict_checks.py; tests added on the branch that name ACs; the
-diff (files under tests/fixtures/ and files over 2000 diff lines are a stat line only). Refuses
-to build without a charter. The arm picks the sections (schemas.Packet): blind = instructions, seat, CI, diff; packet =
-everything; repo = everything plus leave to read the tree read-only. Shapes load through
-scripts/schemas.py.
+writes, always_writable, prompt_sha, plugin_version), the judging instructions copied from
+skills/verdict/verdict-prompt.md, a seat line, then the evidence sections: the ticket's ACs,
+Out of scope, human waivers; the plan's "Verdict must attack" items; the charter items; the
+previous verdict's blocks with their repro commands (the existing <id>.json is archived as
+<id>.prev.json first); `make ci` result; the mechanical findings from verdict_checks.py; tests
+added on the branch that name ACs; the diff.
+
+The diff rule (E17: a 532-line lock file made the reviewer read hashes): only files under src/,
+docs/, tests/ (*.py only, never tests/fixtures/) and the lint config files (pyproject.toml,
+ruff.toml, .ruff.toml, mypy.ini, .mypy.ini, .importlinter, setup.cfg) enter the Diff and the
+Diff stat. Lock files, fixtures, kanban/ and traces/ are neither in the diff nor in the stat;
+the stat ends with one line "N files excluded (lock, fixture, kanban)". An included file over
+2000 diff lines is a stat line only, and the whole diff is truncated past 4000 lines.
+
+`always_writable` names the paths every ticket may touch (docs/glossary.md, the parent plan's
+Log) so the reviewer does not warn on them. Refuses to build without a charter. The arm picks
+the sections (schemas.Packet): blind = instructions, seat, CI, diff; packet = everything; repo =
+everything plus leave to read the tree read-only. Shapes load through scripts/schemas.py.
 """
 import argparse
 import json
@@ -29,6 +38,45 @@ DIFF_CAP = 4000  # lines; beyond this the diff is truncated and says so
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 PROMPT_PATH = PLUGIN_ROOT / "skills" / "verdict" / "verdict-prompt.md"
 
+# E17: what the reviewer reads. Prefixes enter whole; tests/ enters for *.py only and never its
+# fixtures; the config files enter by exact path. Everything else is excluded from diff and stat.
+DIFF_INCLUDE = ("src/", "docs/")
+TESTS_PREFIX = "tests/"
+FIXTURES_PREFIX = "tests/fixtures/"
+CONFIG_FILES = ("pyproject.toml", "ruff.toml", ".ruff.toml", "mypy.ini", ".mypy.ini", ".importlinter", "setup.cfg")
+LOCK_NAMES = ("package-lock.json", "poetry.lock", "uv.lock")
+EXCLUDED_LINE = "{n} files excluded (lock, fixture, kanban)"  # the stat's last line; the parenthetical is fixed by the spec
+
+
+def is_lock(path: str) -> bool:
+    name = path.rsplit("/", 1)[-1]
+    return name.endswith(".lock") or name in LOCK_NAMES
+
+
+def included(path: str) -> bool:
+    """True when the file belongs in the reviewer's diff: source, python tests, docs, lint config."""
+    if is_lock(path):
+        return False
+    if path.startswith(TESTS_PREFIX):
+        return path.endswith(".py") and not path.startswith(FIXTURES_PREFIX)
+    return path.startswith(DIFF_INCLUDE) or path in CONFIG_FILES
+
+
+def exclusion_reason(path: str) -> str:
+    """Why an excluded file stays out: lock, fixture, kanban (kanban/ and traces/), other."""
+    if is_lock(path):
+        return "lock"
+    if path.startswith(TESTS_PREFIX):
+        return "fixture"
+    if path.startswith(("kanban/", "traces/")):
+        return "kanban"
+    return "other"
+
+
+def split_files(files: list[str]) -> tuple[list[str], list[str]]:
+    """(included, excluded) in git order."""
+    return [f for f in files if included(f)], [f for f in files if not included(f)]
+
 
 def plugin_version() -> str:
     manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
@@ -43,6 +91,11 @@ def packet_path(root: Path, tid: str) -> Path:
     return root / "traces" / "verdict" / f"{tid}.input.md"
 
 
+def always_writable(plan_n: str) -> list[str]:
+    """Paths every ticket may touch without a writes: entry; the reviewer does not warn on them."""
+    return [x.format(n=plan_n) for x in vc.ALWAYS_WRITABLE]
+
+
 def run_ci(root: Path) -> tuple[bool | None, str]:
     if not (root / "Makefile").exists() or "ci:" not in (root / "Makefile").read_text(errors="ignore"):
         return None, "no `make ci` target"
@@ -55,12 +108,29 @@ def _sec(items) -> str:
     return "\n" + ("\n".join(f"- {i}" for i in items) if items else "- none") + "\n\n"
 
 
+def diff_and_stat(root: Path, rng: str) -> tuple[str, str]:
+    """The included files' diff (folded, capped) and their stat plus the excluded-count line."""
+    kept, dropped = split_files(vc.git(root, "diff", "--name-only", rng).splitlines())
+    if kept:
+        diff = fold_large(vc.git(root, "diff", rng, "--", *kept))
+        stat = vc.git(root, "diff", "--stat", rng, "--", *kept)
+    else:
+        diff, stat = "no included files changed\n", ""
+    lines = diff.splitlines()
+    if len(lines) > DIFF_CAP:
+        diff = "\n".join(lines[:DIFF_CAP]) + f"\n... truncated: {len(lines) - DIFF_CAP} more lines; run `git diff {rng} -- <file>` for a file\n"
+    if dropped:
+        stat += EXCLUDED_LINE.format(n=len(dropped)) + "\n"
+    return diff, stat
+
+
 def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     """The full (packet-seat) packet; ``Packet.rearm`` narrows it."""
     tpath = vc.find_ticket(root, tid)
     fm, body = _fm.read(tpath)
     ticket = schemas.Ticket.parse(body)
-    plan_path = next((root / "kanban").rglob(f"{fm.get('parent', tid.split('.')[0])}.plan.md"), None)
+    plan_n = str(fm.get("parent", tid.split(".")[0]))
+    plan_path = next((root / "kanban").rglob(f"{plan_n}.plan.md"), None)
     plan_body = _fm.read(plan_path)[1] if plan_path else ""
     attacks = schemas.Attacks.parse(plan_body).items
     charter_path = root / "docs" / "domain-pack" / "charter.md"
@@ -75,11 +145,7 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     ci_green, ci_tail = run_ci(root) if ci else (None, "skipped (--no-ci)")
     found = vc.checks(root, tid, base, ci_green)
     rng = f"{base}...HEAD"
-    diff = fold_bulk(vc.git(root, "diff", rng))
-    lines = diff.splitlines()
-    if len(lines) > DIFF_CAP:
-        diff = "\n".join(lines[:DIFF_CAP]) + f"\n... truncated: {len(lines) - DIFF_CAP} more lines; run `git diff {rng} -- <file>` for a file\n"
-    stat = vc.git(root, "diff", "--stat", rng)
+    diff, stat = diff_and_stat(root, rng)
     test_lines = [
         f"{f}: {l[1:].strip()[:120]}"
         for f, l in _added_lines(diff) if "test" in f and schemas.AC_ID_RE.search(l)
@@ -88,6 +154,7 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
         "ticket": tid, "arm": schemas.DEFAULT_ARM, "base": base,
         "output": str(packet_path(root, tid).with_name(f"{tid}.json").relative_to(root)),
         "ticket_file": str(tpath.relative_to(root)), "status": fm.get("status"), "writes": fm.get("writes") or [],
+        "always_writable": always_writable(plan_n),
         "plugin_version": plugin_version(), "prompt_sha": schemas.sha256(prompt_text()),
     }
     sections = (
@@ -114,13 +181,12 @@ def build(root: Path, tid: str, base: str, ci: bool, arm: str = schemas.DEFAULT_
     return gather(root, tid, base, ci).rearm(arm).render()
 
 
-FILE_CAP = 2000  # diff lines per file; beyond this, or under tests/fixtures/, a file is a stat line only
-BULK_PREFIXES = ("tests/fixtures/",)
+FILE_CAP = 2000  # diff lines per included file; beyond this the file is a stat line only
 
 
-def fold_bulk(diff: str) -> str:
-    """The diff with fixture files and any file over FILE_CAP diff lines reduced to one line each,
-    so an 8K-word fixture does not become 30K tokens of reviewer context."""
+def fold_large(diff: str) -> str:
+    """The diff with any file over FILE_CAP diff lines reduced to one line, so a generated
+    module does not become 30K tokens of reviewer context."""
     out: list[str] = []
     chunk: list[str] = []
     path = ""
@@ -128,9 +194,8 @@ def fold_bulk(diff: str) -> str:
     def flush() -> None:
         if not chunk:
             return
-        if path.startswith(BULK_PREFIXES) or len(chunk) > FILE_CAP:
-            why = "fixture" if path.startswith(BULK_PREFIXES) else f"over {FILE_CAP} lines"
-            out.append(f"diff --git a/{path} b/{path}\n# {path}: {len(chunk)} diff lines omitted ({why}); see the diff stat\n")
+        if len(chunk) > FILE_CAP:
+            out.append(f"diff --git a/{path} b/{path}\n# {path}: {len(chunk)} diff lines omitted (over {FILE_CAP} lines); see the diff stat\n")
         else:
             out.append("\n".join(chunk) + "\n")
 

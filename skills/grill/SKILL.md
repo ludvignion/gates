@@ -81,23 +81,28 @@ from the tickets, with a one-line evidence note each:
 From the signals, stamp two derived fields, each with its derivation on the same line:
 
     scrutiny: light | full        # full iff spend or partner_facing
-    backend: session | runner | workflow
+    backend: runner | workflow | session
                                   # workflow iff parallel_ready >= 3 (requires plan-tier support)
-                                  # runner iff full scrutiny must run unattended or with retries
-                                  # session otherwise
+                                  # runner otherwise
+                                  # session only when the human overrides to it (a router miss, logged)
                                   # if no workflow backend exists in the plugin, stamp runner instead and log the downgrade in the plan Log
+
+The text after `#` on the stamp line is what the board shows as the rule, so write it as the
+rule that fired: `backend: runner  # runner: default; session only by override` or
+`backend: workflow  # workflow: parallel_ready >= 3`.
 
 Scrutiny sets review cadence: light = tests-first, human reads diffs, ONE whole-branch verdict
 before ship. Full = per-ticket verdict as ship gate for each slice. The charter and domain pack
 apply identically in both.
 
-Backend sets who owns the control flow: session = the human drives interactively; runner =
-scripts/runner.py drives one ticket (worktree, status protocol, retries); workflow = a generated
-orchestration script drives the DAG, invoking build and verdict per ticket under the same
-contract: tickets in, traces out, stops at the gates.
+Backend sets who owns the control flow: runner = scripts/runner.py drives, started by
+/harness-plugin:runner (one ticket, or a plan in depends_on order, stopping at Gate 2; ticket
+branch, status protocol, retries); session = the human drives interactively, only by override;
+workflow = a generated orchestration script drives the DAG, invoking build and verdict per
+ticket under the same contract: tickets in, traces out, stops at the gates.
 
 Signals are re-derived whenever a ticket is added or edited, child tickets included. If a
-derived field rises (light→full, session→runner), stamp the new value and append a dated line
+derived field rises (light→full, runner→workflow), stamp the new value and append a dated line
 to the plan Log naming the signal that flipped. Derived fields never fall.
 
 The human may override by editing the stamped value. An override is a router miss: log it in

@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.6.5 — 2026-09-07
+
+One seat, one door, one view. Evidence from the plan 2 pilot (E13–E19) drives every item.
+
+- `skills/runner/SKILL.md` — replaces `skills/run` (E13: bare `/run` resolved to a generic
+  skill). `/harness-plugin:runner <id> | plan <n>`: one Bash line starts `runner.py` in the
+  background with its output in `traces/runs/<id>.log`; the session relays each new line of
+  `traces/runs/<id>.state` as `<id> · <phase> (+m:ss)`, prints `traces/runs/<id>.result`
+  verbatim on `done`, and takes Gate 2 in words through `kanban_ops.py` as in 0.6.4. No other
+  command, no reading of code, no building; a runner refusal is printed and the session stops.
+- `scripts/runner.py` — loads the project's `.env` before the Opik gate, existing environment
+  first, `export KEY=value` accepted (E15); `.env` and `traces/runs/` go into
+  `.git/info/exclude` so the builder's `git add -A` commits neither. Stays on `ticket/<id>`
+  after the verdict; no restore (E16). Writes
+  `traces/runs/<id>.state` (`<hh:mm:ss> <+m:ss> <phase>`, last line `done <decision>`) and
+  `traces/runs/<id>.result` (the end-of-run block from `render_verdict.result_lines`: header,
+  one line per finding with citation, file:line and the recommended action, `Recommended:`,
+  page path — E19). Phase names are now `branch · ci-pre · build <n> · build <n> close-out ·
+  build <n> skipped · tests-commit · feat-commit · ci · verdict · close-out · done <decision>`.
+  `--plan <n>` walks `depends_on` order one ticket at a time, pauses at `gate2 <id>` until the
+  ticket's status is `done`, stops on `in_progress` (rejected); `traces/runs/plan-<n>.state`
+  carries `ticket <id>`, the ticket's phase lines, `gate2 <id>`, `done <summary>`. A plan
+  stamped `backend: session` is refused unless `--override backend=runner` is given (E14). The
+  walk reads Gate 2 from git, never from the working tree: shipped = the ticket branch is gone,
+  rejected = the branch's committed ticket says `in_progress` (a ship writes, commits, checks
+  base out and merges in steps; the walk must not wake in between). A walked ticket's output is
+  teed into `traces/runs/<id>.log` so the board has its builder lines. A refusal (dirty tree)
+  writes `done error <reason>` to the state file before exiting so a stale run never reads as
+  this one. The board is re-rendered every 10 s while the build streams, not only per phase.
+- `scripts/board.py` — the action functions only; the server, `serve`, the buttons and the POST
+  routes are gone. `ship` refuses unless the checkout is on `ticket/<id>` or main/master, merges
+  `--no-ff` into base, pushes when a remote exists, deletes the branch and ends on base;
+  `reject` stays on the ticket branch. `plan_order = kanban_ops.plan_order` (one walk order).
+- `scripts/render_board.py` — the board is the product: a Runs section per running ticket
+  (phase, elapsed, last 5 builder lines from the log) and `<meta http-equiv="refresh"
+  content="5">` while any ticket is running.
+- `scripts/kanban_ops.py` — `plan_order(root, n)` moved here (ValueError on a cycle); `order <n>`
+  uses it directly.
+- `skills/verdict/verdict-prompt.md` — the block rule names the packet's `always_writable`
+  paths as never a write outside `writes:`; the fixture packets are restamped with the new
+  prompt sha. `verdict_checks.ALWAYS_WRITABLE` is the one definition of that list.
+- `scripts/verdict_prep.py` — the packet's Diff holds only `src/`, `tests/` (`*.py`), `docs/`
+  and the pyproject / ruff / mypy / importlinter configs; lock files, fixtures, `kanban/` and
+  `traces/` are out of the diff and the stat, counted on one line `N files excluded (lock,
+  fixture, kanban)` (E17). Frontmatter `always_writable` names `docs/glossary.md` and the parent
+  plan's Log so the reviewer does not warn on them.
+- `skills/grill/SKILL.md` — routing default is `runner`; `session` only when the human
+  overrides to it, `workflow` iff `parallel_ready >= 3`; the rule is written after `#` on the
+  stamp line (E18).
+- `tests/fixtures/project` — plan 2 with tickets 2.1 and 2.2 (`depends_on: [2.1]`), and a
+  verdict `2.1.json` with one block that spawns a child and two warns.
+- Tests: `.env` loading and the untraced line; stay-on-branch then ship from the ticket branch;
+  plan walk pause, resume through the real `board.ship`, reject stop and session refusal;
+  a refusal's state line; packet path filter with a lock file and a
+  fixture in the diff; state file lines; the skill text has one runner invocation and no other
+  command; `result_lines` from the fixture verdict; the Runs section and the refresh tag.
+  Suite: 150 tests (was 88).
+
+Decided without an item: the result block lives in `traces/runs/<id>.result` (the skill reads
+a file, never computes); the build's close-out is the phase `build <n> close-out`; a plan walk
+stops on a reject rather than waiting forever; `board.py serve` is dropped outright (the page
+refreshes itself from `file://`); `plan_order` lives in `kanban_ops` (a `board` import from
+`runner` would be circular); the `--parallel` first phase is `branch worktree`.
+
+Consuming projects (project-template): pin `v0.6.5`.
+
 ## 0.6.4 — 2026-09-04
 
 - `skills/run/SKILL.md` — new. `/run <id>` or `/run plan <n>`. A thin wrapper: the session starts
