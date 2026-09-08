@@ -1,0 +1,25 @@
+{
+  "extraKnownMarketplaces": {
+    "ludvignion": {
+      "source": {
+        "source": "github",
+        "repo": "ludvignion/harness-plugin",
+        "ref": "{{plugin_ref}}"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "harness-plugin@ludvignion": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(make *)",
+      "Bash(make)",
+      "Bash(uv *)",
+      "Bash(git *)",
+      "Bash(pytest *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(python -m pytest *)"
+    ]
+  }
+}

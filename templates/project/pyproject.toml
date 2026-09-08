@@ -1,0 +1,47 @@
+[project]
+name = "{{project_name}}"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["structlog>=24"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8", "pytest-cov", "hypothesis",
+  "ruff", "mypy", "mutmut", "radon",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{project_name}}"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "PL", "PT"]
+# Simplicity gates
+[tool.ruff.lint.pylint]
+max-statements = 30
+max-branches = 8
+max-args = 5
+[tool.ruff.lint.flake8-pytest-style]
+mark-parentheses = false
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR2004"]
+
+[tool.mypy]
+strict = true
+files = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error"]
+addopts = "-p no:cacheprovider"
+
+[tool.mutmut]
+paths_to_mutate = ["src/{{project_name}}/"]
+tests_dir = ["tests/"]

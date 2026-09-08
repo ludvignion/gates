@@ -1,6 +1,6 @@
 # harness-plugin
 
-The operating system for agentic development. Six skills, two human gates, hooks that enforce
+The operating system for agentic development. Seven skills, two human gates, hooks that enforce
 ticket scope, scripts that render the only pages a human reads.
 
 ```
@@ -15,12 +15,17 @@ claude plugin marketplace add ludvignion/harness-plugin
 claude plugin install harness-plugin@ludvignion
 ```
 
-Then create a project from [project-template](https://github.com/ludvignion/project-template).
+## Start a project
+
+1. Install the plugin (above).
+2. `/harness-plugin:init` in an empty git repo — the template ships inside the plugin.
+3. Write `kanban/briefs/1-<slug>.md`, then `/harness-plugin:grill 1`.
 
 ## What's here
 
 | Path | Role |
 |---|---|
+| `skills/init` | `/harness-plugin:init [--name <n>]`: the project template, copied from `templates/project/` into an empty repo, placeholders filled, plugin pinned to this version, `make install && make ci`, one commit. `--update [--yes]` diffs the template-owned files (Makefile, .gitignore, .env.example, CI workflow, plugin pin) and writes them only with `--yes`; never `kanban/`, `docs/`, `src/`, `tests/`, `traces/`. |
 | `skills/grill` | brief → plan + tickets. Evidence first; human only for decisions; options ranked against the repo's invariants before cost. ACs are machine-verifiable or tagged `(human)` and confirmed at Gate 2 with `ship`; approval-turn remarks land in `traces/grill-misses.jsonl`; ends with one hand-off line computed from the routing stamp. |
 | `skills/build` | tests-first, scope-bound implementation. CI is the authority. |
 | `skills/verdict` | fresh-context review in one model call over a prepared input → verdict page. |
@@ -43,7 +48,8 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 | `scripts/board.py` | the Gate 1 and Gate 2 action functions — approve, override, ship, reject, child from finding, home, waive; no server. `kanban_ops.py` is the command line. |
 | `scripts/kanban_ops.py` | the writes a human made by hand: Log entry, status, routing override, commit. The one Log writer. `kanban_ops.py ship\|reject\|child\|home\|waive\|order` is the board's Gate 2 from a shell. |
 | `scripts/vendor.py` | one shell model call and how its JSON envelope is read; runner and render_verdict share it. |
-| `templates/` | brief, plan, ticket, ADR skeletons. |
+| `scripts/init_project.py` | `init` and `init --update`: what the init skill runs. |
+| `templates/` | brief, plan, ticket, ADR skeletons; `templates/project/` is the whole project skeleton `init` copies (`{{project_name}}`, `{{plugin_ref}}` are its only placeholders). |
 
 `scripts/` is the runtime the skills and project Makefiles call; `tests/` tests it. Neither is
 invoked by users directly.

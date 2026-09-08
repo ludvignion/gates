@@ -1,0 +1,23 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the gate below needs real history, not just the merge commit
+      - uses: astral-sh/setup-uv@v4
+        with: { python-version: "3.12" }
+      - run: uv sync
+      - run: make ci
+      - name: tests-before-code (ticket branches only)
+        if: startsWith(github.head_ref, 'ticket/')
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          # HEAD is the merge commit on a pull_request event; ask about the branch tip instead.
+          first=$(git log --reverse --format=%s \
+            origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }} | head -1)
+          echo "first commit: $first"
+          case "$first" in test*) ;; *) echo "::error::first commit on a ticket branch must be the test commit"; exit 1;; esac

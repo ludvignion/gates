@@ -28,9 +28,9 @@ class FindingSkillTest(unittest.TestCase):
 
     def test_manifest_lists_six_skills(self):
         manifest = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
-        self.assertEqual(len(manifest["skills"]), 6, manifest["skills"])
+        self.assertEqual(len(manifest["skills"]), 7, manifest["skills"])
         self.assertIn("./skills/finding", manifest["skills"])
-        self.assertIn("Six skills", manifest["description"])
+        self.assertIn("Seven skills", manifest["description"])
         market = json.loads((REPO / ".claude-plugin" / "marketplace.json").read_text())
         self.assertEqual(manifest["version"], market["metadata"]["version"])
         self.assertEqual(manifest["version"], market["plugins"][0]["version"])

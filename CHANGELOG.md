@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.7.0 — 2026-09-08
+
+The project template ships inside the plugin. project-template is archived after this tag.
+
+- `templates/project/` — every file project-template tracked, paths kept, with two placeholders:
+  `{{project_name}}` (the package dir, `pyproject.toml`, the smoke test, `AGENTS.md` paths) and
+  `{{plugin_ref}}` (`.claude/settings.json`). `uv.lock` is not shipped; `make install` writes it.
+  The template README is the project's own: fill-in line, before-the-first-build, Work, Tracing.
+- `scripts/init_project.py` — `init [--name <n>]` in a git repo with no tracked files: copies the
+  template, fills the placeholders (name from `--name` or the directory, lowered, `-` to `_`),
+  pins `.claude/settings.json` to this plugin's own version, runs `make install && make ci`,
+  commits `init from harness-plugin v<version>`, prints
+  `Next: write kanban/briefs/1-<slug>.md, then /harness-plugin:grill 1`. Refuses a repo with
+  tracked files (says `--update`), a destination that already exists, an unset git identity, a
+  name that is not an identifier, a red `make ci` (nothing committed). `init --update` diffs
+  `Makefile`, `.gitignore`, `.env.example`, `.github/workflows/ci.yml` and the plugin pin against
+  the repo, prints the unified diff, writes only with `--yes`, commits nothing, and never touches
+  `kanban/`, `docs/`, `src/`, `tests/`, `traces/`. The pin move keeps the rest of the settings file.
+- `skills/init/SKILL.md` — `/harness-plugin:init [--name <n>] | --update [--yes]`: one script
+  call, output printed as printed, ends on the script's Next line. Seven skills in the manifest.
+- `README.md` — Start a project: install the plugin, `/harness-plugin:init`, write brief 1.
+- `tests/test_init_project.py` — init in a temp empty repo: green `make ci`, pin equals
+  `plugin.json`, no placeholder left, one commit, the Next line; refusal on a non-empty repo and
+  on a clash; `--update` prints the diff and changes nothing without `--yes`, with `--yes` writes
+  only the template-owned files; the template's placeholders; the skill is thin.
+
+`make plugin` in the template stays as the refresh command; it carried no pin logic to remove.
+
+Consuming projects: none to pin. From here, `/harness-plugin:init --update` moves the pin.
+
 ## 0.6.5.8 — 2026-09-08
 
 - `scripts/render_verdict.py` — one blank line between `Page:` and `Next:` in the result block,
