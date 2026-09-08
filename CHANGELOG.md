@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.5.4 — 2026-09-08
+
+E20 from the plan 3 pilot: after three waives the tree held a modified `traces/verdict/3.1.html`
+and `3.1.summary.json`; `ship` logged the ship entry, then refused its checkout to main on the
+dirty tree.
+
+- `scripts/board.py` — `waive`, `home` and `child` re-render the page (html only, through
+  `render_verdict.view`: the haiku summary cache and the stamp stay) before their commit and
+  commit it (`git add -f`, the page is ignored in projects). `ship` from the ticket branch
+  commits anything dirty under `traces/verdict/<id>.*` as `docs(<id>): gate 2 page` before the
+  checkout; anything else dirty is still refused.
+- `tests/test_board.py` — the three actions leave the tree clean and keep the summary; a stale
+  page is committed by the ship.
+
+Consuming projects (project-template): pin `v0.6.5.4`. A pilot stuck on that refusal: commit or
+stash the two verdict files, then `ship` again.
+
 ## 0.6.5.3 — 2026-09-08
 
 - `.claude-plugin/marketplace.json` — version 0.6.5.3 (it said 0.6.4 through 0.6.5, 0.6.5.1

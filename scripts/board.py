@@ -103,6 +103,25 @@ def _verdict(tree: Path, tid: str) -> tuple[Path, schemas.Verdict]:
     return vp, schemas.Verdict.load(vp)
 
 
+def page(tree: Path, tid: str) -> str:
+    """Re-render the Gate 2 page from disk (html only: the summary cache and the stamp stay) and
+    return its path for the commit. E20: a render after the commit left the tracked page and
+    summary dirty, and the ship's checkout to base then refused."""
+    render_verdict.view(tree, tid)
+    return f"traces/verdict/{tid}.html"
+
+
+VERDICT_FILES = "traces/verdict/{tid}."
+
+
+def commit_page(root: Path, tid: str) -> str | None:
+    """Commit whatever is dirty under traces/verdict/<tid>.* (a page re-rendered by an older
+    action) so a ship can leave the branch; anything else dirty stays the human's."""
+    dirty = [l[3:] for l in subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=root, capture_output=True, text=True).stdout.splitlines()]
+    mine = [f for f in dirty if f.startswith(VERDICT_FILES.format(tid=tid))]
+    return kanban_ops.commit(root, mine, f"docs({tid}): gate 2 page", force=True) if mine else None
+
+
 def _finding(v: schemas.Verdict, fid: str) -> dict:
     f = next((f for f in v.findings if f.get("id") == fid), None)
     if f is None:
@@ -168,6 +187,8 @@ def ship(root: Path, tid: str, who: str = "human") -> str:
         if tree != root:  # a worktree holds the branch: remove it first, the merge needs the branch free
             _git(root, "worktree", "remove", "--force", str(tree))
         if current_branch(root) != base:  # the runner left the checkout on the ticket branch
+            if commit_page(root, tid):
+                lines.append("gate 2 page committed")
             if not _clean(root):
                 raise BoardError(f"the tree is dirty; commit or stash before shipping from {branch}")
             _git(root, "checkout", "-q", base)
@@ -239,9 +260,8 @@ def child(root: Path, tid: str, fid: str, who: str = "human") -> str:
         v = v.with_findings(tuple({**x, "spawn_child": True, "home": cid} if x.get("id") == fid else x for x in v.findings))
         v.dump(vp)
         kanban_ops.append_log(parent, "human", f"child {cid} from {fid} by {who}", (f"- {f.get('text', '')} → home: {cid}",))
-        sha = kanban_ops.commit(tree, [str(cpath.relative_to(tree)), str(parent.relative_to(tree)), str(vp.relative_to(tree))],
-                                f"docs({tid}): child {cid} from {fid}")
-        render_verdict.main(tree, tid, v.meta.vendor if v.meta else render_verdict.DEFAULT_VENDOR, summary_model="none")
+        sha = kanban_ops.commit(tree, [str(cpath.relative_to(tree)), str(parent.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)],
+                                f"docs({tid}): child {cid} from {fid}", force=True)
     finally:
         restore()
     return f"child {cid} created from {tid} {fid} ({sha}): {cpath.name}"
@@ -258,8 +278,7 @@ def home(root: Path, tid: str, fid: str, target: str, who: str = "human") -> str
             raise BoardError(f"no ticket {target} to home {fid} to")
         v = v.with_findings(tuple({**x, "home": target} if x.get("id") == fid else x for x in v.findings)).dump(vp) or schemas.Verdict.load(vp)
         kanban_ops.append_log(path, "human", f"finding: {f.get('text', '')}", (f"- {fid} home: {target} (by {who})",))
-        sha = kanban_ops.commit(tree, [str(path.relative_to(tree)), str(vp.relative_to(tree))], f"docs({tid}): {fid} homed to {target}")
-        render_verdict.main(tree, tid, v.meta.vendor if v.meta else render_verdict.DEFAULT_VENDOR, summary_model="none")
+        sha = kanban_ops.commit(tree, [str(path.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)], f"docs({tid}): {fid} homed to {target}", force=True)
     finally:
         restore()
     return f"{tid} {fid} homed to {target} ({sha})"
@@ -278,8 +297,7 @@ def waive(root: Path, tid: str, fid: str, reason: str, who: str = "human") -> st
         kanban_ops.append_log(path, "human", f"waive {fid} by {who}: {reason.strip()}", when=when)
         v = v.with_findings(tuple({**x, "waived_by": f"{who} {when}"} if x.get("id") == fid else x for x in v.findings))
         v.dump(vp)
-        sha = kanban_ops.commit(tree, [str(path.relative_to(tree)), str(vp.relative_to(tree))], f"docs({tid}): {fid} waived by {who}")
-        render_verdict.main(tree, tid, v.meta.vendor if v.meta else render_verdict.DEFAULT_VENDOR, summary_model="none")
+        sha = kanban_ops.commit(tree, [str(path.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)], f"docs({tid}): {fid} waived by {who}", force=True)
     finally:
         restore()
     return f"{tid} {fid} waived ({sha})"

@@ -136,6 +136,26 @@ class BoardActionsTest(unittest.TestCase):
         self.assertIn("1.1 shipped", line)
         self.assertEqual(lint_kanban.lint(self.root), [])  # no ship past an open block: the waiver names it
 
+    def test_actions_leave_the_tree_clean_and_ship_commits_a_stale_page(self):
+        """E20: waive, home and child re-render the page before their commit (html tracked, summary
+        cache kept); a page left dirty by an older action is committed by the ship, not refused."""
+        git(self.root, "checkout", "-q", "ticket/1.2")
+        sp = self.root / "traces/verdict/1.2.summary.json"
+        sp.write_text('{"built": "kept", "review": "kept", "model": "haiku", "inputs_sha": "x", "cost_usd": 0.01, "error": null}\n')
+        git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "summary cached")
+        board.waive(self.root, "1.2", "C1", "AC-2 goes to the child", who="reviewer")
+        self.assertEqual(subprocess.run(["git", "status", "--porcelain"], cwd=self.root, capture_output=True, text=True).stdout.strip(), "")
+        self.assertIn("traces/verdict/1.2.html", subprocess.run(["git", "ls-files", "traces/verdict"], cwd=self.root, capture_output=True, text=True).stdout)
+        self.assertIn('"built": "kept"', sp.read_text())  # the cached summary survives a waive
+        self.assertIn("waived reviewer", (self.root / "traces/verdict/1.2.html").read_text())
+        board.child(self.root, "1.2", "F1", who="reviewer")
+        self.assertEqual(subprocess.run(["git", "status", "--porcelain"], cwd=self.root, capture_output=True, text=True).stdout.strip(), "")
+        (self.root / "traces/verdict/1.2.html").write_text("stale page from an older action\n")  # dirty, tracked
+        line = board.ship(self.root, "1.2", who="reviewer")
+        self.assertIn("gate 2 page committed", line); self.assertIn("merged ticket/1.2 --no-ff into main", line)
+        self.assertEqual(subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout.strip(), "main")
+        self.assertIn("docs(1.2): gate 2 page", self._subjects())
+
     def test_reject_with_reason(self):
         with self.assertRaises(board.BoardError):
             board.reject(self.root, "1.2", "  ")
