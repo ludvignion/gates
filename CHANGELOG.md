@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.5.6 — 2026-09-08
+
+- `scripts/render_verdict.py` — the result block, at most 12 lines, no dollar amounts, no
+  `Recommended:` line, no summary paragraphs: `<id> · SHIP|REJECT · build m:ss · verdict m:ss ·
+  <in>K in / <out>K out`; `Built: <one sentence> — <files touched>`; `Findings (N)` then
+  `F# <file:line> — <text> → <Gate 2 words>` (folded past the cap: `… N more on the page`);
+  `Charter: <held> held · <reachable, not judged>`; `Human: <AC> — <text> → confirm with ship`;
+  `Changed: N files +A/−B — <up to 6 names>`; `Page: <path>`; `→ <recommended words>`
+  (`child from F1, home F2 to 2.3, waive F3, then ship` · `reject: rework F1` · `ship`).
+- `scripts/verdict_checks.py` — a charter item is never an `unaccounted` C-warn: a reachable
+  item the reviewer neither held nor cited is `reachable, not judged` (`charter_report`'s new
+  `unjudged`), never a finding, never waivable (E22). ACs are unaccounted as before.
+- `skills/runner/SKILL.md` — E26: the Bash tool hands output over at exit, so the watch is
+  `sleep 20; tail -n +<K> traces/runs/<id>.state` repeated, printing what each call returns;
+  no following tail, no pid. The result section shows the new block.
+- `tests/` — the block shape from the fixture verdict, folding, the charter and changed lines;
+  the watch against a stand-in runner that appends a line every 0.3 s: at least three lines
+  before `done`, over more than one call, nothing replayed or lost. 183 tests.
+
+Consuming projects (project-template): pin `v0.6.5.6`.
+
 ## 0.6.5.5 — 2026-09-08
 
 Text-render plans 2–3 (E20–E30, G1–G4): the verdict judged nothing, against the wrong base, with

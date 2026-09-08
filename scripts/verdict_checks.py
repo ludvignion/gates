@@ -143,11 +143,12 @@ def packet_items(packet: "schemas.Packet | None") -> list[str]:
 
 
 def unaccounted(v: schemas.Verdict, packet: "schemas.Packet | None") -> list[str]:
-    """Packet items in neither `held` nor any finding's ac/charter. Silence is not a pass. The
-    packet's Charter section holds reachable items only, so nothing unreachable lands here (E22)."""
+    """Packet ACs in neither `held` nor any finding's ac. Silence on an AC is not a pass. Charter
+    items are not here: a reachable item the reviewer neither held nor cited is "reachable, not
+    judged" on the result block (charter_report), never a finding and never waivable (E22)."""
     held = set(v.held)
-    cited = {f.get("ac") for f in v.findings} | {f.get("charter") for f in v.findings}
-    return [i for i in packet_items(packet) if i not in held and i not in cited]
+    cited = {f.get("ac") for f in v.findings}
+    return [i for i in packet_items(packet) if i.startswith("AC-") and i not in held and i not in cited]
 
 
 def packet_charter(packet: "schemas.Packet | None") -> list[str]:
@@ -156,9 +157,10 @@ def packet_charter(packet: "schemas.Packet | None") -> list[str]:
 
 
 def charter_report(v: schemas.Verdict, packet: "schemas.Packet | None") -> dict:
-    """{"reachable": [ids], "held": [ids], "findings": {"charter-n": ["F3", ...]}} for the result
-    block's charter line: the reachable items, those in `held`, and for each reachable item not
-    held the finding ids citing it (E22: what the diff could reach, and what happened to it)."""
+    """{"reachable": [ids], "held": [ids], "findings": {"charter-n": ["F3", ...]}, "unjudged": [ids]}
+    for the result block's charter line: the reachable items, those in `held`, for each
+    reachable item not held the finding ids citing it, and the rest — reachable, not judged
+    (E22: what the diff could reach, and what happened to it)."""
     reachable = packet_charter(packet)
     held = [i for i in reachable if i in set(v.held)]
     findings = {}
@@ -168,15 +170,15 @@ def charter_report(v: schemas.Verdict, packet: "schemas.Packet | None") -> dict:
         ids = [str(f.get("id")) for f in v.findings if f.get("charter") == i and f.get("id")]
         if ids:
             findings[i] = ids
-    return {"reachable": reachable, "held": held, "findings": findings}
+    return {"reachable": reachable, "held": held, "findings": findings, "unjudged": [i for i in reachable if i not in held and i not in findings]}
 
 
 def validate(v: schemas.Verdict, arm: str, packet: "schemas.Packet | None" = None) -> tuple[schemas.Verdict, list[str]]:
     """The verdict as it should be stored, and the violations found. Blind cannot cite, so its
     uncited blocks become warns (text unchanged); under any other arm they are violations and
-    the verdict is returned as written. Every AC and charter item the packet showed must be in
-    `held` or cited by a finding; the rest become C-warns "unaccounted: <id>" (appended once;
-    a re-run does not duplicate them)."""
+    the verdict is returned as written. Every AC the packet showed must be in `held` or cited by
+    a finding; the rest become C-warns "unaccounted: <id>" (appended once; a re-run does not
+    duplicate them). Charter items never do: see unaccounted."""
     violations: list[str] = []
     uncited = v.uncited_blocks()
     if uncited and arm != "blind":

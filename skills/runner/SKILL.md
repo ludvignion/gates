@@ -42,22 +42,20 @@ The last three land after the build, as a `done error <reason>` state line; the 
 land before any branch exists.
 
 ## Watch
-One Bash line, the second allowed command. It streams: Claude Code shows a running command's
-output as it appears, so every state line reaches the chat the moment the runner writes it.
+The Bash tool hands a command's output over when the command exits, not while it runs (E26:
+a following tail showed nothing for the whole build). So the watch is a short command repeated: it
+prints the state lines written since the last call and returns at once. `<K>` is one more than
+the number of state lines already printed (1 on the first call):
 ```
-sh -c 'while [ ! -f traces/runs/<id>.pid ]; do sleep 1; done; tail -n +1 -f --pid=$(cat traces/runs/<id>.pid) traces/runs/<id>.state & t=$!; while ! tail -n 1 traces/runs/<id>.state | grep -qE "^[^ ]+ [^ ]+ (done|gate2) "; do sleep 2; done; sleep 2; kill $t 2>/dev/null'
+sleep 20; tail -n +<K> traces/runs/<id>.state
 ```
-How it works: the runner writes its pid to `traces/runs/<id>.pid` right after truncating the
-state file, so the first loop waits for a fresh run; `tail` follows the state file and exits
-when the runner does (`--pid`); the second loop returns when the LAST line's phase is `done` or
-`gate2` (a plan's file also carries each ticket's own `done` line, followed at once by
-`gate2 <id>`, so only the last line counts), and the final `kill` ends the follower when the runner is still alive at a gate. For a
-plan the file names are `traces/runs/plan-<n>.{pid,state}`.
-
-The Bash tool returns after 10 minutes at most. When it returns without a `done` or `gate2`
-line the run is still on: run the same watch line again with `-n 0` in place of `-n +1`, so
-nothing already shown is replayed. Print nothing yourself while the watch runs: no summary of
-the builder's output, no acting on it, no opening the tree.
+Skip the `sleep` on the first call. Print every line the command returns, as returned, then
+call it again with the new `<K>`. Stop when the last line printed has phase `done` or `gate2`
+(a plan's file also carries each ticket's own `done` line, followed at once by `gate2 <id>`, so
+the last line decides). For a plan the file is `traces/runs/plan-<n>.state`. Print nothing of
+your own between calls: no summary of the builder's output, no acting on it, no opening the
+tree. A run that writes no new line for many minutes is stuck, not silent: the heartbeat below
+lands every 30 seconds while the build session streams.
 
 Every state line is `<hh:mm:ss> <+m:ss> <phase> [detail]`. Phases, in the runner's own words:
 `branch · ci-pre · build <n> · build <n> close-out · build <n> skipped · tests-commit ·
@@ -74,34 +72,32 @@ ticket's own lines appear verbatim in between.
 ## The result
 On a ticket's `done` line print `traces/runs/<id>.result` verbatim. The runner wrote it from
 `verdict.json`, `summary.json`, the packet and the Gate 2 page's computed recommendation;
-nothing in it comes from this session. Its shape, in this order (E24, E27, E30):
+nothing in it comes from this session. Its exact shape, at most 12 lines, no dollar amounts:
 
-    <what was built, one sentence from summary.json>
-    <what the reviewer said, one sentence from summary.json>
-    <id> · verdict: SHIP|REJECT · N blocks · N warns · verdict $cost/Ns · build $cost/Ns · run Ns
-    F1 block (AC-2) src/app/extract.py:36 — "<finding text>" → child 2.2.1
-    F2 warn (charter-3) tests/test_page.py:118 — "<text>" → home 2.3
-    F3 warn (—) — "<text>" → waive
-    charter: 2, 7 reachable — both held
-    human: AC-7 — <text> (confirm with ship)
-    changed vs main: 3 files +120/−8
-      src/app/extract.py +90/−4
-      tests/test_extract.py +30/−4
-      docs/usage.md +0/−0
-    Recommended: ship, child F1 → 2.2.1, home F2 → 2.3, waive F3
-    <path of the Gate 2 page>
+    <id> · SHIP|REJECT · build m:ss · verdict m:ss · <in>K in / <out>K out
+    Built: <one sentence from summary.json> — <files touched>
+    Findings (N)
+    F1 src/app/extract.py:36 — <finding text> → child from F1
+    F2 tests/test_page.py:118 — <text> → home F2 to 2.3
+    F3 — <text> → waive F3
+    Charter: charter-2 held · charter-7 reachable, not judged
+    Human: AC-7 — <full AC text> → confirm with ship
+    Changed: 3 files +120/−8 — src/app/extract.py, tests/test_extract.py, docs/usage.md
+    Page: <path of the Gate 2 page>
+    → child from F1, home F2 to 2.3, waive F3, then ship
 
-Line by line: the two summary sentences (absent when the summary errored); the header; one
-line per open finding in verdict order — number, severity, citation, `file:line` when the
-finding names one (`—` otherwise), the finding's text, and the arrow's action, the recommended
-action the Gate 2 page already computed; the charter line — which charter items the diff can
-reach and whether they held (`charter: 4 reachable — F3` names the finding against one;
-`charter: none reachable` when the diff touches nothing a charter item applies to); one
-`human:` line per AC tagged `(human)`, which no test can verify; the files changed against
-the base branch (the word after `vs` is the base branch's name), one indented line per file;
-the Recommended line; the page path. A `done error <reason>` line (ci red, retry cap, needs
-context, permission denied, nothing to judge, packet too big, num_turns) has no verdict: print
-that line and whatever result the runner left, then stop; the human decides.
+Line by line: build and verdict wall time and the verdict call's tokens; what was built and the
+files it touched; one line per open finding in verdict order with `file:line` when the finding
+names one and the Gate 2 words for it; the charter line — the reachable items the reviewer
+held, and those it neither held nor cited (reachable, not judged: never findings, never
+waivable; `Charter: none reachable` when the diff touches nothing a charter item applies to);
+one `Human:` line per AC tagged `(human)`, which no test can verify and the human confirms by
+saying `ship`; the files changed against the base branch (up to six names); the page path; and
+the arrow line, the recommended Gate 2 words in order (`→ ship`, `→ reject: rework F1`, or the
+finding actions then `then ship`). When there are more findings than fit, the list folds into
+`… N more on the page`. A `done error <reason>` line (ci red, retry cap, needs context,
+permission denied, nothing to judge, packet too big, num_turns) has no verdict: print that line
+and whatever result the runner left, then stop; the human decides.
 
 ## Gate 2
 In this session, in the same words the result recommends. The human reads the page and says one
@@ -129,8 +125,8 @@ the human, not an action.
 The runner walks the plan's tickets in `depends_on` order by itself, one ticket at a time, and
 pauses at `gate2 <id>` until that ticket's status is `done`. So: the same Start line with
 `--plan <n>`, the same watch on `plan-<n>.state`, the same result block on each ticket's
-`done` line, Gate 2 in this session. After `ship` the runner resumes on its own: run the watch
-line again. A `reject` ends the walk (`done stopped <id> rejected`), as does any runner error;
+`done` line, Gate 2 in this session. After `ship` the runner resumes on its own: keep calling
+the watch. A `reject` ends the walk (`done stopped <id> rejected`), as does any runner error;
 print the plan's `done <summary>` line and stop.
 
 ## Hand-off
@@ -147,9 +143,9 @@ The session's last line is one of these, and nothing follows it:
 ## Never
 - Build, judge, or fix anything. The runner's build session builds; the runner's verdict seat
   judges; findings are the human's to route.
-- Run any command but the Start line, the watch line, and the Gate 2 table. No second process,
-  no exploring a URL, no branch of your own, no reading the log beyond a refusal, no sleeping
-  loop of your own: the watch line waits.
+- Run any command but the Start line, the watch command, and the Gate 2 table. No second
+  process, no exploring a URL, no branch of your own, no reading the log beyond a refusal, no
+  following tail: the watch returns and is called again.
 - Read code. The state file and the result file are the whole view.
 - Change a ticket, a plan, a Log, a status, or a verdict by any means but the `kanban_ops.py`
   commands above. There is no other path from this session to `kanban/` or `traces/`.

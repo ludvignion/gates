@@ -19,6 +19,7 @@ FIXTURE_PROJECT = REPO / "tests" / "fixtures" / "project"
 from test_verdict_scripts import git  # noqa: E402
 
 SKILL = REPO / "skills" / "runner" / "SKILL.md"
+WATCH = "sleep 20; tail -n +<K> traces/runs/<id>.state"  # the skill's watch command, verbatim
 EDITING = re.compile(r"\b(edit|write|append|modify|rewrite|patch|sed)\b", re.I)
 
 
@@ -53,28 +54,65 @@ class RunSkillTextTest(unittest.TestCase):
     def test_result_format_and_refusals(self):
         """E19: the end of a run is the decision plus one line per finding with its action, all from the runner's result file."""
         body = SKILL.read_text(encoding="utf-8")
-        for fmt in ("verdict: SHIP|REJECT", "Recommended:", "\u2192 child", "\u2192 home", "\u2192 waive", ".result", ".state"):
+        for fmt in ("SHIP|REJECT", "\u2192 child from", "\u2192 home", "waive F", ".result", ".state"):
             self.assertIn(fmt, body, fmt)
         never = schemas.section(body, "Never")
         self.assertIn("session stamp", never)
         self.assertIn("dirty tree", never)
         self.assertIn("/harness-plugin:runner", body)
 
-    def test_watch_streams_and_the_result_shape_is_named(self):
-        """E25/E26: the Start line clears the old state, one streaming tail --pid watch replaces the sleep-30 loop;
-        E20/E24/E27/E28/E30: the result block's new lines and the new refusals are named; one Next line (J)."""
+    def test_watch_is_a_repeated_short_tail_and_the_result_shape_is_named(self):
+        """E26: the Bash tool returns output at exit, so the watch is `sleep 20; tail -n +<K>` repeated;
+        the result block's lines and the refusals are named; one Next line (J)."""
         body = SKILL.read_text(encoding="utf-8")
         lines = body.splitlines()
         start = next(l for l in lines if "runner.py" in l)
         self.assertIn("rm -f traces/runs/<id>.state", start)
-        tails = [l for l in lines if "tail " in l]
+        tails = [l for l in lines if l.strip().startswith("tail ") or "; tail " in l]
         self.assertEqual(len(tails), 1, tails)
-        self.assertIn("--pid", tails[0]); self.assertIn("traces/runs/", tails[0]); self.assertIn(".state", tails[0])
-        self.assertNotIn("sleep 30", body)
-        for word in ("num_turns", "nothing to judge", "packet too big", "changed vs main", "human:", "charter:", "heartbeat", "gate2"):
+        self.assertEqual(tails[0].strip(), WATCH)
+        self.assertNotIn("tail -f", body); self.assertNotIn("--pid", body); self.assertNotIn("sleep 30", body)
+        for word in ("num_turns", "nothing to judge", "packet too big", "Built:", "Findings (", "Charter:", "Human:", "Changed:", "Page:",
+                     "reachable, not judged", "then ship", "heartbeat", "gate2"):
             self.assertIn(word, body, word)
+        self.assertNotIn("Recommended:", body); self.assertNotIn("$cost", body)
         nonempty = [l for l in lines if l.strip()]
         self.assertTrue(nonempty[-1].startswith("Next:"), nonempty[-1])
+
+    def test_watch_prints_lines_while_the_runner_stand_in_is_still_writing(self):
+        """E26, verified: against a stand-in runner that appends a state line every 0.3 s, the skill's
+        watch (sleep shortened to 0.5 s) prints at least three lines before `done`, over more
+        than one call."""
+        root = Path(tempfile.mkdtemp())
+        try:
+            (root / "traces/runs").mkdir(parents=True)
+            state = root / "traces/runs/1.1.state"
+            stand_in = subprocess.Popen([sys.executable, "-c", (
+                "import sys,time\n"
+                "p=sys.argv[1]\n"
+                "for i,ph in enumerate(['branch','ci-pre','build 1','build 1 · running · last 10:00:03 · $ pytest -q','tests-commit','feat-commit','ci','verdict','close-out','done ship']):\n"
+                "    open(p,'a').write(f'10:00:{i:02d} +0:{i:02d} {ph}\\n'); time.sleep(0.3)\n"), str(state)], cwd=root)
+            printed: list[str] = []
+            calls = 0
+            seen_before_done = 0
+            while True:
+                cmd = WATCH.replace("<K>", str(len(printed) + 1)).replace("<id>", "1.1").replace("sleep 20", "sleep 0.5")
+                if calls == 0:
+                    cmd = cmd.split("; ", 1)[1]  # the first call skips the sleep
+                out = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, text=True).stdout.splitlines()
+                calls += 1
+                printed += out
+                if any(l.split(" ", 2)[2].split(" ")[0] in ("done", "gate2") for l in out if len(l.split(" ", 2)) == 3):
+                    break
+                seen_before_done = len(printed)
+                self.assertLess(calls, 40)
+            self.assertGreaterEqual(seen_before_done, 3, printed)
+            self.assertGreaterEqual(calls, 2)
+            self.assertEqual(printed[-1].split(" ", 2)[2], "done ship")
+            self.assertEqual(len(printed), 10, printed)  # nothing replayed, nothing lost
+            stand_in.wait(timeout=10)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
     def test_manifest_lists_the_skill(self):
         import json

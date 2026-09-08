@@ -333,25 +333,30 @@ class VerdictScriptsTest(unittest.TestCase):
         v = json.loads(vpath.read_text()); v["held"] = ["AC-1"]; vpath.write_text(json.dumps(v))
         render_verdict.main(self.tmp, "1.1", summary_model="none")
         v = schemas.Verdict.load(vpath)
-        self.assertEqual([(f["id"], f["severity"], f["text"], f.get("ac"), f.get("charter")) for f in v.findings[2:]],
-                         [("C2", "warn", "unaccounted: charter-7", None, "charter-7")])
+        self.assertEqual(len(v.findings), 2)  # charter-7, reachable and unjudged, is no finding (0.6.5.6)
+        v = json.loads(vpath.read_text()); v["held"] = []; vpath.write_text(json.dumps(v))
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual([(f["id"], f["severity"], f["text"], f.get("ac")) for f in v.findings[2:]], [("C2", "warn", "unaccounted: AC-1", "AC-1")])
         render_verdict.main(self.tmp, "1.1", summary_model="none")  # idempotent: no second C2
         self.assertEqual(len(schemas.Verdict.load(vpath).findings), 3)
+        v = json.loads(vpath.read_text()); v["held"] = ["AC-1"]; vpath.write_text(json.dumps(v)); v = schemas.Verdict.load(vpath)
         self.assertEqual(verdict_checks.unaccounted(v, schemas.Packet.load(vpath.with_name("1.1.input.md"))), [])
 
-    def test_unreachable_charter_item_never_warns(self):
-        """E22: "unaccounted: charter-N" fired for items the diff could not reach. Only a reachable,
-        unheld item yields a C-warn; the five unreachable ones are silent."""
+    def test_charter_items_are_never_unaccounted_findings(self):
+        """E22: "unaccounted: charter-N" fired for items the diff could not reach. No charter item is
+        ever a C-warn now; a reachable, unheld, uncited one is "not judged" in charter_report."""
         vpath = self._verdict_and_packet("packet", [], decision="ship")
         packet = schemas.Packet.load(vpath.with_name("1.1.input.md"))
         v = schemas.Verdict.load(vpath)
-        self.assertEqual(verdict_checks.unaccounted(v, packet), ["AC-1", "AC-2", *CHARTER_REACHABLE])
-        held = v.with_findings(()).__class__.from_dict({**v.as_dict(), "held": ["AC-1", "AC-2", "charter-2"]})
-        self.assertEqual(verdict_checks.unaccounted(held, packet), ["charter-7"])
+        self.assertEqual(verdict_checks.unaccounted(v, packet), ["AC-1", "AC-2"])
+        held = v.__class__.from_dict({**v.as_dict(), "held": ["AC-1", "AC-2", "charter-2"]})
+        self.assertEqual(verdict_checks.unaccounted(held, packet), [])
+        report = verdict_checks.charter_report(held, packet)
+        self.assertEqual((report["reachable"], report["held"], report["findings"], report["unjudged"]), (list(CHARTER_REACHABLE), ["charter-2"], {}, ["charter-7"]))
         render_verdict.main(self.tmp, "1.1", summary_model="none")
         texts = [f["text"] for f in schemas.Verdict.load(vpath).findings]
-        self.assertIn("unaccounted: charter-7", texts)
-        for gone in CHARTER_UNREACHABLE:
+        for gone in (*CHARTER_UNREACHABLE, *CHARTER_REACHABLE):
             self.assertNotIn(f"unaccounted: {gone}", texts, gone)
 
     def test_prep_charter_section_lists_reachable_items_with_patterns(self):
@@ -374,13 +379,13 @@ class VerdictScriptsTest(unittest.TestCase):
         vpath = self._verdict_and_packet("packet", [], decision="ship")
         packet = schemas.Packet.load(vpath.with_name("1.1.input.md"))
         both = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "ship", "held": ["AC-1", "charter-2", "charter-7"], "findings": []})
-        self.assertEqual(verdict_checks.charter_report(both, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2", "charter-7"], "findings": {}})
+        self.assertEqual(verdict_checks.charter_report(both, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2", "charter-7"], "findings": {}, "unjudged": []})
         one = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "reject", "held": ["charter-2"], "findings": [
             {"id": "F3", "severity": "block", "status": "open", "charter": "charter-7", "text": "no AC in the docstring"},
             {"id": "F4", "severity": "warn", "status": "open", "charter": "charter-2", "text": "cited though held"},
             {"id": "F5", "severity": "warn", "status": "open", "charter": "charter-1", "text": "unreachable, ignored"}]})
-        self.assertEqual(verdict_checks.charter_report(one, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2"], "findings": {"charter-7": ["F3"]}})
-        self.assertEqual(verdict_checks.charter_report(one, None), {"reachable": [], "held": [], "findings": {}})
+        self.assertEqual(verdict_checks.charter_report(one, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2"], "findings": {"charter-7": ["F3"]}, "unjudged": []})
+        self.assertEqual(verdict_checks.charter_report(one, None), {"reachable": [], "held": [], "findings": {}, "unjudged": []})
 
     def test_prep_refuses_charter_item_without_applies_to(self):
         (self.tmp / "docs/domain-pack/charter.md").write_text(CHARTER.replace("Applies to: docs/*\n", ""))

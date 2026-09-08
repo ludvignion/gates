@@ -18,11 +18,11 @@ traces/board.html in the main checkout. While the build session streams, a heart
 `<hh:mm:ss> <+m:ss> <phase> · running · last <hh:mm:ss> · <last builder line>` lands in the
 state file every HEARTBEAT_SECONDS (E25: a 15-minute build looked dead); it is not a phase
 change. The runner's pid goes to traces/runs/<id>.pid right after the state file is truncated
-(the skill's watch tails on it); nothing is removed at exit. After the verdict,
-traces/runs/<id>.result holds the end-of-run lines (render_verdict.result_lines, contract C:
-the summary sentences, the header, one line per open finding with its citation, file:line and
-recommended action, the charter line, the human ACs, what changed vs the base branch, the
-Recommended line, the page path), also printed last on stdout.
+(the board and tests read it); nothing is removed at exit. After the verdict,
+traces/runs/<id>.result holds the end-of-run block (render_verdict.result_lines, at most 12
+lines: build and verdict time with tokens, what was built, one line per open finding with
+file:line and its Gate 2 words, the charter line, the human ACs, what changed against the base
+branch, the page path, the recommended words), also printed last on stdout.
 
 Where it builds: branch ticket/<id> checked out in place (the tree must be clean); the run stays
 on ticket/<id> so the human sees what was built and the Gate 2 page in the folder (E16); ship
