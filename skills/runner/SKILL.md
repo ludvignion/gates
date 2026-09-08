@@ -85,6 +85,7 @@ lines, no dollar amounts:
     Human: AC-7 — <full AC text>
     Changed: 3 files +120/−8 — src/app/extract.py, tests/test_extract.py, docs/usage.md
     Page: <path of the Gate 2 page>
+
     Next: type → ship, child from F1, home F2 to 2.3, waive F3
 
 Line by line: build and verdict wall time and the verdict call's tokens; what was built, one
@@ -93,7 +94,7 @@ one; the charter line by item name — the touched items the reviewer held, and 
 held nor cited (touched, not judged: never findings, never waivable; `Charter: none touched`
 when the diff reaches no charter item); one `Human:` line per AC tagged `(human)`, which no
 test can verify; the files changed against the base branch (up to six names); the page path;
-and the last line, `Next: type → <the Gate 2 words, ship first>` — or, with a human AC,
+and, after one blank line, the last line, `Next: type → <the Gate 2 words, ship first>` — or, with a human AC,
 `Next: check AC-7 on the phone, then type → <words>` — built by the runner, never by this
 session. When there are more findings than fit, the list folds into `… N more on the page`.
 

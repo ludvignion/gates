@@ -464,7 +464,7 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertEqual(lines[1:], ["Built: no summary", "Findings (0)",
                                      "Charter: Unknown over guess, Evidence is openable held",  # E22, E34: only what the diff reaches, by name
                                      "Changed: 2 files +4/−1 — src/app/run.py, tests/test_1_1.py",  # E27
-                                     "Page: traces/verdict/1.1.html", "Next: type → ship"])
+                                     "Page: traces/verdict/1.1.html", "", "Next: type → ship"])
         self.assertTrue(out.endswith(result), out[-300:])
         self.assertTrue((self.repo / "traces/verdict/1.1.html").exists())  # the page sits in the folder the human looks at
         # second run: already on ticket/1.1, clean; in_review with the commits → no build session
@@ -723,10 +723,12 @@ class ResultLinesTest(unittest.TestCase):
             "Human: AC-7 — Given the export, a person confirms the file opens in the client tool",
             "Changed: 2 files +32/−3 — src/pipeline/export/run.py, tests/test_export.py",
             "Page: traces/verdict/2.1.html",
+            "",
             "Next: check AC-7 on the phone, then type → ship, child from F1, home F2 to 2.2, waive F3",
         ])
         self.assertRegex(lines[-1], r"^Next: ")
-        self.assertLessEqual(len(lines), render_verdict.RESULT_MAX_LINES)
+        self.assertLessEqual(len([l for l in lines if l]), render_verdict.RESULT_MAX_LINES)
+        self.assertEqual(lines[-2], "")  # the blank before Next:
         self.assertNotIn("/", lines[1])  # Built: no path
         for l in lines[3:6]:
             fid, _, rest = l.partition(" ")
@@ -747,6 +749,7 @@ class ResultLinesTest(unittest.TestCase):
             "Charter: none touched",
             "Changed: 0 files +0/−0",
             "Page: traces/verdict/2.1.html",
+            "",
             "Next: type → reject: rework F1",
         ])
         lines = render_verdict.result_lines(self._verdict([], "ship"), self.TICKETS, 0.03, 12, "p", summary={"built": "x", "error": "summary skipped"}, costs={"build_s": 0.4, "verdict_s": 11.2})
@@ -772,7 +775,7 @@ class ResultLinesTest(unittest.TestCase):
         self.assertEqual(render_verdict.mmss(106.8), "1:46"); self.assertEqual(render_verdict.mmss(None), "n/a")
         many = self._verdict([{"id": f"F{i}", "severity": "warn", "status": "open", "text": f"warn {i}"} for i in range(1, 9)])
         lines = render_verdict.result_lines(many, self.TICKETS, None, 1, "p")
-        self.assertEqual(len(lines), render_verdict.RESULT_MAX_LINES)
+        self.assertEqual(len(lines), render_verdict.RESULT_MAX_LINES + 1)  # the blank line
         self.assertEqual(lines[2], "Findings (8)"); self.assertEqual(lines[7], "… 4 more on the page"); self.assertRegex(lines[-1], r"^Next: ")
 
 

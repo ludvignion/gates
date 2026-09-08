@@ -304,6 +304,7 @@ def result_lines(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], 
       Human: <AC id> — <text>        (one per human AC)
       Changed: N files +A/−B — <up to 6 file names>
       Page: <path>
+      <blank>
       Next: type → <words>   |   Next: check <AC id> on the phone, then type → <words>
     Pure code from verdict.json, summary.json and the dicts the runner hands over; the actions
     are recommendations(), never a model call. `cost_usd` and `seconds` are kept for callers;
@@ -315,9 +316,9 @@ def result_lines(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], 
     built = str((summary or {}).get("built") or "").strip() if not (summary or {}).get("error") else ""
     sentence = re.split(r"(?<=[.!?])\s", built, maxsplit=1)[0] if built else "no summary"
     humans = [f"Human: {aid} — {text}" for aid, text in map(human_ac, human_acs)]
-    tail = [charter_line(charter), *humans, changed_line(changed), f"Page: {page}", next_line(words, human_acs)]
+    tail = [charter_line(charter), *humans, changed_line(changed), f"Page: {page}", "", next_line(words, human_acs)]  # the blank sets Next: apart
     findings = [finding_line(str(f.get("id")), str(f.get("text", "")), finding_file(str(f.get("text", "")))) for f in open_]
-    budget = RESULT_MAX_LINES - 3 - len(tail)  # header, Built, Findings (N)
+    budget = RESULT_MAX_LINES - 3 - (len(tail) - 1)  # header, Built, Findings (N); the blank line is not counted
     if len(findings) > budget and budget >= 1:
         findings = findings[:budget - 1] + [f"… {len(findings) - budget + 1} more on the page"]
     return [head, f"Built: {sentence}", f"Findings ({len(open_)})", *findings, *tail]

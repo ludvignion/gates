@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.5.8 — 2026-09-08
+
+- `scripts/render_verdict.py` — one blank line between `Page:` and `Next:` in the result block,
+  so the last line stands apart. The 12-line cap does not count it.
+
+Consuming projects (project-template): pin `v0.6.5.8`.
+
 ## 0.6.5.7 — 2026-09-08
 
 Text-render 5.1 (E31–E35): the result block, final shape.
