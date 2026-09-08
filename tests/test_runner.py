@@ -408,7 +408,9 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertEqual(phases, ["branch", "ci-pre", "build 1", "tests-commit", "feat-commit", "build 1 close-out", "ci", "verdict", "close-out", "done ship"])
         # contract C: the result file is what stdout ends with
         result = (self.repo / "traces/runs/1.1.result").read_text()
-        self.assertEqual(result.splitlines(), ["1.1 · verdict: SHIP · 0 blocks · 0 warns · $0.0300 · 0s", "Recommended: ship as is", "traces/verdict/1.1.html"])  # the verdict call; the build session was terminated at the orbit, so it reported no cost
+        lines = result.splitlines()
+        self.assertRegex(lines[0], r"^1\.1 · verdict: SHIP · 0 blocks · 0 warns · \$0\.0300 · \d+s$")  # the verdict call's cost; the build session was terminated at the orbit, so it reported none; seconds are wall time
+        self.assertEqual(lines[1:], ["Recommended: ship as is", "traces/verdict/1.1.html"])
         self.assertTrue(out.endswith(result), out[-300:])
         self.assertTrue((self.repo / "traces/verdict/1.1.html").exists())  # the page sits in the folder the human looks at
         # second run: already on ticket/1.1, clean; in_review with the commits → no build session
