@@ -143,7 +143,7 @@ class VerdictScriptsTest(unittest.TestCase):
         self.assertEqual(by["no test names AC-2"]["ac"], "AC-2")
         self.assertEqual(by["no test names AC-2"]["severity"], "block")
         self.assertNotIn("no test names AC-1", by)  # AC-1 is named by tests/test_run.py on the branch
-        self.assertIn("lonely", by["New defs with one caller or none"]["text"])
+        self.assertNotIn("New defs with one caller or none", by)  # E35: gone
         self.assertIn("Widget", by["New names absent from docs/glossary.md"]["text"])
         self.assertTrue(all(f["status"] == "open" for f in found))
 
@@ -353,7 +353,7 @@ class VerdictScriptsTest(unittest.TestCase):
         held = v.__class__.from_dict({**v.as_dict(), "held": ["AC-1", "AC-2", "charter-2"]})
         self.assertEqual(verdict_checks.unaccounted(held, packet), [])
         report = verdict_checks.charter_report(held, packet)
-        self.assertEqual((report["reachable"], report["held"], report["findings"], report["unjudged"]), (list(CHARTER_REACHABLE), ["charter-2"], {}, ["charter-7"]))
+        self.assertEqual((report["reachable"], report["held"], report["findings"], report["unjudged"], report["names"]["charter-7"]), (list(CHARTER_REACHABLE), ["charter-2"], {}, ["charter-7"], "Tests name their AC"))
         render_verdict.main(self.tmp, "1.1", summary_model="none")
         texts = [f["text"] for f in schemas.Verdict.load(vpath).findings]
         for gone in (*CHARTER_UNREACHABLE, *CHARTER_REACHABLE):
@@ -379,13 +379,13 @@ class VerdictScriptsTest(unittest.TestCase):
         vpath = self._verdict_and_packet("packet", [], decision="ship")
         packet = schemas.Packet.load(vpath.with_name("1.1.input.md"))
         both = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "ship", "held": ["AC-1", "charter-2", "charter-7"], "findings": []})
-        self.assertEqual(verdict_checks.charter_report(both, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2", "charter-7"], "findings": {}, "unjudged": []})
+        self.assertEqual(verdict_checks.charter_report(both, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2", "charter-7"], "findings": {}, "unjudged": [], "names": {"charter-2": "Evidence is openable", "charter-7": "Tests name their AC"}})
         one = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "reject", "held": ["charter-2"], "findings": [
             {"id": "F3", "severity": "block", "status": "open", "charter": "charter-7", "text": "no AC in the docstring"},
             {"id": "F4", "severity": "warn", "status": "open", "charter": "charter-2", "text": "cited though held"},
             {"id": "F5", "severity": "warn", "status": "open", "charter": "charter-1", "text": "unreachable, ignored"}]})
-        self.assertEqual(verdict_checks.charter_report(one, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2"], "findings": {"charter-7": ["F3"]}, "unjudged": []})
-        self.assertEqual(verdict_checks.charter_report(one, None), {"reachable": [], "held": [], "findings": {}, "unjudged": []})
+        self.assertEqual(verdict_checks.charter_report(one, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2"], "findings": {"charter-7": ["F3"]}, "unjudged": [], "names": {"charter-2": "Evidence is openable", "charter-7": "Tests name their AC"}})
+        self.assertEqual(verdict_checks.charter_report(one, None), {"reachable": [], "held": [], "findings": {}, "unjudged": [], "names": {}})
 
     def test_prep_refuses_charter_item_without_applies_to(self):
         (self.tmp / "docs/domain-pack/charter.md").write_text(CHARTER.replace("Applies to: docs/*\n", ""))
@@ -429,17 +429,11 @@ class VerdictScriptsTest(unittest.TestCase):
             self.assertEqual(verdict_prep.default_base(self.tmp, "1"), "trunk-1")
             self.assertEqual(verdict_checks.default_base(self.tmp, "1"), "trunk-1")
 
-    def test_lonely_check_skips_new_files(self):
-        """E5: a new module is all one-caller defs by construction; only defs added to existing files count."""
+    def test_one_caller_warn_is_gone(self):
+        """E35: the one-caller warn fired for a new function in an existing file; never actionable at a gate."""
         found = verdict_checks.checks(self.tmp, "1.1", "main", ci_green=True)
-        lonely = [f for f in found if "one caller" in f["text"]]
-        self.assertEqual(len(lonely), 1)
-        self.assertIn("lonely", lonely[0]["text"])  # added to the existing src/app/run.py
-        (self.tmp / "src/app/fresh.py").write_text("def alone():\n    return 1\n\n\nclass Solo:\n    pass\n")
-        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "new module")
-        found = verdict_checks.checks(self.tmp, "1.1", "main", ci_green=True)
-        lonely = [f for f in found if "one caller" in f["text"]]
-        self.assertEqual(len(lonely), 1); self.assertNotIn("alone", lonely[0]["text"]); self.assertNotIn("Solo", lonely[0]["text"])
+        self.assertEqual([f for f in found if "one caller" in f["text"]], [])
+        self.assertIn("Widget", next(f["text"] for f in found if f["text"].startswith("New names absent")))  # the glossary check still reads new defs
 
     def test_prep_folds_large_included_file(self):
         """E3: an included file over FILE_CAP diff lines is one stat line, not 30K tokens of reviewer context."""

@@ -2,9 +2,9 @@
 """Mechanical verdict findings, zero model tokens. Run: verdict_checks.py <id> [--base main]
 
 Checks (ids C1..): files written outside the ticket's `writes:` (block), CI red (block), each
-ticket AC that no test added on this branch names (block, one per AC), new src defs with one caller or none
-(warn, Phase B q4; files new in the diff are exempt), new public names absent from docs/glossary.md when the diff does not touch
-it (warn), closed tickets edited (warn). Findings use the verdict JSON shape so the model copies
+ticket AC that no test added on this branch names (block, one per AC), new public names absent from
+docs/glossary.md when the diff does not touch it (warn), closed tickets edited (warn). The
+one-caller warn of 0.4–0.6.5.6 is gone (E35: never actionable at a gate). Findings use the verdict JSON shape so the model copies
 them verbatim. Loads ticket shape through scripts/schemas.py; git for everything else.
 
 Also the check on the written verdict, `validate(verdict, arm, packet)`: a block without an `ac`
@@ -91,23 +91,13 @@ def checks(root: Path, tid: str, base: str, ci_green: bool | None = None) -> lis
 
     src_py = list((root / "src").rglob("*.py")) if (root / "src").is_dir() else []
     if src_py:
-        corpus = "\n".join(p.read_text(errors="ignore") for p in src_py)
         new_defs: list[str] = []
-        in_new_file: list[str] = []  # defs in files new in the diff: a new module is all "lonely" by construction
-        cur, new_file = None, False
+        cur = None  # E35: the one-caller warn is gone; new defs feed the glossary check only
         for l in diff.splitlines():
-            if l.startswith("--- "):
-                new_file = l.startswith("--- /dev/null")
-            elif l.startswith("+++ b/"):
+            if l.startswith("+++ b/"):
                 cur = l[6:]
             elif cur and cur.startswith("src/") and (m := DEF_RE.match(l)):
                 new_defs.append(m.group(1))
-                if new_file:
-                    in_new_file.append(m.group(1))
-        lonely = [d for d in new_defs if d not in in_new_file and not d.startswith("_" * 2)
-                  and len(re.findall(rf"\b{re.escape(d)}\(", corpus)) <= 2]
-        if lonely:
-            add("warn", f"New defs with one caller or none: {', '.join(lonely[:8])} (Phase B q4)")
         glossary = root / "docs" / "glossary.md"
         if glossary.exists() and "docs/glossary.md" not in files:
             g = glossary.read_text(errors="ignore")
@@ -156,8 +146,21 @@ def packet_charter(packet: "schemas.Packet | None") -> list[str]:
     return [i for i in packet_items(packet) if i.startswith("charter-")]
 
 
+def charter_names(packet: "schemas.Packet | None") -> dict[str, str]:
+    """{charter id: title} from the packet's Charter section lines "charter-<n>: <title>" (E34)."""
+    if packet is None:
+        return {}
+    out = {}
+    for it in schemas._items(packet.section("Charter items")):
+        m = re.search(r"(?P<id>charter-\d+):\s*(?P<title>.*?)(?:\s+(?:Pattern|Anti-pattern|Demonstrated by):.*)?$", it.strip())
+        if m:
+            out[m.group("id")] = m.group("title").strip()
+    return out
+
+
 def charter_report(v: schemas.Verdict, packet: "schemas.Packet | None") -> dict:
-    """{"reachable": [ids], "held": [ids], "findings": {"charter-n": ["F3", ...]}, "unjudged": [ids]}
+    """{"reachable": [ids], "held": [ids], "findings": {"charter-n": ["F3", ...]}, "unjudged": [ids],
+    "names": {id: title}}
     for the result block's charter line: the reachable items, those in `held`, for each
     reachable item not held the finding ids citing it, and the rest — reachable, not judged
     (E22: what the diff could reach, and what happened to it)."""
@@ -170,7 +173,8 @@ def charter_report(v: schemas.Verdict, packet: "schemas.Packet | None") -> dict:
         ids = [str(f.get("id")) for f in v.findings if f.get("charter") == i and f.get("id")]
         if ids:
             findings[i] = ids
-    return {"reachable": reachable, "held": held, "findings": findings, "unjudged": [i for i in reachable if i not in held and i not in findings]}
+    return {"reachable": reachable, "held": held, "findings": findings, "unjudged": [i for i in reachable if i not in held and i not in findings],
+            "names": charter_names(packet)}
 
 
 def validate(v: schemas.Verdict, arm: str, packet: "schemas.Packet | None" = None) -> tuple[schemas.Verdict, list[str]]:

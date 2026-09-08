@@ -461,10 +461,10 @@ class RunnerBuildSeatTest(unittest.TestCase):
         result = (self.repo / "traces/runs/1.1.result").read_text()
         lines = result.splitlines()
         self.assertRegex(lines[0], r"^1\.1 · SHIP · build \d+:\d\d · verdict \d+:\d\d · 0K in / 0K out$")  # E28: build and verdict named apart, no dollars
-        self.assertEqual(lines[1:], ["Built: no summary — src/app/run.py, tests/test_1_1.py", "Findings (0)",
-                                     "Charter: charter-1, charter-2 held",  # E22: only what the diff reaches
+        self.assertEqual(lines[1:], ["Built: no summary", "Findings (0)",
+                                     "Charter: Unknown over guess, Evidence is openable held",  # E22, E34: only what the diff reaches, by name
                                      "Changed: 2 files +4/−1 — src/app/run.py, tests/test_1_1.py",  # E27
-                                     "Page: traces/verdict/1.1.html", "→ ship"])
+                                     "Page: traces/verdict/1.1.html", "Next: type → ship"])
         self.assertTrue(out.endswith(result), out[-300:])
         self.assertTrue((self.repo / "traces/verdict/1.1.html").exists())  # the page sits in the folder the human looks at
         # second run: already on ticket/1.1, clean; in_review with the commits → no build session
@@ -696,33 +696,45 @@ class ResultLinesTest(unittest.TestCase):
     def _verdict(self, findings, decision="reject"):
         return schemas.Verdict.from_dict({"ticket": "2.1", "decision": decision, "held": ["AC-1"], "ci": {"green": True}, "findings": findings})
 
+    NAMES = {"charter-3": "docs say what is", "charter-4": "reports are reproducible", "charter-5": "infra is declared"}
+
     def test_block_shape_from_the_fixture_verdict(self):
-        """0.6.5.6: the exact block — header, Built, Findings, Charter, Human, Changed, Page, arrow;
-        no dollar amounts, no Recommended line, no summary paragraph."""
+        """0.6.5.7: header, Built (one sentence, no path), Findings (file:line stripped from a text that
+        repeats it), Charter by name, Human, Changed, Page, and exactly one code-built Next line
+        with nothing after it (E31–E34)."""
         v = schemas.Verdict.load(REPO / "tests/fixtures/project/traces/verdict/2.1.json")  # F1 block spawn_child, F2/F3 warns, F4 resolved, N1 note
         v = v.with_meta(schemas.VerdictMeta(arm="packet", vendor="claude", plugin_version="x", prompt_sha="p", packet_sha="q",
                                             tokens={"input_tokens": 2, "cache_creation_input_tokens": 21187, "cache_read_input_tokens": 0, "output_tokens": 8237}))
+        v = v.with_findings(tuple({**f, "text": "src/pipeline/export/run.py:36 — src/pipeline/export/run.py:36 slugifies ids on export"} if f["id"] == "F1" else f for f in v.findings))  # E33
         summary = {"built": "Export writes ids verbatim. A second sentence is dropped.", "review": "unused", "error": None}
-        charter = {"reachable": ["charter-3", "charter-4", "charter-5"], "held": ["charter-3"], "findings": {"charter-4": ["F2"]}, "unjudged": ["charter-5"]}
+        charter = {"reachable": ["charter-3", "charter-4", "charter-5"], "held": ["charter-3"], "findings": {"charter-4": ["F2"]}, "unjudged": ["charter-5"], "names": self.NAMES}
         changed = {"base": "main", "files": [{"path": "src/pipeline/export/run.py", "added": 12, "removed": 3}, {"path": "tests/test_export.py", "added": 20, "removed": 0}]}
         human = (schemas.HumanAc("AC-7", "Given the export, a person confirms the file opens in the client tool"),)
         lines = render_verdict.result_lines(v, self.TICKETS, 2.91, 889.4, "traces/verdict/2.1.html", summary=summary, changed=changed, charter=charter,
                                             human_acs=human, costs={"verdict_usd": 0.42, "verdict_s": 106.8, "build_usd": 2.49, "build_s": 782.0})
         self.assertEqual(lines, [
             "2.1 · REJECT · build 13:02 · verdict 1:46 · 21K in / 8K out",
-            "Built: Export writes ids verbatim. — src/pipeline/export/run.py, tests/test_export.py",
+            "Built: Export writes ids verbatim.",
             "Findings (3)",
-            "F1 src/pipeline/export/run.py:36 — ids are rewritten on export, src/pipeline/export/run.py:36 slugifies them → child from F1",
-            "F2 src/pipeline/report/page.py — no test for the empty report path in src/pipeline/report/page.py → home F2 to 2.2",
-            "F3 — the stage log line lacks the stage name → waive F3",
-            "Charter: charter-3 held · charter-5 reachable, not judged",
-            "Human: AC-7 — Given the export, a person confirms the file opens in the client tool → confirm with ship",
+            "F1 src/pipeline/export/run.py:36 — slugifies ids on export",
+            "F2 src/pipeline/report/page.py — no test for the empty report path in src/pipeline/report/page.py",
+            "F3 — the stage log line lacks the stage name",
+            "Charter: docs say what is held · infra is declared — touched, not judged",
+            "Human: AC-7 — Given the export, a person confirms the file opens in the client tool",
             "Changed: 2 files +32/−3 — src/pipeline/export/run.py, tests/test_export.py",
             "Page: traces/verdict/2.1.html",
-            "→ child from F1, home F2 to 2.2, waive F3, then ship",
+            "Next: check AC-7 on the phone, then type → ship, child from F1, home F2 to 2.2, waive F3",
         ])
+        self.assertRegex(lines[-1], r"^Next: ")
         self.assertLessEqual(len(lines), render_verdict.RESULT_MAX_LINES)
-        self.assertNotIn("$", "\n".join(lines)); self.assertNotIn("Recommended", "\n".join(lines))
+        self.assertNotIn("/", lines[1])  # Built: no path
+        for l in lines[3:6]:
+            fid, _, rest = l.partition(" ")
+            where, _, text = rest.partition(" — ")
+            self.assertFalse(text.startswith(where.strip()), l)  # E33
+        self.assertNotIn("charter-", lines[6])  # E34
+        joined = "\n".join(lines)
+        self.assertNotIn("$", joined); self.assertNotIn("Recommended", joined); self.assertNotIn("→ confirm", joined)
 
     def test_rework_no_findings_and_missing_inputs(self):
         v = self._verdict([{"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "spawn_child": False, "text": "export drops the last row"}])
@@ -731,23 +743,29 @@ class ResultLinesTest(unittest.TestCase):
             "2.1 · REJECT · build n/a · verdict n/a · tokens n/a",
             "Built: no summary",
             "Findings (1)",
-            "F1 — export drops the last row → rework F1",
-            "Charter: none reachable",
+            "F1 — export drops the last row",
+            "Charter: none touched",
             "Changed: 0 files +0/−0",
             "Page: traces/verdict/2.1.html",
-            "→ reject: rework F1",
+            "Next: type → reject: rework F1",
         ])
         lines = render_verdict.result_lines(self._verdict([], "ship"), self.TICKETS, 0.03, 12, "p", summary={"built": "x", "error": "summary skipped"}, costs={"build_s": 0.4, "verdict_s": 11.2})
         self.assertEqual(lines[:3], ["2.1 · SHIP · build 0:00 · verdict 0:11 · tokens n/a", "Built: no summary", "Findings (0)"])
-        self.assertEqual(lines[-1], "→ ship")
+        self.assertEqual(lines[-1], "Next: type → ship")
         for action, word in (("ship, create child 2.1.1 from F1", "child 2.1.1"), ("rework in place", "rework"), ("home to 2.3", "home 2.3"), ("waive", "waive")):
             self.assertEqual(render_verdict.action_word(action), word)
 
     def test_charter_changed_and_folding(self):
-        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-2", "charter-7"], "held": ["charter-7", "charter-2"], "findings": {}}), "Charter: charter-2, charter-7 held")
-        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-4"], "held": [], "findings": {"charter-4": ["F3"]}}), "Charter: charter-4 reachable, in findings")
-        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-4"], "held": [], "findings": {}}), "Charter: charter-4 reachable, not judged")
-        self.assertEqual(render_verdict.charter_line(None), "Charter: none reachable")
+        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-2", "charter-7"], "held": ["charter-7", "charter-2"], "findings": {}, "names": {"charter-2": "no external resources", "charter-7": "fail loud"}}),
+                         "Charter: no external resources, fail loud held")
+        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-4"], "held": [], "findings": {"charter-4": ["F3"]}, "names": {"charter-4": "structure kept"}}), "Charter: structure kept — in findings")
+        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-4"], "held": [], "findings": {}}), "Charter: 4 — touched, not judged")  # no names: the number, never the id
+        self.assertEqual(render_verdict.charter_line(None), "Charter: none touched")
+        self.assertEqual(render_verdict.finding_line("F1", "src/x.py:79 — src/x.py:79 drops ids", "src/x.py:79"), "F1 src/x.py:79 — drops ids")
+        self.assertEqual(render_verdict.finding_line("F1", "src/x.py:79: drops ids", "src/x.py:79"), "F1 src/x.py:79 — drops ids")
+        self.assertEqual(render_verdict.finding_line("F1", "drops ids at src/x.py:79", "src/x.py:79"), "F1 src/x.py:79 — drops ids at src/x.py:79")
+        self.assertEqual(render_verdict.next_line("ship", ()), "Next: type → ship")
+        self.assertEqual(render_verdict.next_line("ship, waive C1", (("AC-4", "x"), ("AC-5", "y"))), "Next: check AC-4, AC-5 on the phone, then type → ship, waive C1")
         files = [{"path": f"src/f{i}.py", "added": 1, "removed": 0} for i in range(8)]
         self.assertEqual(render_verdict.changed_line({"base": "main", "files": files}), "Changed: 8 files +8/−0 — src/f0.py, src/f1.py, src/f2.py, src/f3.py, src/f4.py, src/f5.py, +2 more")
         self.assertEqual(render_verdict.token_words({"input_tokens": 2, "cache_creation_input_tokens": 10008, "cache_read_input_tokens": 3052, "output_tokens": 3566}), "13K in / 4K out")
@@ -755,7 +773,7 @@ class ResultLinesTest(unittest.TestCase):
         many = self._verdict([{"id": f"F{i}", "severity": "warn", "status": "open", "text": f"warn {i}"} for i in range(1, 9)])
         lines = render_verdict.result_lines(many, self.TICKETS, None, 1, "p")
         self.assertEqual(len(lines), render_verdict.RESULT_MAX_LINES)
-        self.assertEqual(lines[2], "Findings (8)"); self.assertEqual(lines[7], "… 4 more on the page")
+        self.assertEqual(lines[2], "Findings (8)"); self.assertEqual(lines[7], "… 4 more on the page"); self.assertRegex(lines[-1], r"^Next: ")
 
 
 class RunnerPlanWalkTest(unittest.TestCase):

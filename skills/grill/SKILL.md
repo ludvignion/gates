@@ -82,7 +82,7 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    person can confirm — a look at a page, a judgement of tone, a call to a live system — is
    tagged in the plan and the ticket: `- AC-7 (human): Given ..., a person confirms ...`.
    Human ACs stay out of the verdict packet; the Gate 2 page lists them under "Human checks"
-   and the runner's result block prints one `Human: AC-7 — ... → confirm with ship` line each.
+   and the runner's result block prints one `Human: AC-7 — ...` line each and names the check in its `Next:` line.
    The human confirms them by saying `ship`. An untagged AC no test can name is a warn on
    every verdict — tag it or rewrite it as something the diff shows.
 12. **Hand off** (G2). After the tickets are written, compute the last line from the plan's

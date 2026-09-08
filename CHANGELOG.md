@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.5.7 — 2026-09-08
+
+Text-render 5.1 (E31–E35): the result block, final shape.
+
+- `scripts/render_verdict.py` — the block ends with exactly one code-built line and nothing
+  after it: `Next: type → ship, waive C1, home F1 to 5.2, …` (ship first; `reject: rework F1`
+  when a block has no child), or with a human AC `Next: check AC-7 on the phone, then type →
+  <words>` (E31). `Built:` is one sentence, no file list (E32). Finding lines are
+  `F# <file:line> — <text>` with the file:line stripped from a text that repeats it (E33).
+  The charter line names items from the charter headings: `Charter: no external resources,
+  fail loud held · structure kept — touched, not judged`; `Charter: none touched` (E34).
+- `scripts/verdict_checks.py` — the one-caller warn (`New defs with one caller or none`) is
+  gone from findings and block; the page had no Notes heading, so it is dropped outright (E35).
+  `charter_report` carries `names` from the packet's Charter section.
+- `skills/runner/SKILL.md` — after the block the turn ends; Never: any line after the block,
+  restating the verbs, a recap, "Gate 2 open".
+- `tests/` — the fixture verdict with one human AC and three findings: last line `^Next: `,
+  nothing follows, `Built:` has no path, no finding text starts with its own prefix, no
+  `charter-` on the charter line; the skill text carries the nothing-after-the-block rule.
+
+Consuming projects (project-template): pin `v0.6.5.7`.
+
 ## 0.6.5.6 — 2026-09-08
 
 - `scripts/render_verdict.py` — the result block, at most 12 lines, no dollar amounts, no

@@ -70,34 +70,39 @@ ticket starts), `gate2 <id>` (the walk waits for the ship) and the final `done <
 ticket's own lines appear verbatim in between.
 
 ## The result
-On a ticket's `done` line print `traces/runs/<id>.result` verbatim. The runner wrote it from
-`verdict.json`, `summary.json`, the packet and the Gate 2 page's computed recommendation;
-nothing in it comes from this session. Its exact shape, at most 12 lines, no dollar amounts:
+On a ticket's `done` line print `traces/runs/<id>.result` verbatim, and then the turn ends.
+The runner wrote it from `verdict.json`, `summary.json`, the packet and the Gate 2 page's
+computed recommendation; nothing in it comes from this session. Its exact shape, at most 12
+lines, no dollar amounts:
 
     <id> · SHIP|REJECT · build m:ss · verdict m:ss · <in>K in / <out>K out
-    Built: <one sentence from summary.json> — <files touched>
+    Built: <one sentence from summary.json>
     Findings (N)
-    F1 src/app/extract.py:36 — <finding text> → child from F1
-    F2 tests/test_page.py:118 — <text> → home F2 to 2.3
-    F3 — <text> → waive F3
-    Charter: charter-2 held · charter-7 reachable, not judged
-    Human: AC-7 — <full AC text> → confirm with ship
+    F1 src/app/extract.py:36 — <finding text>
+    F2 tests/test_page.py:118 — <text>
+    F3 — <text>
+    Charter: <item names> held · <item names> — touched, not judged
+    Human: AC-7 — <full AC text>
     Changed: 3 files +120/−8 — src/app/extract.py, tests/test_extract.py, docs/usage.md
     Page: <path of the Gate 2 page>
-    → child from F1, home F2 to 2.3, waive F3, then ship
+    Next: type → ship, child from F1, home F2 to 2.3, waive F3
 
-Line by line: build and verdict wall time and the verdict call's tokens; what was built and the
-files it touched; one line per open finding in verdict order with `file:line` when the finding
-names one and the Gate 2 words for it; the charter line — the reachable items the reviewer
-held, and those it neither held nor cited (reachable, not judged: never findings, never
-waivable; `Charter: none reachable` when the diff touches nothing a charter item applies to);
-one `Human:` line per AC tagged `(human)`, which no test can verify and the human confirms by
-saying `ship`; the files changed against the base branch (up to six names); the page path; and
-the arrow line, the recommended Gate 2 words in order (`→ ship`, `→ reject: rework F1`, or the
-finding actions then `then ship`). When there are more findings than fit, the list folds into
-`… N more on the page`. A `done error <reason>` line (ci red, retry cap, needs context,
-permission denied, nothing to judge, packet too big, num_turns) has no verdict: print that line
-and whatever result the runner left, then stop; the human decides.
+Line by line: build and verdict wall time and the verdict call's tokens; what was built, one
+sentence; one line per open finding in verdict order with `file:line` when the finding names
+one; the charter line by item name — the touched items the reviewer held, and those it neither
+held nor cited (touched, not judged: never findings, never waivable; `Charter: none touched`
+when the diff reaches no charter item); one `Human:` line per AC tagged `(human)`, which no
+test can verify; the files changed against the base branch (up to six names); the page path;
+and the last line, `Next: type → <the Gate 2 words, ship first>` — or, with a human AC,
+`Next: check AC-7 on the phone, then type → <words>` — built by the runner, never by this
+session. When there are more findings than fit, the list folds into `… N more on the page`.
+
+Nothing after the block. The `Next:` line is the whole instruction: no "Gate 2 open", no
+list of the verbs, no recap, no question. The human's next message is the Gate 2 line.
+
+A `done error <reason>` line (ci red, retry cap, needs context, permission denied, nothing to
+judge, packet too big, num_turns) has no verdict: print that line and whatever result the
+runner left, then stop; the human decides.
 
 ## Gate 2
 In this session, in the same words the result recommends. The human reads the page and says one
@@ -154,6 +159,8 @@ The session's last line is one of these, and nothing follows it:
   ticket, a merged branch, an empty diff, an oversized packet, a multi-turn verdict: print the
   runner's message and stop. Only the human's `override` word unlocks the session stamp.
 - Guess at Gate 2. No human line, no command.
+- Add any line after the result block: no restating the verbs, no recap of your own, no
+  "Gate 2 open". The block's `Next:` line ends the turn (E31).
 - Print a menu. One hand-off line, from the table above.
 
 Next: the one hand-off line from the table above, verbatim, as the session's last line.

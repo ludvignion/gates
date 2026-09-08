@@ -54,7 +54,7 @@ class RunSkillTextTest(unittest.TestCase):
     def test_result_format_and_refusals(self):
         """E19: the end of a run is the decision plus one line per finding with its action, all from the runner's result file."""
         body = SKILL.read_text(encoding="utf-8")
-        for fmt in ("SHIP|REJECT", "\u2192 child from", "\u2192 home", "waive F", ".result", ".state"):
+        for fmt in ("SHIP|REJECT", "child from F1", "home F2 to", "waive F3", "Next: type \u2192", ".result", ".state"):
             self.assertIn(fmt, body, fmt)
         never = schemas.section(body, "Never")
         self.assertIn("session stamp", never)
@@ -73,9 +73,11 @@ class RunSkillTextTest(unittest.TestCase):
         self.assertEqual(tails[0].strip(), WATCH)
         self.assertNotIn("tail -f", body); self.assertNotIn("--pid", body); self.assertNotIn("sleep 30", body)
         for word in ("num_turns", "nothing to judge", "packet too big", "Built:", "Findings (", "Charter:", "Human:", "Changed:", "Page:",
-                     "reachable, not judged", "then ship", "heartbeat", "gate2"):
+                     "touched, not judged", "Next: type →", "on the phone", "heartbeat", "gate2"):
             self.assertIn(word, body, word)
-        self.assertNotIn("Recommended:", body); self.assertNotIn("$cost", body)
+        self.assertNotIn("Recommended:", body); self.assertNotIn("$cost", body); self.assertNotIn("then ship", body)
+        never = schemas.section(body, "Never")
+        self.assertIn("after the result block", never); self.assertIn("recap", never); self.assertIn("Gate 2 open", never)  # E31: nothing after the block
         nonempty = [l for l in lines if l.strip()]
         self.assertTrue(nonempty[-1].startswith("Next:"), nonempty[-1])
 

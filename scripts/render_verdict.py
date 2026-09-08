@@ -233,9 +233,9 @@ def token_words(tokens: "dict | None") -> str:
 
 
 def gate2_words(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]]) -> tuple[dict[str, str], str]:
-    """({finding id: the Gate 2 words for it}, the whole recommendation): "child from F1",
-    "home F2 to 2.3", "waive F3", "rework F1"; the recommendation joins them and ends with
-    "then ship", or is "reject: rework F1, ..." when a block has no child, or "ship"."""
+    """({finding id: the Gate 2 words for it}, the whole recommendation, ship first): "child from
+    F1", "home F2 to 2.3", "waive F3", "rework F1"; the recommendation is "ship, waive C1, home F1
+    to 5.2, ..." or "reject: rework F1, ..." when a block has no child (E31)."""
     per: dict[str, str] = {}
     for fid, action in recommendations(v, tickets):
         word = action_word(action)
@@ -244,22 +244,40 @@ def gate2_words(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]]) -
     reworks = [w for w in per.values() if w.startswith("rework ")]
     if reworks:
         return per, "reject: " + ", ".join(reworks)
-    steps = [w for w in per.values()]
-    return per, (", ".join(steps) + ", then ship") if steps else "ship"
+    return per, ", ".join(["ship", *per.values()])
 
 
 def charter_line(charter: "dict | None") -> str:
-    """"Charter: charter-2, charter-7 held · charter-4 reachable, not judged" (E22). Items the
-    diff cannot reach are never mentioned; reachable items the reviewer neither held nor cited
-    are "not judged": never findings, never waivable. `charter` is verdict_checks.charter_report."""
-    reachable = [str(i) for i in (charter or {}).get("reachable") or ()]
+    """"Charter: <names> held · <names> — touched, not judged" with the items' names from the
+    charter headings (E34), never ids. Items the diff cannot reach are never mentioned; reachable
+    items the reviewer neither held nor cited are "touched, not judged": never findings, never
+    waivable. `charter` is verdict_checks.charter_report's dict."""
+    c = charter or {}
+    reachable = [str(i) for i in c.get("reachable") or ()]
     if not reachable:
-        return "Charter: none reachable"
-    held = [i for i in reachable if i in set((charter or {}).get("held") or ())]
-    cited = set((charter or {}).get("findings") or {})
+        return "Charter: none touched"
+    names = c.get("names") or {}
+    name = lambda i: str(names.get(i) or i.removeprefix("charter-"))  # noqa: E731
+    held = [i for i in reachable if i in set(c.get("held") or ())]
+    cited = set(c.get("findings") or {})
     unjudged = [i for i in reachable if i not in held and i not in cited]
-    parts = ([f"{', '.join(held)} held"] if held else []) + ([f"{', '.join(unjudged)} reachable, not judged"] if unjudged else [])
-    return "Charter: " + (" · ".join(parts) or f"{', '.join(reachable)} reachable, in findings")
+    parts = ([", ".join(map(name, held)) + " held"] if held else []) + ([", ".join(map(name, unjudged)) + " — touched, not judged"] if unjudged else [])
+    return "Charter: " + (" · ".join(parts) or ", ".join(map(name, reachable)) + " — in findings")
+
+
+def finding_line(fid: str, text: str, where: str) -> str:
+    """"F# <file:line> — <text>", the file:line stripped from the text when it repeats the prefix (E33)."""
+    body = text.strip()
+    while where != "—" and body.startswith(where) and body != where:
+        body = body[len(where):].lstrip(" —:-,;") or where
+    return f"{fid} {where} — {body}" if where != "—" else f"{fid} — {body}"
+
+
+def next_line(words: str, human_acs) -> str:
+    """The block's last line, built by code (E31): "Next: type → <words>", or with a human AC
+    "Next: check <ids> on the phone, then type → <words>". Nothing follows it."""
+    ids = [aid for aid, _ in map(human_ac, human_acs)]
+    return f"Next: check {', '.join(ids)} on the phone, then type → {words}" if ids else f"Next: type → {words}"
 
 
 def changed_line(changed: "dict | None") -> str:
@@ -278,15 +296,15 @@ def result_lines(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], 
                  seconds: float, page: str, *, summary: dict | None = None, changed: dict | None = None,
                  charter: dict | None = None, human_acs=(), costs: dict | None = None) -> list[str]:
     """The end of a run as the skill prints it and traces/runs/<id>.result stores it, at most
-    RESULT_MAX_LINES lines, no dollar amounts (E19, E24, E27, E28, E30):
+    RESULT_MAX_LINES lines, no dollar amounts (E19, E24, E27, E28, E30, E31–E34):
       <id> · SHIP|REJECT · build m:ss · verdict m:ss · <in>K in / <out>K out
-      Built: <one sentence from summary.json> — <files touched>
-      Findings (N)  then  F# <file:line> — <text> → <Gate 2 words>   (the tail folded when long)
-      Charter: <held> held · <reachable, not judged>
-      Human: <AC id> — <text> → confirm with ship        (one per human AC)
+      Built: <one sentence from summary.json>
+      Findings (N)  then  F# <file:line> — <text>   (the tail folded when long)
+      Charter: <names> held · <names> — touched, not judged
+      Human: <AC id> — <text>        (one per human AC)
       Changed: N files +A/−B — <up to 6 file names>
       Page: <path>
-      → <recommended words>
+      Next: type → <words>   |   Next: check <AC id> on the phone, then type → <words>
     Pure code from verdict.json, summary.json and the dicts the runner hands over; the actions
     are recommendations(), never a model call. `cost_usd` and `seconds` are kept for callers;
     `costs` carries build_s and verdict_s."""
@@ -294,21 +312,15 @@ def result_lines(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], 
     open_ = [f for f in v.findings if v.is_open(f) and f.get("severity") in ("block", "warn")]
     c = costs or {}
     head = f"{v.ticket} · {v.decision.upper()} · build {mmss(c.get('build_s'))} · verdict {mmss(c.get('verdict_s'))} · {token_words(v.meta.tokens if v.meta else None)}"
-    files = [str(f.get("path")) for f in (changed or {}).get("files") or ()]
     built = str((summary or {}).get("built") or "").strip() if not (summary or {}).get("error") else ""
     sentence = re.split(r"(?<=[.!?])\s", built, maxsplit=1)[0] if built else "no summary"
-    touched = ", ".join(files[:6]) + (f", +{len(files) - 6} more" if len(files) > 6 else "")
-    humans = [f"Human: {aid} — {text} → confirm with ship" for aid, text in map(human_ac, human_acs)]
-    tail = [charter_line(charter), *humans, changed_line(changed), f"Page: {page}", f"→ {words}"]
-    findings = []
-    for f in open_:
-        fid = str(f.get("id"))
-        where = finding_file(str(f.get("text", "")))
-        findings.append(f"{fid} {where + ' ' if where != '—' else ''}— {f.get('text', '')} → {per.get(fid, '—')}")
+    humans = [f"Human: {aid} — {text}" for aid, text in map(human_ac, human_acs)]
+    tail = [charter_line(charter), *humans, changed_line(changed), f"Page: {page}", next_line(words, human_acs)]
+    findings = [finding_line(str(f.get("id")), str(f.get("text", "")), finding_file(str(f.get("text", "")))) for f in open_]
     budget = RESULT_MAX_LINES - 3 - len(tail)  # header, Built, Findings (N)
     if len(findings) > budget and budget >= 1:
         findings = findings[:budget - 1] + [f"… {len(findings) - budget + 1} more on the page"]
-    return [head, f"Built: {sentence}" + (f" — {touched}" if touched else ""), f"Findings ({len(open_)})", *findings, *tail]
+    return [head, f"Built: {sentence}", f"Findings ({len(open_)})", *findings, *tail]
 
 
 # --- page -------------------------------------------------------------------------------------
