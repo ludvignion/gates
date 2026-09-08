@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.5.3 — 2026-09-08
+
+- `.claude-plugin/marketplace.json` — version 0.6.5.3 (it said 0.6.4 through 0.6.5, 0.6.5.1
+  and 0.6.5.2, so `claude plugin update` installed nothing). No code change.
+
+Consuming projects (project-template): pin `v0.6.5.3`.
+
 ## 0.6.5.2 — 2026-09-07
 
 Gate 1 gets its door back (0.6.5 removed the board's buttons and left approve without one).
