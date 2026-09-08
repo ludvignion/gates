@@ -5,9 +5,10 @@ Runs on every Stop hook (hooks/hooks.json), by hand (`python3 scripts/render_boa
 after every runner phase. No-op
 when the project has no kanban/ directory. AC citations and slice lists load through
 scripts/schemas.py. The Runs section reads traces/runs/<id>.state (one line per phase change,
-"<hh:mm:ss> <+m:ss> <phase> [detail]"; the last line starts with "done " once the run is over)
-and the last builder lines of traces/runs/<id>.log; the page refreshes itself every 5 s while
-any ticket is running. This is the board; there is no server.
+"<hh:mm:ss> <+m:ss> <phase> [detail]"; the runner's heartbeat "<phase> · running · last
+<hh:mm:ss> · <last builder line>" is a line like any other (E25); the last line starts with
+"done " once the run is over) and the last builder lines of traces/runs/<id>.log; the page
+refreshes itself every 5 s while any ticket is running. This is the board; there is no server.
 """
 import html
 import sys

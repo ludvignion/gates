@@ -10,7 +10,11 @@ them verbatim. Loads ticket shape through scripts/schemas.py; git for everything
 Also the check on the written verdict, `validate(verdict, arm, packet)`: a block without an `ac`
 or `charter` citation is a violation — except under the blind arm, which cannot cite by design, so
 there the block is downgraded to a warn instead — and every AC / charter item the packet showed
-must be in `held` or cited by a finding, else a C-warn "unaccounted: <id>" is appended.
+must be in `held` or cited by a finding, else a C-warn "unaccounted: <id>" is appended. The packet
+lists only the charter items the diff reaches, so an unreachable item never becomes a warn (E22);
+`charter_report` folds the reachable items, the held ones and the findings citing the rest into
+the result block's charter line. Human ACs never enter `ticket.acs`, so "no test names AC-n"
+never fires on them (E30).
 """
 import json
 import os
@@ -35,11 +39,9 @@ def git(root: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True).stdout
 
 
-def default_base(root: Path) -> str:
-    for b in ("main", "master"):
-        if subprocess.run(["git", "rev-parse", "--verify", "-q", b], cwd=root, capture_output=True).returncode == 0:
-            return b
-    return "HEAD~1"
+def default_base(root: Path, plan_n: str | None = None) -> str:
+    """The plan's base branch through kanban_ops.base_branch (E21: never the current branch)."""
+    return kanban_ops.base_branch(root, plan_n)
 
 
 def find_ticket(root: Path, tid: str) -> Path:
@@ -141,10 +143,32 @@ def packet_items(packet: "schemas.Packet | None") -> list[str]:
 
 
 def unaccounted(v: schemas.Verdict, packet: "schemas.Packet | None") -> list[str]:
-    """Packet items in neither `held` nor any finding's ac/charter. Silence is not a pass."""
+    """Packet items in neither `held` nor any finding's ac/charter. Silence is not a pass. The
+    packet's Charter section holds reachable items only, so nothing unreachable lands here (E22)."""
     held = set(v.held)
     cited = {f.get("ac") for f in v.findings} | {f.get("charter") for f in v.findings}
     return [i for i in packet_items(packet) if i not in held and i not in cited]
+
+
+def packet_charter(packet: "schemas.Packet | None") -> list[str]:
+    """The charter ids the packet showed, in packet order: the reachable items and nothing else."""
+    return [i for i in packet_items(packet) if i.startswith("charter-")]
+
+
+def charter_report(v: schemas.Verdict, packet: "schemas.Packet | None") -> dict:
+    """{"reachable": [ids], "held": [ids], "findings": {"charter-n": ["F3", ...]}} for the result
+    block's charter line: the reachable items, those in `held`, and for each reachable item not
+    held the finding ids citing it (E22: what the diff could reach, and what happened to it)."""
+    reachable = packet_charter(packet)
+    held = [i for i in reachable if i in set(v.held)]
+    findings = {}
+    for i in reachable:
+        if i in held:
+            continue
+        ids = [str(f.get("id")) for f in v.findings if f.get("charter") == i and f.get("id")]
+        if ids:
+            findings[i] = ids
+    return {"reachable": reachable, "held": held, "findings": findings}
 
 
 def validate(v: schemas.Verdict, arm: str, packet: "schemas.Packet | None" = None) -> tuple[schemas.Verdict, list[str]]:
@@ -207,7 +231,7 @@ def live_calls(root: Path) -> list[str]:
 def main(argv: list[str]) -> int:
     tid = argv[1]
     root = Path(".").resolve()
-    base = argv[argv.index("--base") + 1] if "--base" in argv else default_base(root)
+    base = argv[argv.index("--base") + 1] if "--base" in argv else default_base(root, tid.split(".")[0])
     print(json.dumps(checks(root, tid, base), indent=1))
     return 0
 

@@ -1,5 +1,5 @@
 """lint_kanban.py: closed tickets only grow their append-only sections; findings have homes;
-no ship past an open block; approved plans carry a routing stamp."""
+no ship past an open block; approved plans carry a routing stamp; charter items say what they reach."""
 import json
 import shutil
 import subprocess
@@ -58,6 +58,18 @@ class LintKanbanTest(unittest.TestCase):
     def test_deleting_done_ticket_fails(self):
         self.done.unlink()
         self.assertTrue(any("was deleted" in v for v in lint_kanban.lint(self.tmp)))
+
+    def test_charter_item_without_applies_to_fails(self):
+        """Rule 5 (E22): every charter item names the paths it reaches."""
+        charter = self.tmp / "docs" / "domain-pack" / "charter.md"; charter.parent.mkdir(parents=True)
+        charter.write_text("# Charter\n\n## 1. Unknown over guess\nApplies to: src/*\nPattern: x\n\n## 2. Evidence is openable\nPattern: y\n\n## 3. Docs say what is\ntext\n")
+        self.assertEqual(lint_kanban.charter_reach(self.tmp), [
+            "docs/domain-pack/charter.md: charter item 2 has no Applies to: line",
+            "docs/domain-pack/charter.md: charter item 3 has no Applies to: line"])
+        self.assertEqual(lint_kanban.lint(self.tmp), lint_kanban.charter_reach(self.tmp))
+        charter.write_text(charter.read_text().replace("Pattern: y", "Applies to: docs/*\nPattern: y").replace("text\n", "Applies to: docs/*, tests/*\n"))
+        self.assertEqual(lint_kanban.lint(self.tmp), [])
+        charter.unlink(); self.assertEqual(lint_kanban.charter_reach(self.tmp), [])  # no charter, nothing to say
 
     def test_cli_exit_code(self):
         self.done.write_text(self.done.read_text().replace("One sentence.", "Two sentences."))

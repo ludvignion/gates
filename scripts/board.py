@@ -7,10 +7,15 @@ recommended action and the next child id, verdict_eval.record_decision for the d
 
 Gate 1 (plans):  approve · override backend/scrutiny (router miss logged, like runner --override).
 Gate 2 (tickets in_review, verdict present):
-  ship    — status done, Log entry, commit on the ticket branch, dataset item expected=ship,
-            merge --no-ff into the base branch (main, else master), push (when a remote exists),
-            delete the branch, remove the .worktrees/<id>/ worktree. Runs only from the ticket
-            branch or the base branch; ends on the base branch checked out.
+  ship    — validate (no open block without a waiver or a child; the tree the human left must
+            be clean), status done, Log entry (the open findings and one `- human AC-n confirmed
+            by <who>` line per `(human)` AC, E30), the Gate 2 page re-rendered, ONE commit of
+            ticket + page on the ticket branch, dataset item expected=ship, checkout of the base
+            branch (kanban_ops.base_branch: the plan's `base:`, else main, else master; E21),
+            merge --no-ff, push (when a remote exists), delete the branch, remove the
+            .worktrees/<id>/ worktree. Nothing is written after the commit (E29: a page
+            re-rendered after it left the tree dirty and the checkout refused). Runs only from
+            the ticket branch or the base branch; ends on the base branch checked out.
   reject  — Log entry with the reason, status in_progress, commit, dataset item expected=reject.
             Stays on the ticket branch when the checkout already is there (the runner leaves it
             so after a verdict); from the base branch it checks the ticket branch out and returns.
@@ -77,12 +82,13 @@ def current_branch(root: Path) -> str:
     return _git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
 
-def base_branch(root: Path) -> str:
-    """The branch a ship merges into: main, else master (E16: the ship ends here, checked out)."""
-    for b in ("main", "master"):
-        if _has_branch(root, b):
-            return b
-    raise BoardError("no main or master branch to merge into")
+def _base(root: Path, tid: str) -> str:
+    """The branch a ship merges into, through kanban_ops.base_branch (contract A) for the
+    ticket's plan (E16: the ship ends here, checked out)."""
+    try:
+        return kanban_ops.base_branch(root, tid.split(".")[0])
+    except ValueError as e:
+        raise BoardError(str(e)) from None
 
 
 def _clean(root: Path) -> bool:
@@ -105,21 +111,16 @@ def _verdict(tree: Path, tid: str) -> tuple[Path, schemas.Verdict]:
 
 def page(tree: Path, tid: str) -> str:
     """Re-render the Gate 2 page from disk (html only: the summary cache and the stamp stay) and
-    return its path for the commit. E20: a render after the commit left the tracked page and
-    summary dirty, and the ship's checkout to base then refused."""
+    return its path for the commit. E20/E29: the page is rendered before the action's commit and
+    never after it, so no action leaves the tracked page dirty."""
     render_verdict.view(tree, tid)
     return f"traces/verdict/{tid}.html"
 
 
-VERDICT_FILES = "traces/verdict/{tid}."
-
-
-def commit_page(root: Path, tid: str) -> str | None:
-    """Commit whatever is dirty under traces/verdict/<tid>.* (a page re-rendered by an older
-    action) so a ship can leave the branch; anything else dirty stays the human's."""
-    dirty = [l[3:] for l in subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=root, capture_output=True, text=True).stdout.splitlines()]
-    mine = [f for f in dirty if f.startswith(VERDICT_FILES.format(tid=tid))]
-    return kanban_ops.commit(root, mine, f"docs({tid}): gate 2 page", force=True) if mine else None
+def human_acs(path: Path) -> tuple:
+    """The ticket's `(human)` ACs (schemas.Ticket.human_acs, E30); empty when the schema
+    predates the field."""
+    return tuple(getattr(schemas.Ticket.parse(_fm.read(path)[1]), "human_acs", ()))
 
 
 def _finding(v: schemas.Verdict, fid: str) -> dict:
@@ -160,10 +161,12 @@ def override(root: Path, n: str, field: str, value: str, who: str = "human") -> 
 
 # --- Gate 2 -----------------------------------------------------------------------------------
 def ship(root: Path, tid: str, who: str = "human") -> str:
-    """Gate 2 ship: from ticket/<id> or the base branch only; merges --no-ff into base, pushes,
-    deletes the branch, and ends on base checked out (E16)."""
+    """Gate 2 ship (contract I): validate → status done, Log entry (findings and the human ACs
+    confirmed by `who`), page re-rendered → one commit of ticket + page → dataset item → checkout
+    of the base (a dirty tree here is the human's: refused) → merge --no-ff → push → delete the
+    branch. From ticket/<id> or the base branch only; ends on base checked out (E16)."""
     branch = f"ticket/{tid}"
-    base = base_branch(root)
+    base = _base(root, tid)
     here = current_branch(root)
     if here not in (branch, base):
         raise BoardError(f"ship {tid} from the ticket branch or {base}, not {here}")
@@ -175,10 +178,13 @@ def ship(root: Path, tid: str, who: str = "human") -> str:
         open_blocks = [f for f in v.open_blocks() if f.get("id") not in log.waived_ids() and not f.get("spawn_child")]
         if open_blocks:
             raise BoardError("open block(s) without a waiver or a child: " + ", ".join(f["id"] for f in open_blocks) + " — waive, create the child, or rework")
+        if tree == root and not _clean(root):  # in place on the ticket branch: whatever is dirty is the human's, and the checkout to base would refuse it
+            raise BoardError(f"the tree is dirty; commit or stash before shipping from {branch}")
         kanban_ops.set_status(path, "done")
         kanban_ops.append_log(path, "human", f"ship by {who} (gate 2, from the board)",
-                              tuple(f"- {f['severity']} {f['id']} {f.get('ac') or f.get('charter') or '-'}: {f['text']}" for f in v.findings if v.is_open(f)))
-        kanban_ops.commit(tree, [str(path.relative_to(tree))], f"docs({tid}): ship — gate 2 by {who}")
+                              tuple(f"- {f['severity']} {f['id']} {f.get('ac') or f.get('charter') or '-'}: {f['text']}" for f in v.findings if v.is_open(f))
+                              + tuple(f"- human {render_verdict.human_ac(ac)[0]} confirmed by {who}" for ac in human_acs(path)))
+        kanban_ops.commit(tree, [str(path.relative_to(tree)), page(tree, tid)], f"docs({tid}): ship — gate 2 by {who}", force=True)
         record = verdict_eval.record_decision(tree, tid, "ship")
     finally:
         restore()
@@ -187,8 +193,6 @@ def ship(root: Path, tid: str, who: str = "human") -> str:
         if tree != root:  # a worktree holds the branch: remove it first, the merge needs the branch free
             _git(root, "worktree", "remove", "--force", str(tree))
         if current_branch(root) != base:  # the runner left the checkout on the ticket branch
-            if commit_page(root, tid):
-                lines.append("gate 2 page committed")
             if not _clean(root):
                 raise BoardError(f"the tree is dirty; commit or stash before shipping from {branch}")
             _git(root, "checkout", "-q", base)

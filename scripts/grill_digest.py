@@ -2,6 +2,7 @@
 """traces/grill-misses.jsonl → traces/blind-spots.md (read by the grill skill). Run: make digest
 
 Record shape: {"ticket": "1.2", "finding": "...", "category": "ordering", "should_grill_have_caught": true, "missed_question": "..."}
+Override and grill-approval records ({"plan": ..., "source": "override"|"approval", ...}) share the file and carry no ticket.
 """
 import json
 from collections import Counter, defaultdict
@@ -21,7 +22,7 @@ def main(root: Path) -> None:
         if r.get("missed_question"):
             examples[r["category"]].append(r["missed_question"])
     lines = ["# Blind spots (generated — do not edit)", "",
-             f"{len(misses)} misses over {len({r['ticket'] for r in recs})} tickets. Check each category against every brief.", ""]
+             f"{len(misses)} misses over {len({r.get('ticket') for r in recs if r.get('ticket')})} tickets. Check each category against every brief.", ""]
     for cat, n in by_cat.most_common():
         lines.append(f"## {cat} ({n})")
         for q in examples[cat][:3]:

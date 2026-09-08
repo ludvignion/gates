@@ -23,9 +23,13 @@ import runner  # noqa: E402
 import schemas  # noqa: E402
 import verdict_eval  # noqa: E402
 import verdict_prep  # noqa: E402
-from test_verdict_scripts import CHARTER, PLAN, TICKET, git  # noqa: E402
+from test_verdict_scripts import PLAN, TICKET, git  # noqa: E402
 
 FIXTURE_PROJECT = REPO / "tests" / "fixtures" / "project"
+# Contract D: every item names the paths it reaches; both reach src/ and tests/, which is what the
+# fake claude's default verdict holds (charter-1, charter-2).
+CHARTER = ("# Charter\n\n## 1. Unknown over guess\nApplies to: src/*, tests/*\nPattern: an unknown stays unknown.\n\n"
+           "## 2. Evidence is openable\nApplies to: src/*, tests/*\nPattern: every claim names a file.\n")
 
 # A stand-in vendor: reads the packet, writes a verdict at the output path the runner hands it.
 FAKE_VENDOR = """import json, sys
@@ -64,9 +68,9 @@ class RunnerSeatTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_default_cmd_and_placeholders(self):
-        self.assertEqual(runner.DEFAULT_VERDICT_CMD, 'claude -p --model {model} --output-format json --tools "" < {packet}')
+        self.assertEqual(runner.DEFAULT_VERDICT_CMD, 'claude -p --model {model} --output-format json --tools "" --max-turns 1 < {packet}')  # contract F: one turn (E28)
         cmd = runner.verdict_cmd(runner.DEFAULT_VERDICT_CMD, packet="traces/verdict/1.1.input.md", output="traces/verdict/1.1.json", model="opus", ticket="1.1")
-        self.assertEqual(cmd, 'claude -p --model opus --output-format json --tools "" < traces/verdict/1.1.input.md')
+        self.assertEqual(cmd, 'claude -p --model opus --output-format json --tools "" --max-turns 1 < traces/verdict/1.1.input.md')
         self.assertNotIn("-p '/verdict", cmd)  # the skill is not invoked; the path merely contains the word
         self.assertNotIn("$(cat", cmd)  # the packet is stdin, never an argument
         self.assertEqual(runner.vendor_of(runner.DEFAULT_VERDICT_CMD), "claude")
@@ -174,6 +178,10 @@ class RunnerSeatTest(unittest.TestCase):
         self.assertEqual(runner.call_error(0, out), "invalid verdict: F1: status 'gone' not in ('open', 'resolved')")
         out.write_text("[]")
         self.assertEqual(runner.call_error(0, out), "invalid verdict: not a verdict JSON object")
+        out.write_text(json.dumps({"decision": "ship", "findings": []}))
+        self.assertIsNone(runner.call_error(0, out, {"num_turns": 1})); self.assertIsNone(runner.call_error(0, out, {}))
+        self.assertEqual(runner.call_error(0, out, {"num_turns": 3}), "invalid verdict: num_turns=3 (the seat must be one turn)")  # contract F
+        self.assertEqual(runner.call_error(1, out, {"num_turns": 3}), "exit 1")  # the exit code is the first reason
 
     def test_claude_usage_lands_in_meta_and_trace(self):
         (self.tmp / "fake_vendor.py").write_text(FAKE_VENDOR + 'print(json.dumps({"total_cost_usd": 0.05, "usage": {"input_tokens": 7, "output_tokens": 8}}))\n')
@@ -289,8 +297,50 @@ class RunnerSeatTest(unittest.TestCase):
     def test_cli_help_documents_placeholders(self):
         r = subprocess.run([sys.executable, str(REPO / "scripts/runner.py"), "--help"], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0)
-        for s in ("--verdict-cmd", "--arm", "{packet}", "{output}", "blind", "repo"):
+        for s in ("--verdict-cmd", "--arm", "{packet}", "{output}", "blind", "repo", "--packet-cap", "--max-turns 1"):
             self.assertIn(s, r.stdout)
+
+    def test_one_turn_seat_stops_the_run_without_a_retry(self):
+        """Contract F (E28): a vendor report with num_turns other than 1 is a Refusal, not a
+        reject to retry; the verdict it carried is not written."""
+        envelope = {"type": "result", "subtype": "success", "is_error": False, "num_turns": 3, "total_cost_usd": 0.9,
+                    "result": json.dumps({"ticket": "1.1", "decision": "ship", "held": ["AC-1"], "findings": [], "ci": {"green": True}})}
+        (self.tmp / "chatty_vendor.py").write_text("import json, sys\nsys.stdin.read()\nprint(json.dumps(" + repr(envelope) + "))\n")
+        with contextlib.redirect_stdout(io.StringIO()) as printed, self.assertRaises(runner.Refusal) as cm:
+            self.verdict(template=f"{sys.executable} chatty_vendor.py < {{packet}}")
+        self.assertEqual((cm.exception.code, cm.exception.state, str(cm.exception)), (2, "error num_turns=3", "[runner] verdict error: invalid verdict: num_turns=3 (the seat must be one turn)"))
+        self.assertIn("[runner] verdict error: invalid verdict: num_turns=3 (the seat must be one turn)", printed.getvalue())
+        self.assertFalse((self.tmp / "traces/verdict/1.1.json").exists())
+        envelope["num_turns"] = 1  # one turn: the same reply is a verdict
+        (self.tmp / "chatty_vendor.py").write_text("import json, sys\nsys.stdin.read()\nprint(json.dumps(" + repr(envelope) + "))\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.verdict(template=f"{sys.executable} chatty_vendor.py < {{packet}}")[0], "ship")
+
+    def test_packet_over_the_cap_is_refused_before_the_call(self):
+        """Contract F: the packet's ~tokens (bytes // 4) over --packet-cap: no vendor call."""
+        (self.tmp / "fake_vendor.py").write_text("import sys\nopen('called', 'w').write('x')\n" + FAKE_VENDOR)
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(runner.Refusal) as cm:
+            self.verdict(packet_cap=10)
+        self.assertEqual((cm.exception.code, cm.exception.state), (2, "error packet too big"))
+        self.assertRegex(str(cm.exception), r"^\[runner\] packet too big: ~\d+ tokens \(cap 10\); narrow the ticket or raise --packet-cap$")
+        self.assertFalse((self.tmp / "called").exists())
+        self.assertEqual(runner.packet_tokens(self.tmp / "traces/verdict/1.1.input.md"), (self.tmp / "traces/verdict/1.1.input.md").stat().st_size // 4)
+        self.assertEqual(runner.PACKET_TOKEN_CAP, 40000)
+
+    def test_prep_passes_the_base_and_turns_nothing_to_judge_into_a_refusal(self):
+        """Contract G (E20): verdict_prep's SystemExit "nothing to judge: ..." on stderr becomes a
+        Refusal before any model call; --base reaches verdict_prep (E21)."""
+        git(self.tmp, "checkout", "-q", "main"); git(self.tmp, "checkout", "-q", "-b", "ticket/1.9")
+        (self.tmp / "uv.lock").write_text("locked\n"); git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "lock only")
+        t = self.tmp / "kanban/tickets/1.9.lock.md"; t.write_text(TICKET.replace("id: 1.1", "id: 1.9").replace("# 1.1", "# 1.9"))
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "ticket")
+        with self.assertRaises(runner.Refusal) as cm:
+            runner.prep(self.tmp, "1.9", "packet", "main")
+        self.assertEqual((cm.exception.code, cm.exception.state, str(cm.exception)), (2, "error nothing to judge", "[runner] nothing to judge"))
+        self.assertFalse((self.tmp / "traces/verdict/1.9.input.md").exists())
+        git(self.tmp, "checkout", "-q", "ticket/1.1")
+        packet = runner.prep(self.tmp, "1.1", "packet", "main")  # the ticket branch has src changes: a packet
+        self.assertEqual(schemas.Packet.load(packet).fm.get("base"), "main")
 
 
 FAKE_CLAUDE = REPO / "tests" / "fixtures" / "fake_claude.py"
@@ -406,11 +456,14 @@ class RunnerBuildSeatTest(unittest.TestCase):
         # contract A: the state file, one line per phase, ending in done
         phases = state_phases(self.repo / "traces/runs/1.1.state")
         self.assertEqual(phases, ["branch", "ci-pre", "build 1", "tests-commit", "feat-commit", "build 1 close-out", "ci", "verdict", "close-out", "done ship"])
-        # contract C: the result file is what stdout ends with
+        self.assertEqual((self.repo / "traces/runs/1.1.pid").read_text().strip(), str(os.getpid()))  # contract B: the pid beside the state, left at exit
+        # contract C: the result file is what stdout ends with; no summary (--summary-model none), so no sentences
         result = (self.repo / "traces/runs/1.1.result").read_text()
         lines = result.splitlines()
-        self.assertRegex(lines[0], r"^1\.1 · verdict: SHIP · 0 blocks · 0 warns · \$0\.0300 · \d+s$")  # the verdict call's cost; the build session was terminated at the orbit, so it reported none; seconds are wall time
-        self.assertEqual(lines[1:], ["Recommended: ship as is", "traces/verdict/1.1.html"])
+        self.assertRegex(lines[0], r"^1\.1 · verdict: SHIP · 0 blocks · 0 warns · verdict \$0\.0300/\d+s · build n/a/\d+s · run \d+s$")  # E28: the verdict call and the build named apart; the build session was terminated at the orbit, so it reported no cost
+        self.assertEqual(lines[1], "charter: 1, 2 reachable — both held")  # E22: only what the diff reaches
+        self.assertEqual(lines[2:], ["changed vs main: 2 files +4/−1", "  src/app/run.py +1/−1", "  tests/test_1_1.py +3/−0",  # E27
+                                     "Recommended: ship as is", "traces/verdict/1.1.html"])
         self.assertTrue(out.endswith(result), out[-300:])
         self.assertTrue((self.repo / "traces/verdict/1.1.html").exists())  # the page sits in the folder the human looks at
         # second run: already on ticket/1.1, clean; in_review with the commits → no build session
@@ -519,6 +572,105 @@ class RunnerBuildSeatTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.kanban_ops.override_plan(self.repo, "1", "tickets", "9")
 
+    def test_done_ticket_is_refused_before_git(self):
+        """Contract H (E23): a done ticket never starts; no branch, the state file says why."""
+        t = self.repo / "kanban/tickets/1.1.tracer-bullet.md"
+        t.write_text(t.read_text().replace("status: ready", "status: done")); git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "done")
+        rc, out = self._main()
+        self.assertEqual(rc, 2, out)
+        self.assertIn("[runner] 1.1 is done; nothing to run", out)
+        self.assertEqual(self._branch(), "main")
+        self.assertEqual(subprocess.run(["git", "branch", "--list", "ticket/1.1"], cwd=self.repo, capture_output=True, text=True).stdout.strip(), "")
+        self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state"), ["done error 1.1 is done; nothing to run"])
+        self.assertFalse(self.log.exists())
+
+    def test_merged_branch_is_refused_before_git(self):
+        """Contract H (E23): ticket/<id> already merged into the base (an ancestor with commits of
+        its own) is refused; an empty branch at the base tip is not merged, just empty."""
+        git(self.repo, "checkout", "-q", "-b", "ticket/1.1"); git(self.repo, "checkout", "-q", "main")
+        self.assertFalse(runner.merged_into(self.repo, "ticket/1.1", "main"))  # created, nothing built
+        git(self.repo, "checkout", "-q", "ticket/1.1"); (self.repo / "src/app/run.py").write_text("def run(x):\n    return x + 1\n")
+        git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "feat(1.1): impl"); git(self.repo, "checkout", "-q", "main")
+        self.assertFalse(runner.merged_into(self.repo, "ticket/1.1", "main"))
+        git(self.repo, "merge", "--no-ff", "-q", "ticket/1.1", "-m", "merge(1.1)")
+        self.assertTrue(runner.merged_into(self.repo, "ticket/1.1", "main"))
+        rc, out = self._main()
+        self.assertEqual(rc, 2, out)
+        self.assertIn("[runner] ticket/1.1 is already merged into main", out)
+        self.assertEqual(self._branch(), "main")  # checkout unchanged
+        self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state"), ["done error ticket/1.1 is already merged into main"])
+        self.assertFalse(self.log.exists())
+
+    def test_base_branch_is_the_plan_s(self):
+        """Contract A (E21): the plan's `base:` wins, else main, else master; none is an error."""
+        self.assertEqual(kanban_ops.base_branch(self.repo), "main"); self.assertEqual(kanban_ops.base_branch(self.repo, "1"), "main")
+        git(self.repo, "branch", "-q", "release"); git(self.repo, "branch", "-q", "master")
+        plan = self.repo / "kanban/plans/1.plan.md"
+        plan.write_text(plan.read_text().replace("status: approved\n", "status: approved\nbase: release   # the branch tickets branch from and ship into\n"))
+        self.assertEqual(kanban_ops.base_branch(self.repo, "1"), "release"); self.assertEqual(kanban_ops.base_branch(self.repo, "9"), "main")
+        self.assertIn("base: main", (REPO / "templates/plan.md").read_text())
+        empty = self.tmp / "empty"; empty.mkdir(); git(empty, "init", "-q", "-b", "trunk")
+        with self.assertRaises(ValueError) as cm:
+            kanban_ops.base_branch(empty)
+        self.assertEqual(str(cm.exception), "no base branch: set base: in the plan")
+        self.assertEqual(runner.ticket_base(self.repo, "main"), subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True).stdout.strip())
+        self.assertFalse(hasattr(runner, "BASE_BRANCHES"))
+
+    def test_empty_included_diff_is_refused_before_the_verdict_call(self):
+        """Contract G (E20): a branch whose commits touch only a lock file and kanban/ has nothing
+        to judge: exit 2, `done error nothing to judge`, the build call only."""
+        gid = " ".join(GIT_ID)
+        self.scenario.write_text(json.dumps([{"cmd": f"printf 'locked' > uv.lock && git {gid} add -A && git {gid} commit -q -m 'chore(1.1): lock'"}, closeout_steps()[3]]))
+        rc, out = self._main()
+        self.assertEqual(rc, 2, out)
+        self.assertIn("[runner] nothing to judge", out)
+        self.assertEqual(len(self._calls()), 1); self.assertIn("stream-json", self._calls()[0])  # the build, no verdict
+        self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state")[-2:], ["verdict", "done error nothing to judge"])
+        self.assertFalse((self.repo / "traces/runs/1.1.result").exists())
+
+    def test_packet_cap_and_one_turn_seat_end_to_end(self):
+        """Contract F: --packet-cap refuses before the call; a num_turns=3 report stops the run."""
+        rc, out = self._main("--packet-cap", "10")
+        self.assertEqual(rc, 2, out)
+        self.assertRegex(out, r"\[runner\] packet too big: ~\d+ tokens \(cap 10\); narrow the ticket or raise --packet-cap")
+        self.assertEqual(len(self._calls()), 1)  # the build only
+        self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state")[-1], "done error packet too big")
+        self.log.unlink()
+        envelope = self.tmp / "verdict_envelope.json"
+        envelope.write_text(json.dumps({"type": "result", "subtype": "success", "is_error": False, "num_turns": 3, "total_cost_usd": 2.91,
+                                        "usage": {"input_tokens": 100, "output_tokens": 50},
+                                        "result": json.dumps({"ticket": "1.1", "decision": "ship", "held": ["AC-1", "AC-2", "charter-1", "charter-2"], "findings": [], "ci": {"green": True}})}))
+        with mock.patch.dict(os.environ, {"FAKE_VERDICT_ENVELOPE": str(envelope)}):
+            rc, out = self._main()
+        self.assertEqual(rc, 2, out)
+        self.assertIn("[runner] verdict error: invalid verdict: num_turns=3 (the seat must be one turn)", out)
+        self.assertEqual(len(self._calls()), 1)  # in_review: build skipped; one verdict call, no retry
+        self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state")[-1], "done error num_turns=3")
+        self.assertFalse((self.repo / "traces/verdict/1.1.json").exists())
+
+    def test_heartbeat_while_the_builder_is_silent(self):
+        """Contract B (E25): every HEARTBEAT_SECONDS the state file gets `<phase> · running · last
+        <hh:mm:ss> · <last builder line>` without a phase change, also while no line arrives."""
+        git(self.repo, "checkout", "-q", "-b", "ticket/1.1")
+        self.scenario.write_text(json.dumps([{"text": "Thinking about the " + "x" * 100}, {"cmd": "sleep 1.2"}]))
+        beats = []
+        with mock.patch.object(runner, "HEARTBEAT_SECONDS", 0.3), mock.patch.object(runner, "STREAM_WAIT", 0.05), contextlib.redirect_stdout(io.StringIO()):
+            call = runner.build(self.repo, "1.1", "sonnet", heartbeat=lambda last_line, last_at: beats.append((last_line, last_at)))
+        self.assertEqual(call.returncode, 0)
+        self.assertGreaterEqual(len(beats), 2, beats)  # the builder was silent for 1.2 s: heartbeats still came
+        self.assertEqual(beats[-1][0], "$ sleep 1.2"); self.assertRegex(beats[-1][1], r"^\d\d:\d\d:\d\d$")
+        self.assertTrue(all(len(l) <= 80 for l, _ in beats))
+        phases = runner.Phases(self.repo, self.repo, "1.1", out=io.StringIO(), plan_state=self.repo / "traces/runs/plan-1.state")
+        phases.mark("build 1"); phases.heartbeat("$ pytest -q", "10:42:07"); phases.heartbeat("")
+        for sp in (self.repo / "traces/runs/1.1.state", self.repo / "traces/runs/plan-1.state"):
+            lines = state_phases(sp)
+            self.assertEqual(lines[-3], "build 1"); self.assertEqual(lines[-2], "build 1 · running · last 10:42:07 · $ pytest -q")
+            self.assertTrue(lines[-1].startswith("build 1 · running · last ") and lines[-1].endswith(" · (no output yet)"), lines[-1])
+        self.assertEqual(phases.current, "build 1"); self.assertEqual(phases.finish(), {"build 1": phases.seconds["build 1"]})  # not a phase change
+        self.assertEqual((self.repo / "traces/runs/1.1.pid").read_text().strip(), str(os.getpid()))
+        recs = {r["id"]: r for r in runner.render_board.runs(self.repo)}
+        self.assertTrue(recs["1.1"]["running"]); self.assertTrue(recs["1.1"]["phase"].startswith("build 1 · running · last "))
+
     def test_build_call_reads_envelope_and_orbit(self):
         self.envelope.write_text(json.dumps({"type": "result", "result": "ok", "total_cost_usd": 0.7, "permission_denials": [{"tool_name": "WebFetch", "tool_input": {"url": "x"}}, "junk"]}))
         self.scenario.write_text(json.dumps([{"text": "hi"}]))
@@ -566,6 +718,52 @@ class ResultLinesTest(unittest.TestCase):
         for action, word in (("ship, create child 2.1.1 from F1", "child 2.1.1"), ("rework in place", "rework"), ("home to 2.3", "home 2.3"), ("waive", "waive")):
             self.assertEqual(render_verdict.action_word(action), word)
 
+    def test_cost_words_name_verdict_and_build_apart(self):
+        """E28: a header that summed the build into "verdict" read as a ten-times verdict."""
+        self.assertEqual(render_verdict.cost_words(0.53, 72.9, None), "$0.5300 · 72s")
+        self.assertEqual(render_verdict.cost_words(2.91, 889.4, {"verdict_usd": 0.417805, "verdict_s": 106.8, "build_usd": 2.49, "build_s": 782.0}),
+                         "verdict $0.4178/106s · build $2.4900/782s · run 889s")
+        self.assertEqual(render_verdict.cost_words(None, 5, {"verdict_usd": None, "verdict_s": None, "build_usd": None, "build_s": 0.0}),
+                         "verdict n/a/n/as · build n/a/0s · run 5s")
+        lines = render_verdict.result_lines(self._verdict([]), self.TICKETS, 0.03, 12, "p", costs={"verdict_usd": 0.03, "verdict_s": 11.2, "build_usd": None, "build_s": 0.4})
+        self.assertEqual(lines[0], "2.1 · verdict: REJECT · 0 blocks · 0 warns · verdict $0.0300/11s · build n/a/0s · run 12s")
+
+    def test_contract_c_block_in_order(self):
+        """Summary sentences, header, findings, charter line, human ACs, changed vs base,
+        Recommended, page — in that order (E24, E22, E30, E27)."""
+        v = schemas.Verdict.load(REPO / "tests/fixtures/project/traces/verdict/2.1.json")
+        summary = {"built": "Export writes ids verbatim.", "review": "One block on the slug rewrite; two warns.", "error": None}
+        charter = {"reachable": ["charter-3", "charter-4"], "held": ["charter-3"], "findings": {"charter-4": ["F2", "F3"]}}
+        changed = {"base": "main", "files": [{"path": "src/pipeline/export/run.py", "added": 12, "removed": 3}, {"path": "tests/test_export.py", "added": 20, "removed": 0}]}
+        human = (schemas.HumanAc("AC-7", "Given the export, a person confirms the file opens in the client tool"),)
+        lines = render_verdict.result_lines(v, self.TICKETS, 0.53, 72.9, "traces/verdict/2.1.html", summary=summary, changed=changed, charter=charter, human_acs=human)
+        self.assertEqual(lines, [
+            "Export writes ids verbatim.",
+            "One block on the slug rewrite; two warns.",
+            "2.1 · verdict: REJECT · 1 blocks · 2 warns · $0.5300 · 72s",
+            'F1 block (AC-2) src/pipeline/export/run.py:36 — "ids are rewritten on export, src/pipeline/export/run.py:36 slugifies them" → child 2.1.1',
+            'F2 warn (charter-3) src/pipeline/report/page.py — "no test for the empty report path in src/pipeline/report/page.py" → home 2.2',
+            'F3 warn (—) — — "the stage log line lacks the stage name" → waive',
+            "charter: 3, 4 reachable — F2, F3",
+            "human: AC-7 — Given the export, a person confirms the file opens in the client tool (confirm with ship)",
+            "changed vs main: 2 files +32/−3",
+            "  src/pipeline/export/run.py +12/−3",
+            "  tests/test_export.py +20/−0",
+            "Recommended: ship, child F1 → 2.1.1, home F2 → 2.2, waive F3",
+            "traces/verdict/2.1.html",
+        ])
+        # the charter line's words
+        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-2"], "held": ["charter-2"], "findings": {}}), "charter: 2 reachable — held")
+        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-2", "charter-7"], "held": ["charter-7", "charter-2"], "findings": {}}), "charter: 2, 7 reachable — both held")
+        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-1", "charter-2", "charter-3"], "held": ["charter-1", "charter-2", "charter-3"], "findings": {}}), "charter: 1, 2, 3 reachable — all held")
+        self.assertEqual(render_verdict.charter_line({"reachable": ["charter-4"], "held": [], "findings": {"charter-4": ["F3"]}}), "charter: 4 reachable — F3")
+        self.assertEqual(render_verdict.charter_line({"reachable": [], "held": [], "findings": {}}), "charter: none reachable")
+        # an errored or missing summary adds no sentences; a summary of one sentence adds one
+        v2 = self._verdict([], "ship")
+        self.assertEqual(render_verdict.result_lines(v2, self.TICKETS, None, 1, "p", summary={"built": "x", "review": None, "error": "summary skipped"})[0], "2.1 · verdict: SHIP · 0 blocks · 0 warns · n/a · 1s")
+        self.assertEqual(render_verdict.result_lines(v2, self.TICKETS, None, 1, "p", summary={"built": "Built.", "review": "", "error": None})[:2], ["Built.", "2.1 · verdict: SHIP · 0 blocks · 0 warns · n/a · 1s"])
+        self.assertEqual(render_verdict.result_lines(v2, self.TICKETS, None, 1, "p", changed={"base": "master", "files": []}), ["2.1 · verdict: SHIP · 0 blocks · 0 warns · n/a · 1s", "changed vs master: 0 files +0/−0", "Recommended: ship as is", "p"])
+
 
 class RunnerPlanWalkTest(unittest.TestCase):
     """--plan <n> on a git copy of tests/fixtures/project (plan 2: 2.1, then 2.2 depends_on 2.1,
@@ -576,7 +774,7 @@ class RunnerPlanWalkTest(unittest.TestCase):
         self.repo = self.tmp / "proj"
         shutil.copytree(FIXTURE_PROJECT, self.repo)
         for rel, text in {
-            "docs/domain-pack/charter.md": "# Charter\n\n## 1. Unknown over guess\nx\n\n## 2. Evidence is openable\nx\n",
+            "docs/domain-pack/charter.md": CHARTER,
             "src/pipeline/run.py": "x = 1\n", "Makefile": "ci:\n\t@test -f green\n", "green": "",
             ".claude/settings.json": "{}\n", ".gitignore": "traces/board.html\ntraces/verdict/*.html\n",
         }.items():

@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Agentic development harness: grill, build, verdict, run.",
-    "version": "0.6.5.4"
+    "version": "0.6.5.5"
   },
   "plugins": [
     {
       "name": "harness-plugin",
       "source": "./",
       "description": "Grill → plan gate → runner (tests-first build → CI → fresh-context verdict) → Gate 2 in words.",
-      "version": "0.6.5.4",
+      "version": "0.6.5.5",
       "category": "workflow",
       "keywords": [
         "grill",

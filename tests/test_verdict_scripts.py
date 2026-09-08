@@ -67,7 +67,44 @@ The lockfile is mechanical output.
 ### [build] 2026-09-02 12:00 — close-out
 done
 """
-CHARTER = "# Charter\n\n## 1. Unknown over guess\ntext\n\n## 2. Evidence is openable\ntext\n"
+# Seven items; a diff touching src/app/ and tests/ reaches exactly items 2 and 7 (E22).
+CHARTER = """# Charter
+
+One sentence.
+
+## 1. Unknown over guess
+Applies to: src/export/*
+Pattern: an unknown value stays unknown.
+Anti-pattern: a guess written where a value belongs.
+
+## 2. Evidence is openable
+Applies to: src/app/*
+Pattern: every claim names a file a reader can open.
+Anti-pattern: "verified" without a path.
+Demonstrated by: a claim without a path fails review.
+
+## 3. Docs say what is
+Applies to: docs/*
+text
+
+## 4. Reports are reproducible
+Applies to: src/report/*
+text
+
+## 5. Infra is declared
+Applies to: infra/*
+text
+
+## 6. Logs carry ids
+Applies to: src/log/*
+text
+
+## 7. Tests name their AC
+Applies to: tests/*
+Pattern: a test docstring names the AC it proves.
+"""
+CHARTER_REACHABLE = ("charter-2", "charter-7")
+CHARTER_UNREACHABLE = ("charter-1", "charter-3", "charter-4", "charter-5", "charter-6")
 
 
 def git(root, *args):
@@ -121,7 +158,8 @@ class VerdictScriptsTest(unittest.TestCase):
         for needle in (
             "- AC-1 (behavioral)", "- AC-2 (property)", "- real matching",
             "### [human] 2026-09-02 11:00 — waive F1", "- The run is too expensive to repeat monthly",
-            "- charter-1: Unknown over guess", '"id": "C1"', "tests/test_run.py: ", "## Diff\n```diff",
+            "- charter-2: Evidence is openable\n  Pattern: every claim names a file a reader can open.\n  Anti-pattern: \"verified\" without a path.\n- charter-7: Tests name their AC\n  Pattern: a test docstring names the AC it proves.\n",
+            '"id": "C1"', "tests/test_run.py: ", "## Diff\n```diff",
             "+class Widget", "writes: ['src/app/', 'tests/']",
         ):
             self.assertIn(needle, text)
@@ -190,7 +228,7 @@ class VerdictScriptsTest(unittest.TestCase):
         packet = schemas.Packet.parse(text)
         self.assertEqual(packet.arm, "blind")
         self.assertEqual(tuple(t for t, _ in packet.sections), schemas.BLIND_SECTIONS)
-        for gone in ("AC-1 (behavioral)", "real matching", "waive F1", "too expensive to repeat", "charter-1: Unknown",
+        for gone in ("AC-1 (behavioral)", "real matching", "waive F1", "too expensive to repeat", "charter-2: Evidence",
                      "ids drift", '"id": "C1"', "tests/test_run.py: ", "writes: [", "always_writable:", "ticket_file:", "status: in_review"):
             self.assertNotIn(gone, text, gone)
         for kept in ("+class Widget", "## Diff stat", "## CI", "Guardrail: fix nothing.", schemas.SEAT_LINE["blind"], "ticket: 1.1"):
@@ -296,10 +334,95 @@ class VerdictScriptsTest(unittest.TestCase):
         render_verdict.main(self.tmp, "1.1", summary_model="none")
         v = schemas.Verdict.load(vpath)
         self.assertEqual([(f["id"], f["severity"], f["text"], f.get("ac"), f.get("charter")) for f in v.findings[2:]],
-                         [("C2", "warn", "unaccounted: charter-1", None, "charter-1")])
+                         [("C2", "warn", "unaccounted: charter-7", None, "charter-7")])
         render_verdict.main(self.tmp, "1.1", summary_model="none")  # idempotent: no second C2
         self.assertEqual(len(schemas.Verdict.load(vpath).findings), 3)
         self.assertEqual(verdict_checks.unaccounted(v, schemas.Packet.load(vpath.with_name("1.1.input.md"))), [])
+
+    def test_unreachable_charter_item_never_warns(self):
+        """E22: "unaccounted: charter-N" fired for items the diff could not reach. Only a reachable,
+        unheld item yields a C-warn; the five unreachable ones are silent."""
+        vpath = self._verdict_and_packet("packet", [], decision="ship")
+        packet = schemas.Packet.load(vpath.with_name("1.1.input.md"))
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(verdict_checks.unaccounted(v, packet), ["AC-1", "AC-2", *CHARTER_REACHABLE])
+        held = v.with_findings(()).__class__.from_dict({**v.as_dict(), "held": ["AC-1", "AC-2", "charter-2"]})
+        self.assertEqual(verdict_checks.unaccounted(held, packet), ["charter-7"])
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        texts = [f["text"] for f in schemas.Verdict.load(vpath).findings]
+        self.assertIn("unaccounted: charter-7", texts)
+        for gone in CHARTER_UNREACHABLE:
+            self.assertNotIn(f"unaccounted: {gone}", texts, gone)
+
+    def test_prep_charter_section_lists_reachable_items_with_patterns(self):
+        """E22: the packet names only the charter items whose globs reach an included changed file."""
+        packet = schemas.Packet.parse(verdict_prep.build(self.tmp, "1.1", "main", ci=False))
+        sec = packet.section("Charter items")
+        self.assertEqual(sec.strip().splitlines(), [
+            "- charter-2: Evidence is openable",
+            "  Pattern: every claim names a file a reader can open.",
+            '  Anti-pattern: "verified" without a path.',
+            "- charter-7: Tests name their AC",
+            "  Pattern: a test docstring names the AC it proves."])
+        self.assertNotIn("Demonstrated by", sec); self.assertNotIn("Applies to", sec)
+        for gone in CHARTER_UNREACHABLE:
+            self.assertNotIn(gone, sec, gone)
+            self.assertNotIn(gone, packet.section("Mechanical findings (copy verbatim into findings)"), gone)
+        self.assertEqual(verdict_checks.packet_charter(packet), list(CHARTER_REACHABLE))
+
+    def test_charter_report(self):
+        vpath = self._verdict_and_packet("packet", [], decision="ship")
+        packet = schemas.Packet.load(vpath.with_name("1.1.input.md"))
+        both = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "ship", "held": ["AC-1", "charter-2", "charter-7"], "findings": []})
+        self.assertEqual(verdict_checks.charter_report(both, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2", "charter-7"], "findings": {}})
+        one = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "reject", "held": ["charter-2"], "findings": [
+            {"id": "F3", "severity": "block", "status": "open", "charter": "charter-7", "text": "no AC in the docstring"},
+            {"id": "F4", "severity": "warn", "status": "open", "charter": "charter-2", "text": "cited though held"},
+            {"id": "F5", "severity": "warn", "status": "open", "charter": "charter-1", "text": "unreachable, ignored"}]})
+        self.assertEqual(verdict_checks.charter_report(one, packet), {"reachable": ["charter-2", "charter-7"], "held": ["charter-2"], "findings": {"charter-7": ["F3"]}})
+        self.assertEqual(verdict_checks.charter_report(one, None), {"reachable": [], "held": [], "findings": {}})
+
+    def test_prep_refuses_charter_item_without_applies_to(self):
+        (self.tmp / "docs/domain-pack/charter.md").write_text(CHARTER.replace("Applies to: docs/*\n", ""))
+        with self.assertRaises(SystemExit) as cm:
+            verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        self.assertEqual(str(cm.exception), "charter item 3 has no Applies to: line (docs/domain-pack/charter.md); every item names the paths it reaches")
+
+    def test_human_ac_stays_out_of_packet_and_checks(self):
+        """E30: an AC only a person can verify is never "no test names AC-3"; it lives in Ticket.human_acs."""
+        tpath = self.tmp / "kanban/tickets/1.1.tracer-bullet.md"
+        tpath.write_text(tpath.read_text().replace("- AC-2 (property): For all rows, id is verbatim.\n",
+                                                   "- AC-2 (property): For all rows, id is verbatim.\n- AC-3 (human): Given the report, a person confirms the totals read right.\n"))
+        ticket = schemas.Ticket.parse(tpath.read_text())
+        self.assertEqual(ticket.human_acs, (schemas.HumanAc("AC-3", "Given the report, a person confirms the totals read right."),))
+        self.assertEqual([a[:4] for a in ticket.acs], ["AC-1", "AC-2"])
+        found = verdict_checks.checks(self.tmp, "1.1", "main", ci_green=True)
+        self.assertEqual([f["ac"] for f in found if f["text"].startswith("no test names")], ["AC-2"])
+        packet = schemas.Packet.parse(verdict_prep.build(self.tmp, "1.1", "main", ci=False))
+        self.assertNotIn("AC-3", packet.section("Acceptance criteria"))
+        self.assertNotIn("AC-3", packet.section("Mechanical findings (copy verbatim into findings)"))
+        self.assertEqual(verdict_checks.packet_items(packet), ["AC-1", "AC-2", *CHARTER_REACHABLE])
+
+    def test_changed_vs_base(self):
+        """E27: per-file numstat over the included files; lock files stay out, a binary counts 0/0."""
+        (self.tmp / "uv.lock").write_text("x\n"); (self.tmp / "src/app/blob.bin").write_bytes(bytes(range(256)))
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "more")
+        changed = verdict_prep.changed_vs_base(self.tmp, "main")
+        self.assertEqual(changed["base"], "main")
+        self.assertEqual(changed["files"], [
+            {"path": "src/app/blob.bin", "added": 0, "removed": 0},
+            {"path": "src/app/run.py", "added": 10, "removed": 1},
+            {"path": "src/other/y.py", "added": 1, "removed": 0},
+            {"path": "tests/test_run.py", "added": 1, "removed": 0}])
+        git(self.tmp, "checkout", "-q", "main")
+        self.assertEqual(verdict_prep.changed_vs_base(self.tmp, "main"), {"base": "main", "files": []})
+
+    def test_default_base_goes_through_kanban_ops(self):
+        """E21: the diff base is the plan's base branch, never the current branch."""
+        import kanban_ops
+        with mock.patch.object(kanban_ops, "base_branch", lambda root, plan_n=None: f"trunk-{plan_n}", create=True):
+            self.assertEqual(verdict_prep.default_base(self.tmp, "1"), "trunk-1")
+            self.assertEqual(verdict_checks.default_base(self.tmp, "1"), "trunk-1")
 
     def test_lonely_check_skips_new_files(self):
         """E5: a new module is all one-caller defs by construction; only defs added to existing files count."""
@@ -355,13 +478,18 @@ class VerdictScriptsTest(unittest.TestCase):
             self.assertFalse(verdict_prep.included(path), path)
             self.assertEqual(verdict_prep.exclusion_reason(path), why, path)
 
-    def test_prep_diff_with_no_included_file(self):
+    def test_prep_refuses_an_empty_included_diff(self):
+        """E20: a verdict ran on an empty included diff ($0.14, 7 warns on nothing). Refuse before any call."""
         git(self.tmp, "checkout", "-q", "main"); git(self.tmp, "checkout", "-q", "-b", "ticket/1.1-lock")
         (self.tmp / "uv.lock").write_text("x\n")
         git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "lock only")
-        packet = schemas.Packet.parse(verdict_prep.build(self.tmp, "1.1", "main", ci=False))
-        self.assertIn("no included files changed", packet.section("Diff"))
-        self.assertEqual(packet.section("Diff stat").strip(), "```\n1 files excluded (lock, fixture, kanban)\n```")
+        with self.assertRaises(SystemExit) as cm:
+            verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        self.assertEqual(str(cm.exception), "nothing to judge: no included file changed against main")
+        self.assertFalse((self.tmp / "traces").exists())  # nothing archived or written
+        r = subprocess.run([sys.executable, str(REPO / "scripts" / "verdict_prep.py"), "1.1", "--no-ci"], cwd=self.tmp, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1); self.assertIn("nothing to judge", r.stderr)
+        self.assertEqual(verdict_prep.diff_and_stat(self.tmp, "main...HEAD"), ("no included files changed\n", "1 files excluded (lock, fixture, kanban)\n"))
 
     def test_prep_frontmatter_always_writable(self):
         """Item 8: the reviewer does not warn on the glossary or the parent plan's Log."""
@@ -399,7 +527,7 @@ class VerdictScriptsTest(unittest.TestCase):
 
     def test_summary_call_is_cached_and_shown(self):
         vpath = self._verdict_and_packet("packet", [{"id": "F1", "severity": "warn", "status": "open", "ac": "AC-2", "text": "thin test"}], decision="ship")
-        v = json.loads(vpath.read_text()); v["held"] = ["AC-1", "charter-1", "charter-2"]; vpath.write_text(json.dumps(v))
+        v = json.loads(vpath.read_text()); v["held"] = ["AC-1", *CHARTER_REACHABLE]; vpath.write_text(json.dumps(v))
         bin_dir = self.tmp / "bin"; bin_dir.mkdir()
         log = self.tmp / "calls.log"
         (bin_dir / "claude").write_text(
@@ -444,9 +572,22 @@ class VerdictSchemaTest(unittest.TestCase):
     def test_attacks_charter_ticket(self):
         self.assertEqual(schemas.Attacks.parse(PLAN).items, ("The run is too expensive to repeat monthly", "A rename counted as a move"))
         self.assertEqual(schemas.Attacks.parse("## Verdict must attack\n- <failure modes carried over>\n").items, ())
-        self.assertEqual(schemas.Charter.parse(CHARTER).items, (("1", "Unknown over guess"), ("2", "Evidence is openable")))
+        charter = schemas.Charter.parse(CHARTER)
+        self.assertEqual([(it.n, it.title, it.id) for it in charter.items][:2], [("1", "Unknown over guess", "charter-1"), ("2", "Evidence is openable", "charter-2")])
+        self.assertEqual([it.globs for it in charter.items], [("src/export/*",), ("src/app/*",), ("docs/*",), ("src/report/*",), ("infra/*",), ("src/log/*",), ("tests/*",)])
+        self.assertEqual(charter.reachable(["src/app/deep/x.py", "tests/test_x.py"]), ("charter-2", "charter-7"))  # "*" crosses "/"
+        self.assertEqual(charter.reachable(["README.md"]), ()); self.assertEqual(charter.missing_applies(), ())
+        self.assertEqual(charter.body_of("1"), "Pattern: an unknown value stays unknown.\nAnti-pattern: a guess written where a value belongs.")
+        self.assertEqual(charter.item("2").pattern_lines(), ("Pattern: every claim names a file a reader can open.", 'Anti-pattern: "verified" without a path.'))
+        self.assertIsNone(charter.item("9"))
+        loose = schemas.Charter.parse("# Charter\n\n## 1. A\ntext\n\n## 2. B\nApplies to: src/a/*, src/b/*.py\n")
+        self.assertEqual(loose.missing_applies(), ("1",)); self.assertEqual(loose.item("2").globs, ("src/a/*", "src/b/*.py"))
         t = schemas.Ticket.parse(TICKET)
-        self.assertEqual(len(t.acs), 2); self.assertTrue(t.acs[0].startswith("AC-1 "))
+        self.assertEqual(len(t.acs), 2); self.assertTrue(t.acs[0].startswith("AC-1 ")); self.assertEqual(t.human_acs, ())
+        h = schemas.Ticket.parse("## Acceptance criteria\n- AC-1 (behavioral): x\n- AC-7 (human): Given a page, a person confirms it reads.\n- AC-8 (property): y\n")
+        self.assertEqual([a[:4] for a in h.acs], ["AC-1", "AC-8"])
+        self.assertEqual(h.human_acs, (schemas.HumanAc(id="AC-7", text="Given a page, a person confirms it reads."),))
+        self.assertEqual(h.human_acs[0].id, "AC-7")
         self.assertEqual(t.out_of_scope, ("real matching",))
         self.assertEqual(len(t.waivers), 1); self.assertIn("mechanical output", t.waivers[0])
 

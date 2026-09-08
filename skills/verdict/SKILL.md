@@ -52,3 +52,5 @@ The argument is a ticket id: a human runs the verdict by hand. Three tool calls.
   read-only reads of the tree; the packet says so when it applies).
 - Session ends at the verdict. On the packet-path flow, the verdict JSON is the last write and
   the last word.
+
+Next: kanban_ops.py <the recommended action from the page>.

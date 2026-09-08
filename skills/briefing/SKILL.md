@@ -53,3 +53,5 @@ The same content as three paragraphs, with the verdict buried in the last senten
 Two readings of a request that lead to materially different work → ask, as lettered options with
 the evidence for each. Never as an open question. Do everything that does not depend on the
 answer first, then ask.
+
+Next: <the recommended letter>, on one line.

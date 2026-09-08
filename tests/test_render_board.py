@@ -121,6 +121,16 @@ class RunsTest(unittest.TestCase):
         self.assertEqual(recs["1.4"]["lines"], [])  # no log yet
         self.assertIn("<b>1.3</b> · build 1 close-out · +2:24", self._render())
 
+    def test_heartbeat_line_is_the_phase(self):
+        """Contract B: the runner's heartbeat is a state line like any other; its phase text is
+        everything after the elapsed field, and the run counts as running."""
+        (self.runs / "1.2.state").write_text(self.STATE + "10:42:39 +0:32 build 1 · running · last 10:42:07 · $ pytest -q\n")
+        recs = render_board.runs(self.tmp)
+        self.assertEqual({k: recs[0][k] for k in ("phase", "elapsed", "running")}, {"phase": "build 1 · running · last 10:42:07 · $ pytest -q", "elapsed": "+0:32", "running": True})
+        page = self._render()
+        self.assertIn("<b>1.2</b> · build 1 · running · last 10:42:07 · $ pytest -q · +0:32", page)
+        self.assertIn('http-equiv="refresh"', page)
+
     def test_finished_run_is_not_a_row_and_no_refresh(self):
         (self.runs / "1.2.state").write_text(self.STATE + "10:51:00 +8:53 done ship\n")
         (self.runs / "1.2.log").write_text(self.LOG)

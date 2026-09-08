@@ -35,6 +35,23 @@ def find_plan(root: Path, n: str) -> Path | None:
     return next(iter(sorted((root / "kanban").rglob(f"{n}.plan.md"))), None)
 
 
+def base_branch(root: Path, plan_n: str | None = None) -> str:
+    """The branch tickets branch from and ship into (contract A): the plan's frontmatter `base:`
+    when plan `plan_n` sets it, else main, else master. Every base decision (runner, verdict
+    prep and checks, ship) goes through here: E21 saw a diff against the current branch.
+    Raises ValueError when no branch qualifies."""
+    if plan_n is not None and (path := find_plan(root, str(plan_n))) is not None:
+        import _fm  # local import, as in override_plan
+
+        base = _fm.read(path)[0].get("base")
+        if base:
+            return str(base)
+    for b in ("main", "master"):
+        if subprocess.run(["git", "rev-parse", "--verify", "-q", b], cwd=root, capture_output=True).returncode == 0:
+            return b
+    raise ValueError("no base branch: set base: in the plan")
+
+
 def append_log(path: Path, role: str, head: str, lines: tuple[str, ...] = (), when: str | None = None) -> str:
     """Append ``### [role] <timestamp> — <head>`` plus lines to the file's ``## Log`` (the last
     section by template). Returns the entry text."""

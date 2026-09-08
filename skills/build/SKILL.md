@@ -69,3 +69,5 @@ Append `### [build] — finding: ...` to the ticket. Do not touch it. The hook w
 - Switch branches, create or remove a worktree, or merge — the runner and the board do that.
 - Keep working after the status line.
 - Review your own work. That is `/verdict`, in a fresh session.
+
+Next: nothing; the runner continues.

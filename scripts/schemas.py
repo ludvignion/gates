@@ -11,7 +11,10 @@ Shapes here:
                          ``## Acceptance criteria`` lines. Only AC lines count; prose or log
                          mentions of a plan AC do not.
 - ``ClosedTicketDiff`` — what changed on a closed ticket between two versions.
-- ``Attacks``, ``Charter``, ``Ticket`` — the verdict's inputs.
+- ``Attacks``, ``Charter``, ``Ticket`` — the verdict's inputs. A charter item carries an
+                         ``Applies to:`` glob line and is reachable only where the diff touches a
+                         matching path (E22); a ticket AC tagged ``(human)`` is machine-unverifiable
+                         and lives in ``Ticket.human_acs``, not ``acs`` (E30).
 - ``Log``, ``Finding``   — a ticket's ``## Log`` as role-tagged entries; its ``— finding:``
                          entries and the ticket ids each is homed to.
 - ``RoutingStamp``    — a plan's ``signals``/``scrutiny``/``backend`` frontmatter stamp.
@@ -22,11 +25,13 @@ Shapes here:
 - ``Verdict``, ``VerdictMeta`` — ``traces/verdict/<id>.json`` and its optional ``meta`` stamp
                          (arm, vendor, plugin_version, prompt_sha, packet_sha).
 """
+import fnmatch
 import hashlib
 import json
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import NamedTuple
 
 AC_ID_RE = re.compile(r"\bAC-\d+\b")
 _SECTION_RE = re.compile(r"^## (?P<title>.+?)\s*$", re.MULTILINE)
@@ -164,6 +169,9 @@ class ClosedTicketDiff:
 
 # --- Verdict inputs ----------------------------------------------------------------------
 _CHARTER_RE = re.compile(r"^## (?P<n>\d+)\.\s+(?P<title>.+?)\s*$", re.MULTILINE)
+_APPLIES_RE = re.compile(r"^Applies to:\s*(?P<globs>.*?)\s*$", re.MULTILINE)
+_HUMAN_AC_RE = re.compile(r"^(?P<id>AC-\d+)\s*\(human\)\s*:\s*(?P<text>.*)$")
+CHARTER_PATTERN_PREFIXES = ("Pattern:", "Anti-pattern:")  # the body lines the packet shows for a reachable item
 
 
 @dataclass(frozen=True)
@@ -182,34 +190,95 @@ class Attacks:
 
 
 @dataclass(frozen=True)
-class Charter:
-    """``docs/domain-pack/charter.md``: numbered ``## <n>. <title>`` items."""
+class CharterItem:
+    """One ``## <n>. <title>`` charter item: its ``Applies to:`` globs and the body under the
+    heading (the ``Applies to:`` line removed). ``globs`` empty = the line is missing."""
 
-    items: tuple[tuple[str, str], ...] = ()  # (n, title)
+    n: str
+    title: str
+    globs: tuple[str, ...] = ()
+    body: str = ""
+
+    @property
+    def id(self) -> str:
+        return f"charter-{self.n}"
+
+    def reaches(self, paths) -> bool:
+        """fnmatchcase over every (path, glob) pair; ``*`` crosses ``/`` (E22: ``src/*`` reaches ``src/a/b.py``)."""
+        return any(fnmatch.fnmatchcase(p, g) for p in paths for g in self.globs)
+
+    def pattern_lines(self) -> tuple[str, ...]:
+        """The ``Pattern:`` / ``Anti-pattern:`` lines, as written."""
+        return tuple(l.strip() for l in self.body.splitlines() if l.strip().startswith(CHARTER_PATTERN_PREFIXES))
+
+
+@dataclass(frozen=True)
+class Charter:
+    """``docs/domain-pack/charter.md``: numbered ``## <n>. <title>`` items, each with an
+    ``Applies to: <glob>[, <glob>...]`` line that says which paths it can reach."""
+
+    items: tuple[CharterItem, ...] = ()
 
     @classmethod
     def parse(cls, body: str) -> "Charter":
-        return cls(items=tuple((m.group("n"), m.group("title")) for m in _CHARTER_RE.finditer(body)))
+        heads = list(_CHARTER_RE.finditer(body))
+        items = []
+        for i, h in enumerate(heads):
+            end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
+            text = body[h.end():end]
+            m = _APPLIES_RE.search(text)
+            globs = tuple(g.strip() for g in m.group("globs").split(",") if g.strip()) if m else ()
+            rest = (text[:m.start()] + text[m.end():]) if m else text
+            items.append(CharterItem(n=h.group("n"), title=h.group("title"), globs=globs, body=rest.strip("\n")))
+        return cls(items=tuple(items))
+
+    def item(self, n: str) -> "CharterItem | None":
+        return next((it for it in self.items if it.n == str(n)), None)
+
+    def body_of(self, n: str) -> str:
+        it = self.item(n)
+        return it.body if it else ""
+
+    def missing_applies(self) -> tuple[str, ...]:
+        """Item numbers without an ``Applies to:`` line: verdict_prep refuses, lint_kanban reports."""
+        return tuple(it.n for it in self.items if not it.globs)
+
+    def reachable(self, paths) -> tuple[str, ...]:
+        """Ids (``charter-<n>``) of the items whose globs match any of ``paths``, in charter order."""
+        paths = tuple(paths)
+        return tuple(it.id for it in self.items if it.reaches(paths))
+
+
+class HumanAc(NamedTuple):
+    """An AC only a person can verify (E30): ``- AC-7 (human): <text>``. Confirmed at Gate 2."""
+
+    id: str
+    text: str
 
 
 @dataclass(frozen=True)
 class Ticket:
-    """What the verdict needs from a ticket body: nothing from the Log but human waivers."""
+    """What the verdict needs from a ticket body: nothing from the Log but human waivers. ``acs``
+    are the machine-checkable ACs; ``human_acs`` the ``(human)``-tagged ones, kept apart so no
+    check blocks on "no test names AC-7" for them (E30)."""
 
     acs: tuple[str, ...] = ()
     out_of_scope: tuple[str, ...] = ()
     waivers: tuple[str, ...] = ()
+    human_acs: tuple[HumanAc, ...] = ()
 
     @classmethod
     def parse(cls, body: str) -> "Ticket":
-        acs = tuple(it[2:] for it in _items(section(body, "Acceptance criteria")) if _AC_LINE_RE.match(it))
+        lines = tuple(it[2:] for it in _items(section(body, "Acceptance criteria")) if _AC_LINE_RE.match(it))
+        acs = tuple(l for l in lines if not _HUMAN_AC_RE.match(l))
+        human = tuple(HumanAc(m.group("id"), m.group("text").strip()) for l in lines if (m := _HUMAN_AC_RE.match(l)))
         oos = tuple(re.sub(r"^\s*[-*]\s+", "", it) for it in _items(section(body, "Out of scope")))
         log = next((t for title, t in sections(body) if title.lower().startswith("log")), "")
         waivers = tuple(
             m.group(0).strip()
             for m in re.finditer(r"^### \[human\][^\n]*\n(?:(?!###)[^\n]*\n?)*", log, re.MULTILINE)
         )
-        return cls(acs=acs, out_of_scope=oos, waivers=waivers)
+        return cls(acs=acs, out_of_scope=oos, waivers=waivers, human_acs=human)
 
 
 # --- Kanban lint inputs -------------------------------------------------------------------

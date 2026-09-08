@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.6.5.5 — 2026-09-08
+
+Text-render plans 2–3 (E20–E30, G1–G4): the verdict judged nothing, against the wrong base, with
+six charter warns of noise per ticket; the build looked dead; ship wrote after its commit.
+
+- `scripts/kanban_ops.py` — `base_branch(root, plan_n)`: the plan's frontmatter `base:`, else
+  main, else master, else `ValueError`. Every base decision (runner, verdict prep and checks,
+  ship) goes through it; `templates/plan.md` carries `base: main` (E21).
+- `scripts/verdict_prep.py` — an empty included diff is `nothing to judge: no included file
+  changed against <base>` (SystemExit, nothing written); `changed_vs_base(root, base)` from
+  `git diff --numstat` over the included paths; the packet's Charter section lists reachable
+  items only, with their Pattern/Anti-pattern lines; a charter item without `Applies to:` is
+  refused (E20, E22, E27).
+- `scripts/schemas.py` — `CharterItem(n, title, globs, body)`, `Charter.reachable(paths)`
+  (fnmatchcase; `*` crosses `/`); `HumanAc`, `Ticket.human_acs` for `- AC-n (human): ...`
+  lines, which `acs` excludes (E22, E30). `templates/charter.md` is new; `lint_kanban` rule 5
+  reports a charter item without `Applies to:`.
+- `scripts/verdict_checks.py` — `charter_report(v, packet)` → reachable, held, findings per
+  item; `default_base` is `kanban_ops.base_branch`; unaccounted sees reachable items only.
+- `scripts/runner.py` — refusals before git: a done ticket, a `ticket/<id>` already merged into
+  the base (E23); `nothing to judge` before any model call (E20); the verdict seat is one turn
+  (`--max-turns 1`), a packet over `--packet-cap` (default 40000 tokens) is refused before the
+  call, a report with `num_turns` ≠ 1 stops the run without a retry (E28); each refusal is
+  `done error <reason>` in the state file and exit 2. Heartbeat line every 30 s while the build
+  streams (`<phase> · running · last <hh:mm:ss> · <last builder line>`), pid in
+  `traces/runs/<id>.pid` (E25, E26). `ticket_base` refuses when git has no merge base.
+- `scripts/render_verdict.py` — `result_lines(...)` in contract order: summary sentences,
+  header, findings, `charter: ...`, `human: AC-n ...`, `changed vs <base>` per file,
+  Recommended, page (E24, E27, E30); the page gets a `Human checks` section.
+- `scripts/board.py` — `ship`: validate → status and Log entry (with `- human AC-n confirmed by
+  <who>` lines) → page re-render → one commit of ticket and page → decision → checkout base
+  (a dirty tree is refused; it can only be the human's) → merge → push → delete branch.
+  `commit_page`, `VERDICT_FILES` and `board.base_branch` are gone (E29).
+- `scripts/grill_digest.py` — records without a `ticket` key (overrides, approval remarks) no
+  longer crash the digest.
+- `skills/` — every skill ends with one `Next: <command>` line (G4); the runner skill watches
+  the state file with one streaming `tail --pid` line; the grill ranks by invariant before cost
+  (G1), computes the hand-off from the stamp (G2), appends approval-turn remarks to
+  `traces/grill-misses.jsonl` (G3), writes `(human)` ACs (E30); new `finding` skill appends a
+  line to `traces/harness-findings.md`.
+- `tests/` — every test charter carries `Applies to:` lines; 183 tests.
+
+E28's cause, from the two `meta` blocks: the verdict calls were one turn, $0.42 / 107 s and
+$0.19 / 55 s. The 0.6.5 result header summed build + verdict + summary cost and whole-run
+seconds next to the word "verdict". The header now reads `verdict $c/Ns · build $c/Ns · run Ns`
+(`render_verdict.cost_words`); the cap and the one-turn check stay as guards.
+
+Decided without an item: the heartbeat is an appended line every 30 s, not a rewrite of the
+last line (GNU `tail -f` re-dumps a rewritten file); the watch tests the state file's last line
+only (a plan's file carries each ticket's own `done` line before `gate2`); a branch whose tip is
+the base tip (created, never built) is not "merged" and runs; charter globs use `fnmatchcase`
+with `*` crossing `/`, so scope a directory with `src/app/*` and a single level cannot be
+expressed.
+
+Consuming projects (project-template): pin `v0.6.5.5`; add `base: main` to open plans and an
+`Applies to:` line under every charter item (`templates/charter.md` is the shape).
+
 ## 0.6.5.4 — 2026-09-08
 
 E20 from the plan 3 pilot: after three waives the tree held a modified `traces/verdict/3.1.html`

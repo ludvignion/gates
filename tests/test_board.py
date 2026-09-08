@@ -28,7 +28,7 @@ class BoardActionsTest(unittest.TestCase):
         self.root = self.tmp / "proj"
         shutil.copytree(FIXTURE_PROJECT, self.root)
         (self.root / "docs" / "domain-pack").mkdir(parents=True)
-        (self.root / "docs" / "domain-pack" / "charter.md").write_text("# Charter\n\n## 1. Unknown over guess\nx\n\n## 2. Evidence is openable\nx\n")
+        (self.root / "docs" / "domain-pack" / "charter.md").write_text("# Charter\n\n## 1. Unknown over guess\nApplies to: src/*, tests/*\nx\n\n## 2. Evidence is openable\nApplies to: src/*, tests/*\nx\n")  # contract D
         (self.root / "src" / "pipeline").mkdir(parents=True); (self.root / "src" / "pipeline" / "run.py").write_text("x = 1\n")
         (self.root / ".gitignore").write_text("traces/board.html\n")
         git(self.root, "init", "-q", "-b", "main"); git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "base")
@@ -100,6 +100,28 @@ class BoardActionsTest(unittest.TestCase):
         entry = self._log("1.2").entries[-1]
         self.assertEqual(entry.role, "human"); self.assertIn("ship by reviewer (gate 2, from the board)", entry.head); self.assertIn("- block F1 AC-2:", entry.text)
         self.assertTrue((self.root / "src/pipeline/match.py").exists())  # the merge brought the work
+        self.assertNotIn("gate 2 page", subjects)  # contract I: one ship commit holds ticket and page; nothing is written after it (E29)
+        self.assertEqual(subjects.count("docs(1.2): ship — gate 2 by reviewer"), 1)
+        self.assertIn("traces/verdict/1.2.html", subprocess.run(["git", "ls-files", "traces/verdict"], cwd=self.root, capture_output=True, text=True).stdout)
+        self.assertFalse(hasattr(board, "commit_page")); self.assertFalse(hasattr(board, "VERDICT_FILES")); self.assertFalse(hasattr(board, "base_branch"))
+
+    def test_ship_confirms_the_human_acs(self):
+        """E30: a `(human)` AC is confirmed by the ship's Log entry, and the page shows it as a
+        human check."""
+        git(self.root, "checkout", "-q", "ticket/1.2")
+        t = self.root / "kanban/tickets/1.2.match-stage.md"
+        t.write_text(t.read_text().replace("## Out of scope", "- AC-3 (human): Given the match report, a person confirms the unmatched count reads right.\n\n## Out of scope"))
+        git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "docs(1.2): human AC")
+        self.assertEqual([a[0] for a in board.human_acs(t)], ["AC-3"])
+        board.waive(self.root, "1.2", "C1", "AC-2 goes to the child", who="reviewer")
+        page = (self.root / "traces/verdict/1.2.html").read_text()
+        self.assertIn("<h2>Human checks</h2>", page); self.assertIn("☐ AC-3: Given the match report, a person confirms the unmatched count reads right.", page)
+        line = board.ship(self.root, "1.2", who="reviewer")
+        self.assertIn("1.2 shipped", line)
+        entry = self._log("1.2").entries[-1]
+        self.assertIn("- human AC-3 confirmed by reviewer", entry.text)
+        self.assertEqual(self._branch(), "main")
+        self.assertEqual(lint_kanban.lint(self.root), [])
 
     def test_ship_from_the_ticket_branch_ends_on_main(self):
         """E16: the runner now stays on ticket/<id> after the verdict; a ship from there merges and
@@ -136,9 +158,10 @@ class BoardActionsTest(unittest.TestCase):
         self.assertIn("1.1 shipped", line)
         self.assertEqual(lint_kanban.lint(self.root), [])  # no ship past an open block: the waiver names it
 
-    def test_actions_leave_the_tree_clean_and_ship_commits_a_stale_page(self):
+    def test_actions_leave_the_tree_clean_and_ship_refuses_a_dirty_tree(self):
         """E20: waive, home and child re-render the page before their commit (html tracked, summary
-        cache kept); a page left dirty by an older action is committed by the ship, not refused."""
+        cache kept). E29: nothing is written after the ship commit, so a dirty tree at ship time
+        can only be the human's: refused, nothing merged, the branch kept."""
         git(self.root, "checkout", "-q", "ticket/1.2")
         sp = self.root / "traces/verdict/1.2.summary.json"
         sp.write_text('{"built": "kept", "review": "kept", "model": "haiku", "inputs_sha": "x", "cost_usd": 0.01, "error": null}\n')
@@ -150,11 +173,18 @@ class BoardActionsTest(unittest.TestCase):
         self.assertIn("waived reviewer", (self.root / "traces/verdict/1.2.html").read_text())
         board.child(self.root, "1.2", "F1", who="reviewer")
         self.assertEqual(subprocess.run(["git", "status", "--porcelain"], cwd=self.root, capture_output=True, text=True).stdout.strip(), "")
-        (self.root / "traces/verdict/1.2.html").write_text("stale page from an older action\n")  # dirty, tracked
-        line = board.ship(self.root, "1.2", who="reviewer")
-        self.assertIn("gate 2 page committed", line); self.assertIn("merged ticket/1.2 --no-ff into main", line)
-        self.assertEqual(subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout.strip(), "main")
-        self.assertIn("docs(1.2): gate 2 page", self._subjects())
+        (self.root / "traces/verdict/1.2.html").write_text("stale page from an older action\n")  # dirty, tracked: the human's
+        with self.assertRaises(board.BoardError) as cm:
+            board.ship(self.root, "1.2", who="reviewer")
+        self.assertEqual(str(cm.exception), "the tree is dirty; commit or stash before shipping from ticket/1.2")
+        self.assertEqual(self._branch(), "ticket/1.2")
+        self.assertTrue(subprocess.run(["git", "rev-parse", "--verify", "-q", "ticket/1.2"], cwd=self.root, capture_output=True).returncode == 0)
+        self.assertNotIn("ship — gate 2", self._subjects()); self.assertNotIn("merge(1.2)", self._subjects("main"))
+        self.assertEqual(self._status("1.2"), "in_review")  # nothing written before the refusal
+        git(self.root, "checkout", "-q", "--", "traces/verdict/1.2.html")
+        line = board.ship(self.root, "1.2", who="reviewer")  # clean again: the ship goes through
+        self.assertIn("merged ticket/1.2 --no-ff into main", line); self.assertEqual(self._branch(), "main")
+        self.assertNotIn("gate 2 page", self._subjects())
 
     def test_reject_with_reason(self):
         with self.assertRaises(board.BoardError):

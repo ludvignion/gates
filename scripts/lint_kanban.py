@@ -17,6 +17,8 @@ Rules, each loading through scripts/schemas.py (no parsing of its own):
    names that finding id. (Log)
 4. ROUTING STAMP. An approved plan carries ``signals`` (spend, partner_facing, parallel_ready,
    tickets), ``scrutiny`` and ``backend`` in its frontmatter. (RoutingStamp)
+5. CHARTER REACH. Every item in ``docs/domain-pack/charter.md`` carries an ``Applies to:`` glob
+   line, so the verdict can tell which items a diff reaches (E22). (Charter)
 """
 import json
 import subprocess
@@ -127,8 +129,20 @@ def routing_stamps(root: Path) -> list[str]:
     return out
 
 
+CHARTER_PATH = "docs/domain-pack/charter.md"
+
+
+def charter_reach(root: Path) -> list[str]:
+    """Rule 5: a charter item without an ``Applies to:`` line, when the charter exists."""
+    path = root / CHARTER_PATH
+    if not path.exists():
+        return []
+    charter = schemas.Charter.parse(path.read_text(errors="ignore"))
+    return [f"{CHARTER_PATH}: charter item {n} has no Applies to: line" for n in charter.missing_applies()]
+
+
 def lint(root: Path, base: str = "HEAD") -> list[str]:
-    return closed_tickets(root, base) + finding_homes(root) + open_blocks(root) + routing_stamps(root)
+    return closed_tickets(root, base) + finding_homes(root) + open_blocks(root) + routing_stamps(root) + charter_reach(root)
 
 
 def main(argv: list[str]) -> int:

@@ -1,6 +1,7 @@
 ---
 brief: <n>
 status: draft            # draft | approved
+base: main             # the branch tickets branch from and ship into
 approved:                # <name> <date> — filled by the human, not the agent
 ---
 
@@ -13,6 +14,7 @@ I want <X> so that <Y>.
 - AC-1 (behavioral): Given <state>, When <action>, Then <outcome>
 - AC-2 (property): For all <input class>, <invariant> holds
 - AC-3 (critical): ...
+- AC-4 (human): Given <state>, a person confirms <outcome>  # a person confirms at Gate 2
 
 ## Out of scope
 - ...

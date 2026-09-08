@@ -1,6 +1,6 @@
 # harness-plugin
 
-The operating system for agentic development. Five skills, two human gates, hooks that enforce
+The operating system for agentic development. Six skills, two human gates, hooks that enforce
 ticket scope, scripts that render the only pages a human reads.
 
 ```
@@ -21,11 +21,12 @@ Then create a project from [project-template](https://github.com/ludvignion/proj
 
 | Path | Role |
 |---|---|
-| `skills/grill` | brief → plan + tickets. Evidence first; human only for decisions. |
+| `skills/grill` | brief → plan + tickets. Evidence first; human only for decisions; options ranked against the repo's invariants before cost. ACs are machine-verifiable or tagged `(human)` and confirmed at Gate 2 with `ship`; approval-turn remarks land in `traces/grill-misses.jsonl`; ends with one hand-off line computed from the routing stamp. |
 | `skills/build` | tests-first, scope-bound implementation. CI is the authority. |
 | `skills/verdict` | fresh-context review in one model call over a prepared input → verdict page. |
 | `skills/briefing` | opt-in response style: what changed, then lettered options. |
-| `skills/runner` | `/harness-plugin:runner <id>` or `plan <n>`: starts `runner.py` in the background, relays its phases from the state file, prints the result block (verdict, findings with file:line and recommended action); Gate 2 in words (ship, reject, child, home, waive) through `kanban_ops.py`. |
+| `skills/finding` | `/harness-plugin:finding <text>`: one dated line into `traces/harness-findings.md` with the plugin version and the active ticket — the human's notebook of what the harness got wrong. |
+| `skills/runner` | `/harness-plugin:runner <id>` or `plan <n>`: starts `runner.py` in the background, streams the state file with one `tail --pid` watch (phase lines and a 30-second heartbeat while the build runs), prints the result block (summary sentences, verdict header, findings with file:line and recommended action, the reachable charter items, human ACs to confirm, `changed vs <base>` per file); Gate 2 in words (ship, reject, child, home, waive) through `kanban_ops.py`; ends with one hand-off line. |
 | `hooks/guard_writes.py` | blocks writes to closed tickets, and outside the active ticket's `writes:`. |
 | `hooks/trace_stop.py` | one JSONL line per agent turn into `traces/sessions.jsonl`. |
 | `skills/verdict/verdict-prompt.md` | the judging prompt, copied into every packet; its sha is in the verdict stamp. |

@@ -60,6 +60,22 @@ class RunSkillTextTest(unittest.TestCase):
         self.assertIn("dirty tree", never)
         self.assertIn("/harness-plugin:runner", body)
 
+    def test_watch_streams_and_the_result_shape_is_named(self):
+        """E25/E26: the Start line clears the old state, one streaming tail --pid watch replaces the sleep-30 loop;
+        E20/E24/E27/E28/E30: the result block's new lines and the new refusals are named; one Next line (J)."""
+        body = SKILL.read_text(encoding="utf-8")
+        lines = body.splitlines()
+        start = next(l for l in lines if "runner.py" in l)
+        self.assertIn("rm -f traces/runs/<id>.state", start)
+        tails = [l for l in lines if "tail " in l]
+        self.assertEqual(len(tails), 1, tails)
+        self.assertIn("--pid", tails[0]); self.assertIn("traces/runs/", tails[0]); self.assertIn(".state", tails[0])
+        self.assertNotIn("sleep 30", body)
+        for word in ("num_turns", "nothing to judge", "packet too big", "changed vs main", "human:", "charter:", "heartbeat", "gate2"):
+            self.assertIn(word, body, word)
+        nonempty = [l for l in lines if l.strip()]
+        self.assertTrue(nonempty[-1].startswith("Next:"), nonempty[-1])
+
     def test_manifest_lists_the_skill(self):
         import json
         manifest = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
@@ -77,7 +93,7 @@ class KanbanOpsCliTest(unittest.TestCase):
         self.root = self.tmp / "proj"
         shutil.copytree(FIXTURE_PROJECT, self.root)
         (self.root / "docs" / "domain-pack").mkdir(parents=True)
-        (self.root / "docs" / "domain-pack" / "charter.md").write_text("# Charter\n\n## 1. Unknown over guess\nx\n")
+        (self.root / "docs" / "domain-pack" / "charter.md").write_text("# Charter\n\n## 1. Unknown over guess\nApplies to: src/*, tests/*\nx\n")
         (self.root / ".gitignore").write_text("traces/board.html\n")
         git(self.root, "init", "-q", "-b", "main"); git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "base")
         for k in ("OPIK_URL_OVERRIDE",):

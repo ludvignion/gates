@@ -18,9 +18,16 @@ the stat ends with one line "N files excluded (lock, fixture, kanban)". An inclu
 2000 diff lines is a stat line only, and the whole diff is truncated past 4000 lines.
 
 `always_writable` names the paths every ticket may touch (docs/glossary.md, the parent plan's
-Log) so the reviewer does not warn on them. Refuses to build without a charter. The arm picks
-the sections (schemas.Packet): blind = instructions, seat, CI, diff; packet = everything; repo =
-everything plus leave to read the tree read-only. Shapes load through scripts/schemas.py.
+Log) so the reviewer does not warn on them. Refuses to build without a charter, and refuses a
+charter item without an `Applies to:` line. The Charter section lists only the items whose
+globs reach an included changed file, each with its Pattern/Anti-pattern lines; an unreachable
+item is mentioned nowhere (E22). ACs tagged `(human)` stay out of the AC section (E30). An empty
+included diff is refused with "nothing to judge" before any model call (E20). The base branch
+defaults to kanban_ops.base_branch (the plan's `base:`, else main/master) (E21);
+`changed_vs_base` is the per-file numstat over the included files for the result block (E27).
+The arm picks the sections (schemas.Packet): blind = instructions, seat, CI, diff; packet =
+everything; repo = everything plus leave to read the tree read-only. Shapes load through
+scripts/schemas.py.
 """
 import argparse
 import json
@@ -31,6 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import _fm  # noqa: E402
+import kanban_ops  # noqa: E402
 import schemas  # noqa: E402
 import verdict_checks as vc  # noqa: E402
 
@@ -76,6 +84,37 @@ def exclusion_reason(path: str) -> str:
 def split_files(files: list[str]) -> tuple[list[str], list[str]]:
     """(included, excluded) in git order."""
     return [f for f in files if included(f)], [f for f in files if not included(f)]
+
+
+def default_base(root: Path, plan_n: str | None = None) -> str:
+    """The plan's base branch through kanban_ops.base_branch (E21: never the current branch)."""
+    return kanban_ops.base_branch(root, plan_n)
+
+
+def changed_files(root: Path, base: str) -> list[str]:
+    """The included files changed on base...HEAD, in git order."""
+    return split_files(vc.git(root, "diff", "--name-only", f"{base}...HEAD").splitlines())[0]
+
+
+def changed_vs_base(root: Path, base: str) -> dict:
+    """{"base", "files": [{"path", "added", "removed"}]} from `git diff --numstat base...HEAD`
+    over the included files; a binary file's "-" counts as 0 (E27: the result block shows this)."""
+    kept = changed_files(root, base)
+    files = []
+    for line in (vc.git(root, "diff", "--numstat", f"{base}...HEAD", "--", *kept) if kept else "").splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        num = lambda x: int(x) if x.isdigit() else 0
+        files.append({"path": parts[2], "added": num(parts[0]), "removed": num(parts[1])})
+    return {"base": base, "files": files}
+
+
+def charter_section(charter: schemas.Charter, paths: list[str]) -> list[str]:
+    """One item per reachable charter item: "charter-<n>: <title>" with its Pattern/Anti-pattern
+    lines folded under it. Unreachable items are not mentioned (E22)."""
+    reach = set(charter.reachable(paths))
+    return ["\n  ".join([f"{it.id}: {it.title}", *it.pattern_lines()]) for it in charter.items if it.id in reach]
 
 
 def plugin_version() -> str:
@@ -134,9 +173,14 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     plan_body = _fm.read(plan_path)[1] if plan_path else ""
     attacks = schemas.Attacks.parse(plan_body).items
     charter_path = root / "docs" / "domain-pack" / "charter.md"
-    charter = schemas.Charter.parse(charter_path.read_text(errors="ignore")).items if charter_path.exists() else ()
-    if not charter:
+    charter = schemas.Charter.parse(charter_path.read_text(errors="ignore")) if charter_path.exists() else schemas.Charter()
+    if not charter.items:
         raise SystemExit(f"no charter: {charter_path.relative_to(root)} is missing or has no `## <n>. <title>` items; the verdict cannot judge without it")
+    if missing := charter.missing_applies():
+        raise SystemExit(f"charter item {missing[0]} has no Applies to: line ({charter_path.relative_to(root)}); every item names the paths it reaches")
+    kept = changed_files(root, base)
+    if not kept:  # E20: a verdict ran on an empty included diff and warned on nothing
+        raise SystemExit(f"nothing to judge: no included file changed against {base}")
     prev_path = root / "traces" / "verdict" / f"{tid}.prev.json"
     cur = root / "traces" / "verdict" / f"{tid}.json"
     if cur.exists():  # the last verdict on this ticket is the previous one; archive before the new run
@@ -164,7 +208,7 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
         ("Out of scope", _sec(ticket.out_of_scope)),
         ("Human waivers (Log)", _sec(ticket.waivers)),
         ("Plan: verdict must attack", _sec(attacks)),
-        ("Charter items", _sec([f"charter-{n}: {t}" for n, t in charter])),
+        ("Charter items", _sec(charter_section(charter, kept))),
         ("Previous verdict: blocks to re-run", _sec([
             f"{b['id']} {b.get('status')} ({b.get('ac') or b.get('charter')}): {b['text']} — repro: `{b.get('repro')}`" for b in prev_blocks])),
         ("CI", f"\n{'green' if ci_green else 'RED' if ci_green is False else 'not run'}\n```\n{ci_tail}\n```\n\n"),
@@ -222,11 +266,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("ticket")
     ap.add_argument("--arm", choices=schemas.ARMS, default=schemas.DEFAULT_ARM,
                     help="how much context the reviewer sees: blind = diff + prompt; packet = everything (default); repo = packet + read-only access to the tree")
-    ap.add_argument("--base", default=None)
+    ap.add_argument("--base", default=None, help="the branch the diff is judged against; default: the plan's base: (kanban_ops.base_branch)")
     ap.add_argument("--no-ci", action="store_true")
     a = ap.parse_args(argv[1:])
     root = Path(".").resolve()
-    base = a.base or vc.default_base(root)
+    base = a.base or default_base(root, a.ticket.split(".")[0])
     text = build(root, a.ticket, base, ci=not a.no_ci, arm=a.arm)
     out = packet_path(root, a.ticket)
     out.parent.mkdir(parents=True, exist_ok=True)

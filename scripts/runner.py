@@ -3,6 +3,7 @@
 Usage: python runner.py <ticket id> | --plan <n> [--max-retries 2] [--cwd .] [--build-model sonnet]
                         [--verdict-model opus] [--arm blind|packet|repo] [--verdict-cmd "<template>"]
                         [--summary-model haiku] [--parallel] [--override backend=<x>|scrutiny=<y>]
+                        [--packet-cap 40000]
 States: branch → ci-pre → build (skipped when in_review with tests/feat/close-out commits) →
 status → ci → verdict → close-out → (ship | block→retry | child→human). Phase names:
 branch|worktree · ci-pre · build <n> · build <n> close-out · build <n> skipped · tests-commit ·
@@ -13,15 +14,26 @@ The machine, not the model, owns the loop. Every phase prints `[runner hh:mm:ss 
 with the builder's output streamed under it (two-space indent), appends
 `<hh:mm:ss> <+m:ss> <phase>` to traces/runs/<id>.state (the last line of a finished run starts
 with `done `: `done ship`, `done reject`, or `done error <reason>`), and re-renders
-traces/board.html in the main checkout. After the verdict, traces/runs/<id>.result holds the
-end-of-run lines (render_verdict.result_lines: header, one line per open finding with its
-citation, file:line and recommended action, the Recommended line, the page path), also printed
-last on stdout.
+traces/board.html in the main checkout. While the build session streams, a heartbeat line
+`<hh:mm:ss> <+m:ss> <phase> · running · last <hh:mm:ss> · <last builder line>` lands in the
+state file every HEARTBEAT_SECONDS (E25: a 15-minute build looked dead); it is not a phase
+change. The runner's pid goes to traces/runs/<id>.pid right after the state file is truncated
+(the skill's watch tails on it); nothing is removed at exit. After the verdict,
+traces/runs/<id>.result holds the end-of-run lines (render_verdict.result_lines, contract C:
+the summary sentences, the header, one line per open finding with its citation, file:line and
+recommended action, the charter line, the human ACs, what changed vs the base branch, the
+Recommended line, the page path), also printed last on stdout.
 
 Where it builds: branch ticket/<id> checked out in place (the tree must be clean); the run stays
 on ticket/<id> so the human sees what was built and the Gate 2 page in the folder (E16); ship
 from kanban_ops merges and returns to base. With --parallel a worktree under .worktrees/<id>/
-(kept in .git/info/exclude; ship removes it).
+(kept in .git/info/exclude; ship removes it). The base branch is kanban_ops.base_branch (the
+plan's `base:`, else main, else master; E21), the one place every base decision is made.
+
+Refused before any branch is created or checked out (E23: a shipped ticket was rebuilt and
+re-judged): a ticket whose status is done, or whose branch ticket/<id> is already merged into
+the base (an ancestor with commits of its own). Both print the reason, write `done error
+<reason>` and exit 2.
 
 The project's .env (KEY=value lines) is loaded first; the environment already set wins (E15).
 
@@ -31,15 +43,20 @@ close-out (status line committed): any later tool call is logged on the ticket a
 the close-out was not reached. Traced to Opik per attempt: input = ticket + plan ACs, output =
 commits + CI, metadata = attempt, cost, seconds per phase.
 
-Verdict seat: the runner writes the packet (verdict_prep.py --arm), runs --verdict-cmd over it
-(default: the packet on stdin as a tool-less claude prompt; the reply is the verdict), then
-closes out (render_verdict.py: validate for the arm, stamp meta, summarise, render), commits
-traces/verdict/<id>.{input.md,json,summary.json,html} on the ticket branch, records the Gate 2
-decision as the Opik dataset item for the packet, and reads the decision. The vendor in the
-stamp is the template's executable name. A non-zero exit, an empty result, or JSON that fails
-the Verdict schema is an error: logged, traced with the CLI envelope and the stderr tail,
-treated as a reject to retry. "opik: tracing to <url>" or "opik: untraced (<reason>)" is the
-first line printed and lands in meta.opik.
+Verdict seat: the runner writes the packet (verdict_prep.py --arm --base), runs --verdict-cmd
+over it (default: the packet on stdin as a tool-less, one-turn claude prompt; the reply is the
+verdict), then closes out (render_verdict.py: validate for the arm, stamp meta, summarise,
+render), commits traces/verdict/<id>.{input.md,json,summary.json,html} on the ticket branch,
+records the Gate 2 decision as the Opik dataset item for the packet, and reads the decision.
+The vendor in the stamp is the template's executable name. A non-zero exit, an empty result, or
+JSON that fails the Verdict schema is an error: logged, traced with the CLI envelope and the
+stderr tail, treated as a reject to retry. Three stops that never reach a retry, each `done
+error <reason>` and exit 2: the packet refuses to build because no included file changed
+against the base ("nothing to judge", E20: a verdict ran on an empty diff); the packet exceeds
+PACKET_TOKEN_CAP (--packet-cap; ~bytes/4) and no model is called; the vendor report says
+num_turns is not 1 (E28: the seat must be one turn, a multi-turn verdict cost ten times).
+"opik: tracing to <url>" or "opik: untraced (<reason>)" is the first line printed and lands in
+meta.opik.
 
 --override backend=<x>|scrutiny=<y> restamps the ticket's plan before the run, writes the router
 miss to the plan Log and traces/grill-misses.jsonl, and commits.
@@ -52,7 +69,8 @@ lands in traces/runs/plan-<n>.state: `ticket <id>`, the ticket's phase lines, `g
 `done <summary>` (`done ship 2.1 2.2`, `done stopped 2.2 rejected`, `done refused backend: session`).
 
 Exit codes: 0 ship (review the Gate 2 page, then say ship: kanban_ops merges) · 1 red baseline or retry cap ·
-2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) ·
+2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) or a refusal
+(done ticket, merged branch, nothing to judge, packet too big, num_turns not 1) ·
 3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log) ·
 4 permission denied before the close-out (never retried; see BUILD_ALLOWED_TOOLS and the
 project's .claude/settings.json allowlist).
@@ -62,10 +80,12 @@ import argparse
 import contextlib
 import json
 import os
+import queue
 import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -82,23 +102,39 @@ import vendor  # noqa: E402
 STATUS_RE = re.compile(r"^### \[build\] .*— status: (NEEDS_CONTEXT|BLOCKED|DONE)\b", re.M)
 SCRIPTS = Path(__file__).resolve().parent
 DEFAULT_VERDICT_MODEL = "opus"
-DEFAULT_VERDICT_CMD = 'claude -p --model {model} --output-format json --tools "" < {packet}'
+DEFAULT_VERDICT_CMD = 'claude -p --model {model} --output-format json --tools "" --max-turns 1 < {packet}'
 VERDICT_CMD_HELP = (
     "shell template for the one verdict call, run in the worktree. Placeholders: "
     "{packet} = packet path (traces/verdict/<id>.input.md), {output} = where the verdict JSON must land "
     "(traces/verdict/<id>.json), {model} = --verdict-model, {ticket} = ticket id. Paths are relative to "
-    "the worktree and contain no spaces. The default feeds the packet on stdin as the prompt with no tools; "
-    "never as an argument, a packet starts with ---. The model's reply is the verdict JSON, which the runner "
-    "takes from the `result` field of claude's --output-format json and writes to {output}. A command that "
-    "writes {output} itself is left alone. A non-zero exit, an empty result, or JSON that fails the Verdict "
-    "schema is an error, treated as a reject to retry. The stamp's vendor is the template's first word. When "
-    "stdout is one JSON object with total_cost_usd and usage, they are stamped as meta.cost_usd and "
-    "meta.tokens; other vendors leave them null. "
+    "the worktree and contain no spaces. The default feeds the packet on stdin as the prompt with no tools "
+    "and one turn; never as an argument, a packet starts with ---. The model's reply is the verdict JSON, "
+    "which the runner takes from the `result` field of claude's --output-format json and writes to {output}. "
+    "A command that writes {output} itself is left alone. A non-zero exit, an empty result, or JSON that "
+    "fails the Verdict schema is an error, treated as a reject to retry; a report whose num_turns is not 1 "
+    "stops the run (exit 2). The stamp's vendor is the template's first word. When stdout is one JSON "
+    "object with total_cost_usd and usage, they are stamped as meta.cost_usd and meta.tokens; other vendors "
+    "leave them null. "
     f"Default: {DEFAULT_VERDICT_CMD}"
 )
 OPIK_ENV = ("OPIK_URL_OVERRIDE",)
 POLL_SECONDS = 5.0  # --plan: how often the ticket file is read while the walk waits at Gate 2
-BASE_BRANCHES = ("main", "master")
+HEARTBEAT_SECONDS = 30.0  # contract B: a heartbeat line in the state file while the build streams (E25)
+PACKET_TOKEN_CAP = 40000  # contract F: the verdict packet's size in ~tokens (bytes // 4) beyond which no model is called (E28)
+
+
+class Refusal(Exception):
+    """A stop the machine decides on its own, never retried: `code` is the exit code, `state` the
+    `done <state>` line, the message is what the runner prints."""
+
+    def __init__(self, code: int, state: str, message: str):
+        super().__init__(message)
+        self.code, self.state = code, state
+
+
+def packet_tokens(packet: Path) -> int:
+    """The packet's size estimate the cap is checked against: bytes // 4."""
+    return packet.stat().st_size // 4
 
 
 def load_dotenv(root: Path) -> dict[str, str]:
@@ -163,13 +199,22 @@ def workspace(repo: Path, tid: str, parallel: bool) -> tuple[Path, bool]:
     return repo, not branch_exists
 
 
-def ticket_base(cwd: Path, branch_from: str = "main") -> str:
-    """The commit the ticket branch started from: the merge base with main (or master)."""
-    for b in (branch_from, "master"):
-        r = subprocess.run(["git", "merge-base", b, "HEAD"], cwd=cwd, capture_output=True, text=True)
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip()
-    return "HEAD~1"
+def ticket_base(cwd: Path, base: str) -> str:
+    """The commit the ticket branch started from: the merge base of HEAD with the base branch
+    (kanban_ops.base_branch, E21). Refuses when git cannot say: a guessed base is E21 again."""
+    r = subprocess.run(["git", "merge-base", base, "HEAD"], cwd=cwd, capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        raise SystemExit(f"[runner] no merge base between {base} and HEAD")
+    return r.stdout.strip()
+
+
+def merged_into(repo: Path, branch: str, base: str) -> bool:
+    """ticket/<id> already merged (E23): an ancestor of the base with commits of its own. A branch
+    still at the base tip (created, nothing built) is not merged, just empty."""
+    if sh(["git", "rev-parse", "--verify", "-q", branch], repo) != 0:
+        return False
+    tips = [subprocess.run(["git", "rev-parse", ref], cwd=repo, capture_output=True, text=True).stdout.strip() for ref in (branch, base)]
+    return tips[0] != tips[1] and sh(["git", "merge-base", "--is-ancestor", branch, base], repo) == 0
 
 
 def ci(cwd: Path) -> bool:
@@ -240,9 +285,18 @@ def error_envelope(reason: str, stdout: str, stderr: str) -> dict:
             "stderr_tail": "\n".join(stderr.splitlines()[-STDERR_TAIL:])}
 
 
-def call_error(returncode: int, output: Path) -> str | None:
+def one_turn_error(report: dict | None) -> str | None:
+    """Contract F: a vendor report that says num_turns and not 1 is not a verdict (E28: the seat
+    must be one turn); None when the report carries no num_turns or says 1."""
+    turns = (report or {}).get("num_turns")
+    return None if turns in (None, 1) else f"invalid verdict: num_turns={turns} (the seat must be one turn)"
+
+
+def call_error(returncode: int, output: Path, report: dict | None = None) -> str | None:
     if returncode != 0:
         return f"exit {returncode}"
+    if (turns := one_turn_error(report)) is not None:
+        return turns
     if not output.exists():
         return "empty result"
     try:
@@ -333,17 +387,25 @@ def closed_out(cwd: Path, tid: str) -> bool:
 
 
 BOARD_TICK = 10.0  # seconds between board renders while the build streams (the page refreshes every 5 s)
+STREAM_WAIT = 1.0  # seconds the streaming loop waits for a builder line before it checks the clocks
+LAST_LINE_CHARS = 80  # contract B: the heartbeat's builder line, at most this long
 
 
-def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 1, tick=None) -> BuildCall:
+def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 1, tick=None, heartbeat=None) -> BuildCall:
     """Run one /build session, streamed. `phase(name)` is called with `tests-commit`,
-    `feat-commit` and `build <attempt> close-out` as they appear. On the first tool call after
-    close-out the session is terminated and the call is recorded in `orbit`."""
+    `feat-commit` and `build <attempt> close-out` as they appear; `tick()` every BOARD_TICK;
+    `heartbeat(last_line, last_at)` every HEARTBEAT_SECONDS with the most recent line written
+    under the phase (text or tool line, stripped, LAST_LINE_CHARS) and the clock it arrived at,
+    also while the builder is silent (E25: a reader thread feeds a queue, so the clocks run
+    between lines). On the first tool call after close-out the session is terminated and the
+    call is recorded in `orbit`."""
     phase = phase or (lambda name: None)
     tick = tick or (lambda: None)
+    heartbeat = heartbeat or (lambda last_line, last_at: None)
     out = out or sys.stdout
     t0 = time.monotonic()
-    last_tick = t0
+    last_tick = last_beat = t0
+    last_line, last_at = "", time.strftime("%H:%M:%S")
     proc = subprocess.Popen(build_cmd(tid, model), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     report: dict = {}
     orbit: list[str] = []
@@ -362,18 +424,42 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
             done = True
             phase(f"build {attempt} close-out")
 
+    def under_phase(text: str) -> None:
+        nonlocal last_line, last_at
+        out.write(f"  {text}\n")
+        last_line, last_at = text.strip()[:LAST_LINE_CHARS], time.strftime("%H:%M:%S")
+
     assert proc.stdout is not None
-    for line in proc.stdout:
-        line = line.strip()
+    lines: queue.Queue = queue.Queue()
+
+    def pump() -> None:
+        for raw in proc.stdout:
+            lines.put(raw)
+        lines.put(None)
+
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
+    while True:
+        try:
+            raw = lines.get(timeout=STREAM_WAIT)
+        except queue.Empty:
+            raw = ""
+        if raw is None:
+            break
+        now = time.monotonic()
+        if now - last_tick > BOARD_TICK:  # the board shows the last builder lines while the build runs
+            last_tick = now
+            tick()
+        if now - last_beat >= HEARTBEAT_SECONDS:
+            last_beat = now
+            heartbeat(last_line, last_at)
+        line = raw.strip()
         if not line:
             continue
-        if time.monotonic() - last_tick > BOARD_TICK:  # the board shows the last builder lines while the build runs
-            last_tick = time.monotonic()
-            tick()
         try:
             ev = json.loads(line)
         except json.JSONDecodeError:
-            out.write(f"  {line}\n")
+            under_phase(line)
             continue
         kind = ev.get("type")
         if kind == "assistant":
@@ -381,7 +467,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
                 if block.get("type") == "text" and block.get("text", "").strip():
                     texts.append(block["text"])
                     for t in block["text"].strip().splitlines():
-                        out.write(f"  {t}\n")
+                        under_phase(t)
                 elif block.get("type") == "tool_use":
                     call = tool_line(block)
                     if done:
@@ -389,16 +475,19 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
                         out.write(f"  ! orbit after close-out: {call} — session terminated\n")
                         proc.terminate()
                         break
-                    out.write(f"  {call}\n")
+                    under_phase(call)
             if done and orbit:
                 break
         elif kind == "user":
             after_tool()
         elif kind == "result":
             report = ev
-    stdout_rest, stderr = proc.communicate()
-    if proc.returncode is None:
-        proc.wait()
+    stderr = proc.stderr.read() if proc.stderr else ""  # the reader thread drains stdout until the process ends
+    proc.wait()
+    reader.join(timeout=STREAM_WAIT)
+    for pipe in (proc.stdout, proc.stderr):  # the pipes outlive wait(); closing them keeps the runner's fd table flat over a plan walk
+        if pipe:
+            pipe.close()
     sys.stderr.write(stderr or "")
     if not done and closed_out(cwd, tid):
         done = True
@@ -438,18 +527,26 @@ def call_vendor(cmd: str, cwd: Path, output: Path) -> VendorCall:
     wall = time.monotonic() - t0
     sys.stderr.write(r.stderr)
     cost_usd, tokens = vendor_usage(r.stdout)
-    if r.returncode == 0 and not output.exists() and (v := verdict_from_result(r.stdout)) is not None:
+    report = vendor_report(r.stdout)
+    if r.returncode == 0 and one_turn_error(report) is None and not output.exists() and (v := verdict_from_result(r.stdout)) is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(v, indent=1) + "\n", encoding="utf-8")
-    error = call_error(r.returncode, output)
+    error = call_error(r.returncode, output, report)
     return VendorCall(r.stdout, r.returncode, cost_usd, tokens, wall, started, error,
                       error_envelope(error, r.stdout, r.stderr) if error else None)
 
 
-def prep(cwd: Path, tid: str, arm: str) -> Path:
-    r = subprocess.run([sys.executable, str(SCRIPTS / "verdict_prep.py"), tid, "--arm", arm],
+NOTHING_TO_JUDGE = "nothing to judge"  # verdict_prep's refusal on an empty included diff (contract G, E20)
+
+
+def prep(cwd: Path, tid: str, arm: str, base: str | None = None) -> Path:
+    """Write the packet through verdict_prep.py (--base from kanban_ops.base_branch, E21). Its
+    "nothing to judge" refusal becomes a Refusal here, before any model call (E20)."""
+    r = subprocess.run([sys.executable, str(SCRIPTS / "verdict_prep.py"), tid, "--arm", arm, *(["--base", base] if base else [])],
                        cwd=cwd, capture_output=True, text=True)
     if r.returncode != 0:
+        if any(l.startswith(NOTHING_TO_JUDGE) for l in r.stderr.splitlines()):
+            raise Refusal(2, f"error {NOTHING_TO_JUDGE}", f"[runner] {NOTHING_TO_JUDGE}")
         raise SystemExit(f"[runner] verdict_prep failed: {r.stderr.strip()[-400:]}")
     return cwd / r.stdout.strip().splitlines()[-1]
 
@@ -512,18 +609,24 @@ def commit_verdict(cwd: Path, tid: str, decision: str) -> str | None:
 
 
 def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
-            template: str = DEFAULT_VERDICT_CMD, summary_model: str = render_verdict.DEFAULT_SUMMARY_MODEL) -> tuple[str, bool, bool]:
+            template: str = DEFAULT_VERDICT_CMD, summary_model: str = render_verdict.DEFAULT_SUMMARY_MODEL,
+            base: str | None = None, packet_cap: int = PACKET_TOKEN_CAP) -> tuple[str, bool, bool]:
     """Returns (decision, retryable, progressed).
     retryable: an open block the builder can fix here (not spawn_child).
     progressed: at least one open block is new since the previous verdict; False means the
-    builder and reviewer are stuck on the same findings — a plan problem, not a build problem."""
+    builder and reviewer are stuck on the same findings — a plan problem, not a build problem.
+    Raises Refusal (exit 2, never retried) when the packet has nothing to judge, exceeds
+    `packet_cap` (~tokens, checked before the model call), or the vendor report's num_turns is
+    not 1 (contracts F and G)."""
     p = cwd / "traces" / "verdict" / f"{tid}.json"
     prev = p.with_name(f"{tid}.prev.json")
     prev_open = set()
     if p.exists():
         p.replace(prev)
         prev_open = {f["id"] for f in schemas.Verdict.load(prev).open_blocks()}
-    packet = prep(cwd, tid, arm)
+    packet = prep(cwd, tid, arm, base)
+    if (size := packet_tokens(packet)) > packet_cap:
+        raise Refusal(2, "error packet too big", f"[runner] packet too big: ~{size} tokens (cap {packet_cap}); narrow the ticket or raise --packet-cap")
     cmd = verdict_cmd(template, packet=str(packet.relative_to(cwd)), output=str(p.relative_to(cwd)), model=model, ticket=tid)
     client, opik_line = opik_status()
     call = call_vendor(cmd, cwd, p)
@@ -535,6 +638,8 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
         print(f"[runner] verdict error: {call.error}")
         trace_verdict(client, tid=tid, packet=packet, verdict=None, started=call.started, wall=call.wall,
                       vendor_name=vendor_of(template), arm=arm, error=call.envelope)
+        if call.error.startswith("invalid verdict: num_turns="):  # E28: not a retry, the seat itself is wrong
+            raise Refusal(2, f"error num_turns={(call.envelope or {}).get('num_turns')}", f"[runner] verdict error: {call.error}")
         return "reject", True, True
     violations = render_verdict.main(cwd, tid, vendor_of(template), cost_usd=call.cost_usd, tokens=call.tokens,
                                      seconds=call.wall, opik=opik_line, summary_model=summary_model)
@@ -569,10 +674,30 @@ def state_line(path: Path, name: str, elapsed: int) -> None:
         f.write(f"{time.strftime('%H:%M:%S')} +{elapsed // 60}:{elapsed % 60:02d} {name}\n")
 
 
+def start_state(path: Path) -> None:
+    """A new run: truncate the state file, then write the pid beside it (<stem>.pid; contract B:
+    the skill's watch tails on the pid). Nothing removes the pid file at exit."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("", encoding="utf-8")  # the previous run's lines go
+    path.with_suffix(".pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+
+def refused_state(repo: Path, tid: str, reason: str, plan_state: Path | None = None) -> None:
+    """A refusal before the machine starts: the state file says so (never a stale run), the
+    plan's too when walking."""
+    sp = state_path(repo, tid)
+    start_state(sp)
+    state_line(sp, f"done error {reason[:120]}", 0)
+    if plan_state is not None:
+        state_line(plan_state, f"done stopped {tid} {reason[:120]}", 0)
+
+
 class Phases:
     """[runner hh:mm:ss +m:ss] <phase> lines, the same line into traces/runs/<id>.state (and the
     plan's state when walking), seconds per phase, and the board re-rendered into the main
-    checkout after every line. `done(text)` writes the final `done <text>` line once."""
+    checkout after every line. `done(text)` writes the final `done <text>` line once.
+    `heartbeat(last_line, last_at)` appends the running line of contract B without changing the
+    phase (E25)."""
 
     def __init__(self, repo: Path, tree: Path, tid: str, out=None, plan_state: Path | None = None):
         self.repo, self.tree, self.tid, self.out = repo, tree, tid, out or sys.stdout
@@ -583,11 +708,17 @@ class Phases:
         self.state = state_path(repo, tid)
         self.plan_state = plan_state
         self.finished = False
-        self.state.parent.mkdir(parents=True, exist_ok=True)
-        self.state.write_text("", encoding="utf-8")  # a new run: the previous run's lines go
+        start_state(self.state)
 
     def elapsed(self) -> int:
         return int(time.monotonic() - self.t0)
+
+    def lines(self, text: str, elapsed: int) -> None:
+        """One line into the ticket's state file and the plan's when walking, then the board."""
+        state_line(self.state, text, elapsed)
+        if self.plan_state is not None:
+            state_line(self.plan_state, text, elapsed)
+        self.board()
 
     def mark(self, name: str) -> None:
         now = time.monotonic()
@@ -597,10 +728,12 @@ class Phases:
         elapsed = int(now - self.t0)
         self.out.write(f"[runner {time.strftime('%H:%M:%S')} +{elapsed // 60}:{elapsed % 60:02d}] {name}\n")
         self.out.flush()
-        state_line(self.state, name, elapsed)
-        if self.plan_state is not None:
-            state_line(self.plan_state, name, elapsed)
-        self.board()
+        self.lines(name, elapsed)
+
+    def heartbeat(self, last_line: str, last_at: str | None = None) -> None:
+        """`<phase> · running · last <hh:mm:ss> · <last builder line>`: the build is alive; not a
+        phase change (no seconds, no stdout line), but the board is re-rendered."""
+        self.lines(f"{self.current or 'build'} · running · last {last_at or time.strftime('%H:%M:%S')} · {last_line[:LAST_LINE_CHARS] or '(no output yet)'}", self.elapsed())
 
     def done(self, text: str) -> None:
         """The run's last line, `done <text>`; a second call is ignored."""
@@ -659,29 +792,67 @@ def total_cost(*parts: "float | None") -> float | None:
     return round(sum(known), 6) if known else None
 
 
-def write_result(tree: Path, repo: Path, tid: str, v: "schemas.Verdict", cost_usd: "float | None", seconds: float) -> list[str]:
-    """traces/runs/<id>.result: the end-of-run lines (contract C), from verdict.json and the
-    tickets' writes; returned for printing."""
-    lines = render_verdict.result_lines(v, render_verdict.tickets_of(tree), cost_usd, seconds, f"traces/verdict/{tid}.html")
+def human_acs_of(tree: Path, tid: str) -> tuple:
+    """The ticket's `(human)` ACs (schemas.Ticket.human_acs, E30); empty without the ticket."""
+    path = kanban_ops.find_ticket(tree, tid)
+    return tuple(getattr(schemas.Ticket.parse(_fm.read(path)[1]), "human_acs", ())) if path else ()
+
+
+def write_result(tree: Path, repo: Path, tid: str, v: "schemas.Verdict", cost_usd: "float | None", seconds: float,
+                 base: str | None = None, costs: dict | None = None) -> list[str]:
+    """traces/runs/<id>.result: the end-of-run lines (contract C), from verdict.json, the
+    summary cache, the packet's charter items (verdict_checks.charter_report), the ticket's
+    human ACs and the included files changed vs the base (verdict_prep.changed_vs_base);
+    returned for printing."""
+    import verdict_checks  # here, not at the top: the packet side imports kanban_ops, and the runner stays importable without it
+    import verdict_prep
+
+    spath = render_verdict.summary_path(tree, tid)
+    try:
+        summary = json.loads(spath.read_text(encoding="utf-8")) if spath.exists() else None
+    except json.JSONDecodeError:
+        summary = None
+    ppath = tree / "traces" / "verdict" / f"{tid}.input.md"
+    packet = schemas.Packet.load(ppath) if ppath.exists() else None
+    charter = verdict_checks.charter_report(v, packet) if packet is not None and hasattr(verdict_checks, "charter_report") else None
+    changed = verdict_prep.changed_vs_base(tree, base) if base and hasattr(verdict_prep, "changed_vs_base") else None
+    lines = render_verdict.result_lines(v, render_verdict.tickets_of(tree), cost_usd, seconds, f"traces/verdict/{tid}.html",
+                                        summary=summary, changed=changed, charter=charter, human_acs=human_acs_of(tree, tid), costs=costs)
     path = repo / "traces" / "runs" / f"{tid}.result"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return lines
 
 
+def refusal_before_git(repo: Path, tid: str, base: str) -> str | None:
+    """Contract H (E23): the reason not to touch git at all — the ticket is done, or its branch is
+    already merged into the base; None when the run may start."""
+    if ticket_status(repo, tid) == "done":
+        return f"{tid} is done; nothing to run"
+    if merged_into(repo, f"ticket/{tid}", base):
+        return f"ticket/{tid} is already merged into {base}"
+    return None
+
+
 def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: Path | None = None) -> int:
     """One ticket through the machine. Every exit writes the `done ...` line (contract A) and,
-    when a verdict was read, the result file (contract C), printed last."""
+    when a verdict was read, the result file (contract C), printed last. The refusals of
+    contract H come first, before any branch exists."""
+    try:
+        base_name = kanban_ops.base_branch(repo, tid.split(".")[0])
+    except ValueError as e:
+        print(f"[runner] {e}")
+        refused_state(repo, tid, str(e), plan_state)
+        return 2
+    if (reason := refusal_before_git(repo, tid, base_name)) is not None:
+        print(f"[runner] {reason}")
+        refused_state(repo, tid, reason, plan_state)
+        return 2
     try:
         tree, fresh = workspace(repo, tid, a.parallel)
     except SystemExit as e:  # a refusal (dirty tree, checkout failed): the state file says so, never a stale run
-        sp = state_path(repo, tid)
-        sp.parent.mkdir(parents=True, exist_ok=True)
-        sp.write_text("", encoding="utf-8")
         reason = str(e).strip().splitlines()[0] if str(e).strip() else "refused"
-        state_line(sp, f"done error {reason.removeprefix('[runner] ')[:120]}", 0)
-        if plan_state is not None:
-            state_line(plan_state, f"done stopped {tid} {reason.removeprefix('[runner] ')[:120]}", 0)
+        refused_state(repo, tid, reason.removeprefix("[runner] "), plan_state)
         raise
     phases = Phases(repo, tree, tid, plan_state=plan_state)
     result: list[str] = []
@@ -692,14 +863,17 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
         if v is not None:
             spath = render_verdict.summary_path(tree, tid)
             summary_cost = json.loads(spath.read_text(encoding="utf-8")).get("cost_usd") if spath.exists() else None
-            result = write_result(tree, repo, tid, v, total_cost(build_cost, v.meta.cost_usd if v.meta else None, summary_cost), phases.elapsed())
+            build_s = sum(s for name, s in {**phases.seconds, **({phases.current: 0.0} if phases.current else {})}.items() if name.startswith("build ") or name in ("tests-commit", "feat-commit"))
+            costs = {"verdict_usd": v.meta.cost_usd if v.meta else None, "verdict_s": v.meta.seconds if v.meta else None,
+                     "build_usd": build_cost, "build_s": build_s}  # E28: the verdict call and the build session named apart
+            result = write_result(tree, repo, tid, v, total_cost(build_cost, v.meta.cost_usd if v.meta else None, summary_cost), phases.elapsed(), base_name, costs)
         phases.done(done)
         return code
 
     try:
         phases.mark("branch worktree" if a.parallel else "branch")
         print(f"  {tree} on ticket/{tid} ({'new' if fresh else 'existing'})")
-        base = ticket_base(tree)
+        base = ticket_base(tree, base_name)
         if fresh:
             phases.mark("ci-pre")
             if not ci(tree):
@@ -711,7 +885,7 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
                 call = BuildCall(0, (), "", closed_out=True)
             else:
                 phases.mark(f"build {attempt}")
-                call = build(tree, tid, a.build_model, phase=phases.mark, attempt=attempt, tick=phases.board)
+                call = build(tree, tid, a.build_model, phase=phases.mark, attempt=attempt, tick=phases.board, heartbeat=phases.heartbeat)
                 build_cost = total_cost(build_cost, call.cost_usd)
                 if call.orbit:
                     log_orbit(tree, tid, call.orbit)
@@ -735,7 +909,8 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
                 print("[runner] ci red")
                 continue
             phases.mark("verdict")
-            decision, retryable, progressed = verdict(tree, tid, a.verdict_model, a.arm, a.verdict_cmd, a.summary_model)
+            decision, retryable, progressed = verdict(tree, tid, a.verdict_model, a.arm, a.verdict_cmd, a.summary_model,
+                                                      base=base_name, packet_cap=getattr(a, "packet_cap", PACKET_TOKEN_CAP))
             phases.mark("close-out")
             print(f"[runner] verdict: {decision}{' (retryable)' if retryable else ''}")
             import verdict_eval  # here, not at the top: verdict_eval imports runner
@@ -753,6 +928,9 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
                 return finish(2, "reject", v)
         print("[runner] retry cap reached — human needed")
         return finish(1, "error retry cap", read_verdict(tree, tid))
+    except Refusal as e:  # contracts F and G: the machine stopped itself; no retry, no result block
+        print(str(e))
+        return finish(e.code, e.state)
     except BaseException as e:  # noqa: BLE001 — the state file must end in `done` whatever stopped the run
         reason = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
         phases.done(f"error {reason[:120]}")
@@ -808,8 +986,7 @@ def walk_plan(repo: Path, n: str, a: argparse.Namespace, client) -> int:
     waits at Gate 2 until the ticket file says done (shipped) and stops when it says
     in_progress (rejected). Refuses a plan stamped backend: session (contract F)."""
     state = plan_state_path(repo, n)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text("", encoding="utf-8")
+    start_state(state)  # plan-<n>.state and plan-<n>.pid
     t0 = time.monotonic()
     plan = kanban_ops.find_plan(repo, n)
     if plan is None:
@@ -875,6 +1052,8 @@ def main() -> int:
                     help="model for the Gate 2 page's two prose sections (default the cheapest Claude); `none` skips the call")
     ap.add_argument("--parallel", action="store_true", help="build in a worktree under .worktrees/<id>/ instead of checking the branch out in place")
     ap.add_argument("--override", metavar="FIELD=VALUE", help="backend=<x> or scrutiny=<y>: restamp the ticket's plan, log the router miss, commit; then run")
+    ap.add_argument("--packet-cap", type=int, default=PACKET_TOKEN_CAP, metavar="TOKENS",
+                    help=f"refuse the verdict call when the packet is over this many ~tokens (bytes/4); default {PACKET_TOKEN_CAP}")
     a = ap.parse_args()
     if bool(a.ticket) == bool(a.plan):
         ap.error("give a ticket id or --plan <n>, not both")

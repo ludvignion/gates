@@ -14,6 +14,7 @@ writes: []               # paths the build may touch; enforced by hook if set
 ## Acceptance criteria
 - AC-1 (behavioral): Given / When / Then
 - AC-2 (critical): ...
+- AC-3 (human): Given <state>, a person confirms <outcome>  # confirmed at Gate 2, no test names it
 
 ## Out of scope
 - ...

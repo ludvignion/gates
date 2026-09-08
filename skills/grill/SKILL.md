@@ -37,6 +37,10 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
 4. **Ask the human only decisions** — intent, trade-offs, priority, scope. Each question names the
    node it unblocks and carries a recommended answer. Ask in rounds, numbered. Cap: 5 per round,
    2 rounds. If more remain, the brief is too big — say so and propose a split.
+   Rank the options against the repo's invariants first, cost second (G1): `AGENTS.md` names
+   them — a mechanism over a second copy of a value, boring over elegant, no knobs. The
+   recommendation names the invariant it preserves; the cheapest option is recommended only
+   when it preserves them all.
 5. **Stop when the frontier is empty.** No question count. If a node cannot be resolved by
    evidence or one human answer, it becomes an explicit assumption.
 6. **Dependencies before the plan.** Every `capability` node becomes a row in the plan's
@@ -48,10 +52,16 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    picks at gate 1; the choice is recorded as a `decision` node in the trace. A plan with an
    unchosen option cannot be approved.
 7. **Write back, then wait.** Produce `<n>.plan.md` from `templates/plan.md`:
-   outcome, ACs (Given/When/Then, tagged behavioral / property / critical), out of scope,
-   named modules, and the **assumptions list** — every node you resolved yourself, with its evidence.
-   Stamp `signals:`, `scrutiny:`, and `backend:` per the Routing section.
-   The human approves the plan, not the questions. When they say so, run
+   outcome, ACs (Given/When/Then, tagged behavioral / property / critical / human — rule 11),
+   out of scope, named modules, `base:` (the branch tickets branch from and ship into, `main`
+   unless the human said otherwise), and the **assumptions list** — every node you resolved
+   yourself, with its evidence. Stamp `signals:`, `scrutiny:`, and `backend:` per the Routing
+   section. The human approves the plan, not the questions. When they say so, first record
+   what they said about any option or recommendation in that turn (G3): one line per remark
+   appended to `traces/grill-misses.jsonl`,
+   `{"plan": n, "source": "approval", "said": "<their words>", "about": "<option or recommendation>", "ts": "<ISO time>"}`,
+   before the approve runs — a remark that never lands in the file never tunes the grill.
+   Then run
    `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py approve <n> --who <git config user.name>`
    and print its output; it sets `status:` and `approved:`, writes the `[human]` Log entry and
    commits. Never write those fields yourself. A refusal (missing routing stamp) is printed as
@@ -67,6 +77,22 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    `{"brief": n, "node": "...", "type": "fact|capability|decision|assumption",
 "resolved_by": "evidence|human|assumption|open", "evidence": "path|url|command|null",
 "question": "...", "answer": "..."}`.
+11. **Every AC is machine-verifiable, or tagged human** (E30). An AC holds when the diff and
+   the tests show it: a test names it, or a file the ticket writes carries it. An AC only a
+   person can confirm — a look at a page, a judgement of tone, a call to a live system — is
+   tagged in the plan and the ticket: `- AC-7 (human): Given ..., a person confirms ...`.
+   Human ACs stay out of the verdict packet; the Gate 2 page lists them under "Human checks"
+   and the runner's result block prints one `human: AC-7 — ... (confirm with ship)` line each.
+   The human confirms them by saying `ship`. An untagged AC no test can name is a warn on
+   every verdict — tag it or rewrite it as something the diff shows.
+12. **Hand off** (G2). After the tickets are written, compute the last line from the plan's
+   stamp and the tickets, never from the shape of a previous plan:
+   - `backend: runner` and more than one ticket `status: ready` →
+     `Next: /harness-plugin:runner plan <n>`
+   - `backend: runner` and one ready ticket → `Next: /harness-plugin:runner <id>`
+   - `backend: session` → `Next: build from branch <base> (session backend by override)`,
+     `<base>` being the plan's `base:`.
+   Print it as the last line, alone. No menu, no second option.
 
 ## Routing
 
@@ -140,3 +166,5 @@ Refuse a brief whose Outcome is a code property — validation, typing, models, 
 "add X across stages" — rather than a behaviour observable in the CLI or an output file. That is
 a horizontal phase. Say so and name the vertical ticket that first needs it. Refuse likewise while
 any ticket of an unshipped tracer-bullet plan is `in_progress` or `in_review`.
+
+Next: the hand-off line from rule 12, computed from the stamp, as the session's last line.
