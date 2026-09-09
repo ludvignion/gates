@@ -4,6 +4,7 @@ The operating system for agentic development. Eight skills, two human gates, hoo
 ticket scope, scripts that render the only pages a human reads.
 
 ```
+spec → make intake → /decompose → briefs (make coverage green)
 brief → /grill → plan page (gate 1) → tickets → /build → /verdict → verdict page (gate 2) → merge
                                     or: /harness-plugin:runner <id> | plan <n> → runner → gate 2 in words → ship
 ```
