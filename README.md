@@ -18,25 +18,47 @@ claude plugin install harness-plugin@ludvignion
 
 ## Start a project
 
+Restart `claude` after any plugin install or update; a running session keeps the old version.
+
 1. Install the plugin (above).
-2. `/harness-plugin:init` in an empty git repo — the template ships inside the plugin.
-3. Write `kanban/briefs/1-<slug>.md`, then `/harness-plugin:grill 1`.
+2. `/harness-plugin:init` in an empty git repo with a git identity set. Writes the template,
+   runs `make install && make ci`, commits, pins the plugin version in `.claude/settings.json`.
+3. Fill `docs/domain-pack/charter.md`: every verdict judges against it, and an item without an
+   `Applies to:` line is refused. Replace the first paragraph of `AGENTS.md`.
+4. Briefs, one of two ways.
+   - **From a spec.** One file into `docs/spec/`: markdown with headings (the id is the heading
+     path, `contacts/call-log`; å ä ö are fine) or CSV with an `id` column (ids verbatim).
+     Convert pdf, docx, xlsx outside first. Then `make intake F=docs/spec/<file>` (writes
+     `docs/spec/index.md`, one row per unit with its sha), then `/harness-plugin:decompose` in a
+     Claude session in the repo: it prints one table (brief, outcome, spec_refs, after) plus
+     deferred rows, every id once; you answer `go` or `go, order: C, A, B`; it writes
+     `kanban/briefs/<n>-<slug>.md` and `docs/spec/deferred.md` and runs `make coverage` until
+     green. All rows at once: the partition is the deliverable, later briefs stay thin until
+     their grill. Commit.
+   - **Without a spec.** Write `kanban/briefs/1-<slug>.md` from `templates/brief.md`.
+5. `/harness-plugin:grill 1` in a fresh session. Evidence first, questions only for decisions,
+   plan page, you say approve, tickets. Its last line is the runner command.
+6. `/harness-plugin:runner plan 1` (or one ticket id). Build, ci, verdict, result block, Gate 2
+   in words: `ship`, `reject: <reason>`, `child from F1`, `home F1 to 1.3`, `waive F1: <reason>`.
 
-## From a spec
+When a requirement changes later: edit the spec, `make intake` again; `make coverage` goes red
+with `drift: [<id>] changed since brief <n>` until you review that brief, edit it, and commit it
+together with the new index. `make ci` runs `kanban` (the kanban invariants) and `coverage`.
 
-1. Put the spec in `docs/spec/` (one file). Two shapes: markdown with headings (the id is the
-   heading path, `contacts/call-log`), or CSV with an `id` column (ids verbatim). Convert pdf,
-   docx, xlsx outside first.
-2. `make intake F=docs/spec/<file>` writes `docs/spec/index.md`: one row per unit with its sha.
-3. `/harness-plugin:decompose` in a Claude session in the repo. It prints one table (brief,
-   outcome, spec_refs, after) plus deferred rows, every id once; you answer `go` or
-   `go, order: C, A, B`; it writes `kanban/briefs/<n>-<slug>.md` and `docs/spec/deferred.md`
-   and runs `make coverage` until green. All rows at once: the partition is the deliverable,
-   later briefs stay thin until their grill. (`templates/decompose.md` is the same prompt for
-   any other chat.)
-4. Commit, then `/harness-plugin:grill 1`. When a requirement changes later, `make intake`
-   again; `make coverage` goes red with `drift: [<id>] changed since brief <n>` until you
-   review that brief, edit it, and commit it together with the new index.
+## Update a project
+
+```
+make plugin                                  # refresh the marketplace clone and the installed plugin
+/harness-plugin:init --update --yes          # diff and write Makefile, ci workflow, .gitignore, .env.example, docs/spec/.gitkeep, the pin
+git commit -am 'chore: harness-plugin v<version>'
+```
+
+The update runs from the plugin version the session loaded. If it answers `up to date with
+harness-plugin v<old>`, run the new version's script by path, then restart `claude`:
+
+```
+python3 ~/.claude/plugins/cache/ludvignion/harness-plugin/<version>/scripts/init_project.py init --update --yes
+```
 
 ## What's here
 
