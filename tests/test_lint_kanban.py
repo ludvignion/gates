@@ -72,6 +72,13 @@ class LintKanbanTest(unittest.TestCase):
         self.assertEqual(lint_kanban.lint(self.tmp), [])
         charter.unlink(); self.assertEqual(lint_kanban.charter_reach(self.tmp), [])  # no charter, nothing to say
 
+    def test_unborn_head_is_quiet_and_a_bad_named_base_is_reported(self):
+        """0.8.1: init runs ci before its first commit; a CI base that does not resolve must not pass silently."""
+        fresh = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, fresh, ignore_errors=True)
+        shutil.copytree(FIXTURE, fresh / "kanban"); git(fresh, "init", "-q")
+        self.assertEqual(lint_kanban.closed_tickets(fresh), [])
+        self.assertEqual(lint_kanban.lint(self.tmp, "origin/nope"), ["lint_kanban: base origin/nope does not resolve; rule 1 (closed tickets) not checked"])
+
     def test_cli_exit_code(self):
         self.done.write_text(self.done.read_text().replace("One sentence.", "Two sentences."))
         res = subprocess.run([sys.executable, str(REPO / "scripts" / "lint_kanban.py")], cwd=self.tmp, capture_output=True, text=True)

@@ -15,6 +15,7 @@ paragraph of `AGENTS.md`.
 From a spec: put it in `docs/spec/` (one file, markdown with headings or CSV with an `id`
 column; convert pdf, docx, xlsx outside first), `make intake F=docs/spec/<file>`, decompose it in
 a chat with the plugin's `templates/decompose.md`, paste the briefs in, `make coverage` green.
+A changed requirement is `drift` until the citing brief is reviewed and committed with the new index.
 
 1. Write `kanban/briefs/<n>-<slug>.md` (template: the plugin's `templates/brief.md`).
 2. `/grill <n>`; say "approve" in that session (the grill runs `kanban_ops.py approve <n>`),

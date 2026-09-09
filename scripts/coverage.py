@@ -7,14 +7,17 @@ Rules, each loading through scripts/schemas.py (SpecIndex, Deferred, briefs):
    docs/spec/deferred.md (``- <id> — <reason>``): never both, never neither, never twice.
 2. EXISTS. Every id a brief or the deferred file cites is in the index; a renamed heading is
    reported at the brief that cited the old id.
-3. DRIFT. For each brief, the sha of every cited unit equals its sha in the index at the commit
-   that added the brief (``git log --diff-filter=A -- <brief>``, then ``git show <sha>:index``).
-   A unit edited in the same commit as the brief is not drift; an uncommitted brief, or one added
-   before the index existed, is not judged. Git is the record: no frontmatter field.
+3. DRIFT. For each brief, the sha of every cited unit equals its sha in the index at the last
+   commit that touched the brief (``git log -1 -- <brief>``, then ``git show <sha>:index``).
+   A unit edited in the same commit as the brief is not drift; an uncommitted brief, or one whose
+   last commit predates the index, is not judged. To acknowledge drift, review the brief, edit
+   it, and commit it together with the re-run index: that commit becomes the record. No
+   frontmatter field; git is the record.
 4. AFTER. ``after`` names briefs that have a file, and there is no cycle.
 5. REASON. Every deferred line carries a reason.
 6. CITES. A brief numbered 1 or higher has a non-empty ``spec_refs`` while an index exists.
-Errors print as ``path: message``.
+Errors print as ``path: message``. A brief whose cited units sum past WORDS_WARN words is a
+warning on stderr, not a violation: the verdict packet carries all of them (item 1 of 0.8.1).
 """
 import subprocess
 import sys
@@ -22,6 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import schemas  # noqa: E402
+
+WORDS_WARN = 4000  # words of cited units per brief; past this the Spec section is a packet risk
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -34,9 +39,9 @@ def _rel(root: Path, p: Path) -> str:
 
 
 def index_at_brief_commit(root: Path, brief: Path) -> schemas.SpecIndex | None:
-    """The index as it was in the commit that added the brief; None when there is no such
+    """The index as it was in the last commit that touched the brief; None when there is no such
     commit (uncommitted brief) or no index in it."""
-    log = _git(root, "log", "--diff-filter=A", "--format=%H", "--", _rel(root, brief))
+    log = _git(root, "log", "-1", "--format=%H", "--", _rel(root, brief))
     if not log or not log.split():
         return None
     old = _git(root, "show", f"{log.split()[0]}:{schemas.SPEC_INDEX}")
@@ -123,6 +128,17 @@ def after(root: Path, briefs: list[schemas.BriefRefs]) -> list[str]:
     return out
 
 
+def warnings(root: Path, index: schemas.SpecIndex, briefs: list[schemas.BriefRefs]) -> list[str]:
+    """Briefs whose cited units sum past WORDS_WARN words; advisory, never a violation."""
+    words = {u.id: u.words for u in index.units}
+    out = []
+    for b in briefs:
+        total = sum(words.get(uid, 0) for uid in b.spec_refs)
+        if total > WORDS_WARN:
+            out.append(f"warn: {_rel(root, b.path)}: brief {b.n} cites {total} words over {len(b.spec_refs)} units (over {WORDS_WARN}); the verdict packet carries them all")
+    return out
+
+
 def lint(root: Path) -> list[str] | None:
     """None when there is no index (nothing to say); else the violations."""
     index_path = root / schemas.SPEC_INDEX
@@ -143,6 +159,8 @@ def main(argv: list[str]) -> int:
     for v in violations:
         print(v)
     index = schemas.SpecIndex.load(root / schemas.SPEC_INDEX)
+    for w in warnings(root, index, schemas.briefs(root / "kanban")):
+        print(w, file=sys.stderr)
     print(f"coverage: {len(violations)} violation(s) over {len(index.units)} units")
     return 1 if violations else 0
 

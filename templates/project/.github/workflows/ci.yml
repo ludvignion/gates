@@ -12,6 +12,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: uv sync
       - run: make ci
+        env: { BASE: "${{ github.base_ref && format('origin/{0}', github.base_ref) || 'HEAD' }}" }  # rule 1 of lint_kanban compares closed tickets against the base branch
       - name: tests-before-code (ticket branches only)
         if: startsWith(github.head_ref, 'ticket/')
         run: |

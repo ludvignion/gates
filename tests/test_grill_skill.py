@@ -56,6 +56,7 @@ class GrillSkillTextTest(unittest.TestCase):
         self.assertIn("`docs/spec/<file>#<id>`", rules)
         self.assertIn("before closing any `fact` node", rules)
         self.assertIn("`[contacts/call-log]`", rules)
+        self.assertIn("one\n   AC may name several ids", rules)  # 0.8.1 item 1
         self.assertIn("No `docs/spec/index.md`", rules)
         shape = schemas.section(body, "Brief shape")
         self.assertIn("`after` names a brief that is not shipped", shape)

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.8.1 — 2026-09-09
+
+Review of 0.8.0: rule 6 was a packet warning, Swedish headings slugged wrong, drift had no ack.
+
+- `templates/project/Makefile`, `.github/workflows/ci.yml` — `make kanban [BASE=origin/main]`
+  runs `lint_kanban.py`; `ci: lint test complexity kanban coverage`. CI sets `BASE` to
+  `origin/<base branch>` on a pull request, `HEAD` otherwise. Rule 6 (spec ids in ACs) and the
+  other five now gate the merge, not only the verdict packet.
+- `scripts/lint_kanban.py` — an unborn `HEAD` (init runs ci before its first commit) closes
+  nothing; a named base that does not resolve is reported, never silently skipped.
+- `scripts/spec_intake.py` — headings lose their marks before slugging (NFKD): `Årsredovisning`
+  is `arsredovisning`, `Öl` and `Ål` are `ol` and `al`. A letter that does not decompose
+  (ø, ß, non-Latin) is refused with "add an id column".
+- `scripts/coverage.py` — drift compares against the last commit that touched the brief, not
+  the one that added it. Acknowledging a changed requirement is: review the brief, edit it,
+  commit it together with the re-run index. A brief committed without the index stays red.
+  A brief whose cited units sum past 4000 words is a warning on stderr (the packet carries
+  them all); never a violation.
+- `skills/grill/SKILL.md` — one AC may name several ids when one behaviour covers them.
+- `README.md` — the partition is the deliverable: all rows at once, later briefs stay thin
+  until their grill; the drift acknowledgement path.
+- `tests/` — 120 CSV rows in one brief: packet under half the cap, coverage warns; drift ack
+  by brief edit with the index, not without; Swedish headings; an unborn HEAD and a bad base.
+
+Held for a later release, on evidence from the first real run: several spec files per project
+(v1 is one), a script that writes brief files from the decompose table, a grouping level above
+the unit when briefs pass roughly 15 ids.
+
+Consuming projects: `/harness-plugin:init --update --yes`.
+
 ## 0.8.0 — 2026-09-09
 
 A spec in the repo: intake, spec ids, coverage lint. Decomposition stays in a chat.

@@ -69,7 +69,9 @@ class SpecIntakeTest(unittest.TestCase):
     def test_refusals(self):
         for name, text, needle in (
             ("s.md", "just prose\n", "no headings and no id column"),
-            ("s.md", "## 联系人\ntext\n", "slugs to nothing: add an id column"),
+            ("s.md", "## 联系人\ntext\n", "letters that do not slug: add an id column"),
+            ("s.md", "## Smørrebrød\ntext\n", "letters that do not slug: add an id column"),
+            ("s.md", "## ---\ntext\n", "slugs to nothing: add an id column"),
             ("s.csv", "name,text\na,b\n", "no id column"),
             ("s.csv", "id,text\ncrm-1,a\n,b\n", "row 3 has an empty id cell"),
             ("s.csv", "id,text\ncrm-1,a\ncrm-1,b\n", "duplicate id crm-1"),
@@ -102,6 +104,12 @@ class SpecIntakeTest(unittest.TestCase):
         proc = run(self.tmp, "docs/spec/crm.md")
         self.assertEqual(proc.returncode, 0)
         self.assertEqual(proc.stderr.strip(), "warn: big has 401 words (over 400)")
+
+    def test_swedish_headings_lose_their_marks_and_stay_distinct(self):
+        """0.8.1: å ä ö é decompose; Öl and Ål never collide; Årsredovisning keeps its first letter."""
+        units = spec_intake.markdown_units("## Årsredovisning\nx\n## Öl\ny\n## Ål\nz\n## Kött & grönsaker\nw\n## Café\nv\n")
+        self.assertEqual([u.id for u in units], ["arsredovisning", "ol", "al", "kott-gronsaker", "cafe"])
+        self.assertEqual(spec_intake.slug("Ändra Åtkomst"), "andra-atkomst")
 
     def test_container_headings_stay_in_the_path(self):
         units = spec_intake.markdown_units("## Outer\n\n### Inner\ntext\n\n## Other\nbody\n### Deep\n")

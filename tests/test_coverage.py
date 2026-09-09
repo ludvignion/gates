@@ -95,12 +95,43 @@ class CoverageTest(unittest.TestCase):
         proc = self.run_cli()
         self.assertEqual(proc.returncode, 1); self.assertIn("drift: [contacts/call-log] changed since brief 7", proc.stdout)
         git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "spec edit")
-        self.assertEqual(len(coverage.lint(self.tmp)), 1)  # committing the drift does not clear it
-        self.write("kanban/briefs/8-b.md", brief("[contacts/notes]"))  # a new brief committed with a changed unit: not drift
-        (self.tmp / "kanban/briefs/7-a.md").write_text(brief("[contacts/call-log, deals/pipeline]"))
+        self.assertEqual(len(coverage.lint(self.tmp)), 1)  # committing the index alone does not clear it
+        self.write("kanban/briefs/8-b.md", brief("[contacts/notes]"))  # a new brief committed with a changed unit: not drift for 8
         self.intake(SPEC.replace("Log every call.", "Log every call and its outcome.").replace("Free text.", "Free text, dated."))
         git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "brief 8 with its unit")
+        self.assertEqual(coverage.lint(self.tmp), [
+            "kanban/briefs/8-b.md: [contacts/notes] is also cited by brief 7; one brief per id",
+            "kanban/briefs/7-a.md: drift: [contacts/call-log] changed since brief 7",
+            "kanban/briefs/7-a.md: drift: [contacts/notes] changed since brief 7"])  # brief 7 was not touched in that commit
+
+    def test_drift_is_acknowledged_by_editing_the_brief_with_the_index(self):
+        """0.8.1 (item 4): the record is the last commit touching the brief; a reviewed brief committed
+        with the new index is green, a brief edit committed without the index is not."""
+        self.intake()
+        self.write("kanban/briefs/7-a.md", brief("[contacts/call-log, contacts/notes, deals/pipeline]"))
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "brief 7")
+        self.intake(SPEC.replace("Log every call.", "Log every call and its outcome."))
         self.assertEqual(coverage.lint(self.tmp), ["kanban/briefs/7-a.md: drift: [contacts/call-log] changed since brief 7"])
+        self.write("kanban/briefs/7-a.md", brief("[contacts/call-log, contacts/notes, deals/pipeline]") + "\nReviewed against the outcome line.\n")
+        self.assertEqual(len(coverage.lint(self.tmp)), 1)  # uncommitted edit: the record is still the old commit
+        git(self.tmp, "add", "kanban"); git(self.tmp, "commit", "-q", "-m", "brief 7 reviewed, index left out")
+        self.assertEqual(len(coverage.lint(self.tmp)), 1)  # the index at that commit is still the old one
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "index alone")
+        self.assertEqual(coverage.lint(self.tmp), ["kanban/briefs/7-a.md: drift: [contacts/call-log] changed since brief 7"])
+        self.write("kanban/briefs/7-a.md", (self.tmp / "kanban/briefs/7-a.md").read_text() + "Reviewed again.\n")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "brief 7 reviewed with the index")
+        self.assertEqual(coverage.lint(self.tmp), [])
+
+    def test_many_small_units_warn_past_the_word_budget(self):
+        """0.8.1 (item 1): 120 CSV rows in one brief is a warning on stderr, never a violation."""
+        (self.tmp / "docs/spec/crm.csv").write_text("id,requirement\n" + "".join(f"CRM-{i},{'word ' * 40}\n" for i in range(120)))
+        r = subprocess.run([sys.executable, str(spec_intake.__file__), "docs/spec/crm.csv"], cwd=self.tmp, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.write("kanban/briefs/1-all.md", brief("[" + ", ".join(f"CRM-{i}" for i in range(120)) + "]"))
+        self.assertEqual(coverage.lint(self.tmp), [])
+        proc = self.run_cli()
+        self.assertEqual((proc.returncode, proc.stdout), (0, "coverage: 0 violation(s) over 120 units\n"))
+        self.assertEqual(proc.stderr.strip(), "warn: kanban/briefs/1-all.md: brief 1 cites 4920 words over 120 units (over 4000); the verdict packet carries them all")
 
     def test_after_missing_and_cycle(self):
         self.intake()

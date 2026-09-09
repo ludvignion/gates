@@ -1095,3 +1095,16 @@ class SpecPacketCapTest(RunnerSeatTest):
         self.assertEqual((cm.exception.code, cm.exception.state), (2, "error packet too big"))
         self.assertGreater(runner.packet_tokens(self.tmp / "traces/verdict/1.1.input.md"), 12000)
         self.assertIn("## Spec\n- big — Big\n  requirement requirement", (self.tmp / "traces/verdict/1.1.input.md").read_text())
+
+    def test_many_small_cited_units_fit_under_the_default_cap(self):
+        """0.8.1 (item 1): 120 CSV rows of ~25 words each land in the Spec section and stay far under 40K tokens."""
+        (self.tmp / "docs/spec").mkdir(); (self.tmp / "kanban/briefs").mkdir()
+        (self.tmp / "docs/spec/crm.csv").write_text("id,title,requirement\n" + "".join(f"CRM-{i},Row {i},{'a user can do a thing with row ' * 4}{i}\n" for i in range(120)))
+        r = subprocess.run([sys.executable, str(runner.SCRIPTS / "spec_intake.py"), "docs/spec/crm.csv"], cwd=self.tmp, capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stderr), (0, ""))
+        (self.tmp / "kanban/briefs/1-all.md").write_text("---\nspec_refs: [" + ", ".join(f"CRM-{i}" for i in range(120)) + "]\nafter: []\n---\n# Brief\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.verdict()[0], "reject")
+        packet = (self.tmp / "traces/verdict/1.1.input.md").read_text()
+        self.assertEqual(packet.count("\n- CRM-"), 120)
+        self.assertLess(runner.packet_tokens(self.tmp / "traces/verdict/1.1.input.md"), runner.PACKET_TOKEN_CAP // 2)

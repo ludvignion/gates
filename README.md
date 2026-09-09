@@ -28,9 +28,12 @@ claude plugin install harness-plugin@ludvignion
    docx, xlsx outside first.
 2. `make intake F=docs/spec/<file>` writes `docs/spec/index.md`: one row per unit with its sha.
 3. Paste `templates/decompose.md`, the spec and the index into a chat; rank the table it
-   returns; paste the briefs and `docs/spec/deferred.md` it writes into the repo.
+   returns; paste the briefs and `docs/spec/deferred.md` it writes into the repo. All rows at
+   once: the partition is the deliverable, later briefs stay thin until their grill.
 4. `make coverage` green (every id in one brief or deferred, nothing drifted), then
-   `/harness-plugin:grill 1`.
+   `/harness-plugin:grill 1`. When a requirement changes later, `make intake` again; coverage
+   goes red with `drift: [<id>] changed since brief <n>` until you review that brief, edit it,
+   and commit it together with the new index.
 
 ## What's here
 
@@ -52,7 +55,7 @@ claude plugin install harness-plugin@ludvignion
 | `scripts/verdict_eval.py` | archived packets → Opik dataset; one arm × one verdict command as an Opik experiment. |
 | `scripts/verdict_canned.py` | verdict command that copies a prepared JSON to `{output}`; CI's model-free seat. |
 | `scripts/render_board.py` | the board: routing stamp with its rule (Gate 1), progress per plan, status columns, dependency graph, and per running ticket its phase, elapsed time and last builder lines, auto-refreshing while a run is on. Runs on every Stop and after every runner phase. |
-| `scripts/lint_kanban.py` | CI check: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp, approved plans name every cited spec id in an AC. |
+| `scripts/lint_kanban.py` | `make kanban`, in the template's `ci`: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp, approved plans name every cited spec id in an AC. |
 | `scripts/spec_intake.py` | `make intake F=`: the spec (markdown headings or CSV `id` column) → `docs/spec/index.md`, one row per unit: id, title, words, sha. Never edits the spec. |
 | `scripts/coverage.py` | `make coverage`: every index id in exactly one brief's `spec_refs` or `docs/spec/deferred.md`; cited ids exist; no drift since the brief's commit (git is the record); `after` briefs exist, no cycle. Silent without an index. |
 | `templates/decompose.md` | the prompt a human pastes into a chat with the spec and the index: one table (brief, outcome, spec_refs, after) plus deferred rows, every id once; then one file per row. |

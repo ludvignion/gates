@@ -42,6 +42,10 @@ def _rel(root: Path, p: Path) -> str:
 
 def closed_tickets(root: Path, base: str = "HEAD") -> list[str]:
     out = []
+    if subprocess.run(["git", "rev-parse", "--verify", "-q", base + "^{commit}"], cwd=root, capture_output=True).returncode != 0:
+        # An unborn HEAD (init runs ci before its first commit) has closed nothing; a named base
+        # that does not resolve is a CI misconfiguration, and rule 1 would silently pass.
+        return [] if base == "HEAD" else [f"lint_kanban: base {base} does not resolve; rule 1 (closed tickets) not checked"]
     changed = _git(root, "diff", "--name-only", base, "--", "kanban").split()
     for rel in changed:
         if not rel.endswith(".md") or rel.endswith(".plan.md"):

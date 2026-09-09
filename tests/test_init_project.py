@@ -61,8 +61,10 @@ class TemplateTest(unittest.TestCase):
         makefile = (init_project.TEMPLATE / "Makefile").read_text()
         self.assertIn("plugin:", makefile)
         self.assertNotIn("mismatch", makefile)
-        self.assertIn("ci: lint test complexity coverage", makefile)  # 0.8.0: coverage.py runs in ci
-        self.assertIn("spec_intake.py $(F)", makefile); self.assertIn("coverage.py .", makefile)
+        self.assertIn("ci: lint test complexity kanban coverage", makefile)  # 0.8.0: coverage.py in ci; 0.8.1: lint_kanban.py too
+        self.assertIn("spec_intake.py $(F)", makefile); self.assertIn("coverage.py .", makefile); self.assertIn("lint_kanban.py $(BASE)", makefile)
+        self.assertIn("BASE ?= HEAD", makefile)
+        self.assertIn("env: { BASE: ", (init_project.TEMPLATE / ".github/workflows/ci.yml").read_text())
         self.assertIn(Path("docs/spec/.gitkeep"), files); self.assertIn(Path("kanban/briefs/.gitkeep"), files)
         self.assertNotIn(Path("kanban/briefs/0-example.md"), files)  # the lint reads nothing from it; templates/brief.md is the example
         self.assertIn("docs/spec/.gitkeep", init_project.UPDATE_SET)
@@ -99,6 +101,7 @@ class InitTest(unittest.TestCase):
                             env={**os.environ, "UV_PROJECT_ENVIRONMENT": str(self.tmp / "venv"), "PLUGIN": str(REPO)})
         self.assertEqual(ci.returncode, 0, ci.stdout + ci.stderr)
         self.assertIn("coverage.py", ci.stdout); self.assertNotIn("coverage:", ci.stdout)  # no spec: silent
+        self.assertIn("lint_kanban: 0 violation(s) against HEAD", ci.stdout)
 
     def test_refuses_a_repo_with_tracked_files(self):
         root = empty_repo(self.tmp, "busy")
@@ -123,9 +126,9 @@ class InitTest(unittest.TestCase):
     def test_update_shows_the_diff_and_writes_only_with_yes(self):
         root = empty_repo(self.tmp, "older")
         init_project.copy_template(root, "older", "v0.0.1")
-        makefile = re.sub(r"intake:.*?(?=ci: )", "", (root / "Makefile").read_text(), flags=re.S)  # a 0.7.0 Makefile: no intake, no coverage
-        makefile = makefile.replace("ci: lint test complexity coverage", "ci: lint test complexity").replace(" intake coverage ci ", " ci ")
-        self.assertNotIn("coverage", makefile); self.assertIn("\nci: lint test complexity  ##", makefile)
+        makefile = re.sub(r"intake:.*?(?=ci: )", "", (root / "Makefile").read_text(), flags=re.S)  # a 0.7.0 Makefile: no intake, kanban, coverage
+        makefile = makefile.replace("ci: lint test complexity kanban coverage", "ci: lint test complexity").replace(" intake kanban coverage ci ", " ci ")
+        self.assertNotIn("coverage", makefile); self.assertNotIn("kanban:", makefile); self.assertIn("\nci: lint test complexity  ##", makefile)
         (root / "Makefile").write_text(makefile + "\n# local line\n")
         shutil.rmtree(root / "docs/spec")  # a 0.7.0 project: no docs/spec/
         (root / "kanban/briefs/1-x.md").write_text("# Brief\n")
@@ -137,8 +140,8 @@ class InitTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("--- a/Makefile", proc.stdout)
         self.assertIn("-# local line", proc.stdout)
-        self.assertIn("+ci: lint test complexity coverage", proc.stdout)
-        self.assertIn("+coverage:", proc.stdout)
+        self.assertIn("+ci: lint test complexity kanban coverage", proc.stdout)
+        self.assertIn("+coverage:", proc.stdout); self.assertIn("+kanban:", proc.stdout)
         self.assertIn("--- a/docs/spec/.gitkeep", proc.stdout)
         self.assertIn("--- a/.claude/settings.json", proc.stdout)
         self.assertIn(f'+        "ref": "v{VERSION}"', proc.stdout)

@@ -26,6 +26,7 @@ import csv
 import io
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -45,7 +46,12 @@ class Unit:
 
 
 def slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    """Lowercase ASCII with runs of anything else as ``-``. Accented Latin letters lose their
+    marks first (å→a, ä→a, ö→o, é→e); a letter that does not decompose (ø, ß, non-Latin) raises."""
+    plain = "".join(c for c in unicodedata.normalize("NFKD", text) if unicodedata.category(c) != "Mn")
+    if any(ord(c) > 127 for c in plain):
+        raise ValueError(f"heading {text!r} has letters that do not slug: add an id column (use the CSV shape)")
+    return re.sub(r"[^a-z0-9]+", "-", plain.lower()).strip("-")
 
 
 def markdown_units(text: str) -> list[Unit]:

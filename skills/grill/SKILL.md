@@ -88,7 +88,9 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    and the runner's result block prints one `Human: AC-7 — ...` line each and names the check in its `Next:` line.
    The human confirms them by saying `ship`. An untagged AC no test can name is a warn on
    every verdict — tag it or rewrite it as something the diff shows. Every id in the brief's
-   `spec_refs` gets at least one AC that names it in square brackets, `[contacts/call-log]`;
+   `spec_refs` is named in square brackets on at least one AC line, `[contacts/call-log]`; one
+   AC may name several ids (`[contacts/call-log] [contacts/notes]`) when one behaviour covers
+   them, so a brief with many small units does not become a plan with many small ACs.
    `lint_kanban.py` rule 6 fails an approved plan that misses one.
 12. **Hand off** (G2). After the tickets are written, compute the last line from the plan's
    stamp and the tickets, never from the shape of a previous plan:
