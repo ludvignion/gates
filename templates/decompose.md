@@ -1,7 +1,9 @@
 # Decompose a spec into briefs
 
-Paste this whole file into a chat, then the spec file, then `docs/spec/index.md`. The chat does
-the judgment; the repo checks the result (`make coverage`, then `/harness-plugin:grill 1`).
+`/harness-plugin:decompose` runs this in a Claude session inside the repo: it reads the spec and
+`docs/spec/index.md`, writes the files in round 2, and runs `make coverage`. It also works as a
+plain prompt in any chat: paste this file, the spec, then the index; paste the files back. The
+model does the judgment; the repo checks the result.
 
 ## What I want from you
 
@@ -32,11 +34,13 @@ Rules for the table:
    candidates; the human strikes the ones that are not real when ranking.
 5. Do not number the briefs yet; letter the rows (A, B, C).
 
-**Round 2: after the human ranks the table**, one file per row in the shape below, numbered
-from the next free number in `kanban/briefs/` (the human tells you the number; existing briefs
-are never renumbered), named `kanban/briefs/<n>-<slug>.md`, and one `docs/spec/deferred.md`
-with one line per deferred id: `- <id> — <reason>`. Frontmatter `spec_refs` and `after` carry the
-table's columns as lists; `after` names brief numbers, not letters.
+**Round 2: after the human ranks the table** (`go` keeps the table's order; `go, order: C, A, B`
+sets it), one file per row in the shape below, numbered from the number the human gave or the
+next free number in `kanban/briefs/` (existing briefs are never renumbered), named
+`kanban/briefs/<n>-<slug>.md`, and one `docs/spec/deferred.md` with one line per deferred id:
+`- <id> — <reason>`. Frontmatter `spec_refs` and `after` carry the table's columns as lists;
+`after` names brief numbers, not letters. In a session, write the files and run `make coverage`;
+in a chat, emit each file's content under its path.
 
 ## Brief shape (templates/brief.md)
 

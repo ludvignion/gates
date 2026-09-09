@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.0 — 2026-09-09
+
+The eighth skill. The first real spec (57 units) showed the copy-paste round trip of 0.8.0
+(three files out to a chat, fifteen files back) is the faff, not the judgment.
+
+- `skills/decompose/SKILL.md` — `/harness-plugin:decompose [first brief number]`: reads
+  `templates/decompose.md`, `docs/spec/index.md` and the spec; round 1 prints the two tables
+  and ends the turn; `go` or `go, order: C, A, B` starts round 2, which writes
+  `kanban/briefs/<n>-<slug>.md` and `docs/spec/deferred.md` and runs `make coverage` until
+  `0 violation(s)`. Never edits the spec, never renumbers an existing brief. No index: it says
+  `make intake` and stops.
+- `templates/decompose.md` — the same prompt, now written for a session first (write the files,
+  run coverage) and any chat second (emit the files).
+- `README.md` — "From a spec" step 3 is the skill; eight skills.
+- `tests/test_decompose_skill.py` — the skill is thin, names the template, coverage, the go
+  words and the no-renumber rule, ends on one Next line; the manifest lists it.
+
+Consuming projects: `/harness-plugin:init --update --yes` (moves the pin only).
+
 ## 0.8.1 — 2026-09-09
 
 Review of 0.8.0: rule 6 was a packet warning, Swedish headings slugged wrong, drift had no ack.

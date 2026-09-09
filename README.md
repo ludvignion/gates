@@ -1,6 +1,6 @@
 # harness-plugin
 
-The operating system for agentic development. Seven skills, two human gates, hooks that enforce
+The operating system for agentic development. Eight skills, two human gates, hooks that enforce
 ticket scope, scripts that render the only pages a human reads.
 
 ```
@@ -27,19 +27,22 @@ claude plugin install harness-plugin@ludvignion
    heading path, `contacts/call-log`), or CSV with an `id` column (ids verbatim). Convert pdf,
    docx, xlsx outside first.
 2. `make intake F=docs/spec/<file>` writes `docs/spec/index.md`: one row per unit with its sha.
-3. Paste `templates/decompose.md`, the spec and the index into a chat; rank the table it
-   returns; paste the briefs and `docs/spec/deferred.md` it writes into the repo. All rows at
-   once: the partition is the deliverable, later briefs stay thin until their grill.
-4. `make coverage` green (every id in one brief or deferred, nothing drifted), then
-   `/harness-plugin:grill 1`. When a requirement changes later, `make intake` again; coverage
-   goes red with `drift: [<id>] changed since brief <n>` until you review that brief, edit it,
-   and commit it together with the new index.
+3. `/harness-plugin:decompose` in a Claude session in the repo. It prints one table (brief,
+   outcome, spec_refs, after) plus deferred rows, every id once; you answer `go` or
+   `go, order: C, A, B`; it writes `kanban/briefs/<n>-<slug>.md` and `docs/spec/deferred.md`
+   and runs `make coverage` until green. All rows at once: the partition is the deliverable,
+   later briefs stay thin until their grill. (`templates/decompose.md` is the same prompt for
+   any other chat.)
+4. Commit, then `/harness-plugin:grill 1`. When a requirement changes later, `make intake`
+   again; `make coverage` goes red with `drift: [<id>] changed since brief <n>` until you
+   review that brief, edit it, and commit it together with the new index.
 
 ## What's here
 
 | Path | Role |
 |---|---|
 | `skills/init` | `/harness-plugin:init [--name <n>]`: the project template, copied from `templates/project/` into an empty repo, placeholders filled, plugin pinned to this version, `make install && make ci`, one commit. `--update [--yes]` diffs the template-owned files (Makefile, .gitignore, .env.example, CI workflow, `docs/spec/.gitkeep`, plugin pin) and writes them only with `--yes`; never `kanban/`, the rest of `docs/`, `src/`, `tests/`, `traces/`. |
+| `skills/decompose` | `/harness-plugin:decompose [first number]`: spec index → briefs. Round 1 one table, every id once; the human ranks; round 2 writes the brief files and `docs/spec/deferred.md`, runs `make coverage` to green. Never edits the spec, never renumbers. |
 | `skills/grill` | brief → plan + tickets. Evidence first; human only for decisions; options ranked against the repo's invariants before cost. ACs are machine-verifiable or tagged `(human)` and confirmed at Gate 2 with `ship`; approval-turn remarks land in `traces/grill-misses.jsonl`; ends with one hand-off line computed from the routing stamp. |
 | `skills/build` | tests-first, scope-bound implementation. CI is the authority. |
 | `skills/verdict` | fresh-context review in one model call over a prepared input → verdict page. |
@@ -58,7 +61,7 @@ claude plugin install harness-plugin@ludvignion
 | `scripts/lint_kanban.py` | `make kanban`, in the template's `ci`: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp, approved plans name every cited spec id in an AC. |
 | `scripts/spec_intake.py` | `make intake F=`: the spec (markdown headings or CSV `id` column) → `docs/spec/index.md`, one row per unit: id, title, words, sha. Never edits the spec. |
 | `scripts/coverage.py` | `make coverage`: every index id in exactly one brief's `spec_refs` or `docs/spec/deferred.md`; cited ids exist; no drift since the brief's commit (git is the record); `after` briefs exist, no cycle. Silent without an index. |
-| `templates/decompose.md` | the prompt a human pastes into a chat with the spec and the index: one table (brief, outcome, spec_refs, after) plus deferred rows, every id once; then one file per row. |
+| `templates/decompose.md` | what the decompose skill follows; also a prompt for any chat, with the spec and the index pasted after it. |
 | `scripts/grill_digest.py` | grill-misses → blind-spots the grill reads. |
 | `scripts/replay.py` | re-run grill on golden briefs, diff escalations. |
 | `scripts/runner.py` | headless build → ci → verdict state machine: loads the project's `.env`, branches in place and stays on the ticket branch after the verdict (`--parallel` for worktrees), streamed build that ends at close-out, phase lines, board after every phase; `--plan <n>` walks a plan in depends_on order and pauses at Gate 2; writes `traces/runs/<id>.{log,state,result}`; `--arm`, `--verdict-cmd` pick the verdict seat; `--override` restamps routing. |

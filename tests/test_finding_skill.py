@@ -26,11 +26,11 @@ class FindingSkillTest(unittest.TestCase):
         self.assertIn("disable-model-invocation: false", text)
         self.assertIn('argument-hint: "<text>"', text)
 
-    def test_manifest_lists_six_skills(self):
+    def test_manifest_lists_eight_skills(self):
         manifest = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
-        self.assertEqual(len(manifest["skills"]), 7, manifest["skills"])
+        self.assertEqual(len(manifest["skills"]), 8, manifest["skills"])
         self.assertIn("./skills/finding", manifest["skills"])
-        self.assertIn("Seven skills", manifest["description"])
+        self.assertIn("Eight skills", manifest["description"])
         market = json.loads((REPO / ".claude-plugin" / "marketplace.json").read_text())
         self.assertEqual(manifest["version"], market["metadata"]["version"])
         self.assertEqual(manifest["version"], market["plugins"][0]["version"])
