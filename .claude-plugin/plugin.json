@@ -1,6 +1,6 @@
 {
   "name": "gates",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Two human gates around agentic development: spec → briefs → grill → plan gate → runner (tests-first build → CI → fresh-context verdict) → Gate 2 in words. Eight skills, two human gates, one headless runner, hooks that enforce ticket scope, scripts that render the pages a human reads.",
   "homepage": "https://github.com/ludvignion/gates",
   "license": "MIT",

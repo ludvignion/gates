@@ -166,6 +166,23 @@ class InitTest(unittest.TestCase):
         self.assertIn(f"up to date with gates v{VERSION}", proc.stdout)
 
 
+class RenameMigrationTest(unittest.TestCase):
+    """0.10.1: --update on a project pinned to harness-plugin moves the repo and the enabled key to gates."""
+
+    def test_old_settings_migrate_and_the_rest_is_kept(self):
+        tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / ".claude").mkdir()
+        (tmp / ".claude/settings.json").write_text(json.dumps({
+            "extraKnownMarketplaces": {"ludvignion": {"source": {"source": "github", "repo": "ludvignion/harness-plugin", "ref": "v0.7.0"}}},
+            "enabledPlugins": {"harness-plugin@ludvignion": True, "other@else": True},
+            "permissions": {"allow": ["Bash(make *)"]}, "hooks": {"Stop": []}}, indent=2) + "\n")
+        data = json.loads(init_project.pinned_settings(tmp, f"v{VERSION}"))
+        self.assertEqual(data["extraKnownMarketplaces"]["ludvignion"]["source"], {"source": "github", "repo": "ludvignion/gates", "ref": f"v{VERSION}"})
+        self.assertEqual(data["enabledPlugins"], {"other@else": True, "gates@ludvignion": True})
+        self.assertEqual(data["permissions"], {"allow": ["Bash(make *)"]}); self.assertEqual(data["hooks"], {"Stop": []})
+        self.assertNotIn("harness-plugin", json.dumps(data))
+
+
 class InitSkillTest(unittest.TestCase):
     def test_thin_wrapper_over_the_script(self):
         text = (REPO / "skills" / "init" / "SKILL.md").read_text(encoding="utf-8")

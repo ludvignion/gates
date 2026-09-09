@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.1 — 2026-09-09
+
+- `scripts/init_project.py` — `init --update` migrates a project's `.claude/settings.json` from
+  the old name: the marketplace source becomes `ludvignion/gates` at this version and
+  `harness-plugin@ludvignion` under `enabledPlugins` becomes `gates@ludvignion`; permissions,
+  hooks and everything else are kept. 0.10.0 moved only the ref.
+
+Consuming projects: run the 0.10.1 `init_project.py init --update --yes` by path, commit, restart claude.
+
 ## 0.10.0 — 2026-09-09
 
 Renamed: `harness-plugin` is `gates`. A harness is what runs the model; this is the process a

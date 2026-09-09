@@ -63,13 +63,25 @@ def copy_template(root: Path, name: str, ref: str) -> list[Path]:
     return [dest.relative_to(root) for _, dest in plan]
 
 
+PLUGIN_NAME = "gates"
+OLD_PLUGIN_NAMES = ("harness-plugin",)  # renamed in 0.10.0; --update migrates the pin and the enabled key
+MARKETPLACE = "ludvignion"
+
+
 def pinned_settings(root: Path, ref: str) -> str:
-    """The repo's .claude/settings.json with only the marketplace ref moved to ``ref``; the
-    template's settings when the repo has none."""
+    """The repo's .claude/settings.json with the marketplace source moved to this plugin's repo
+    and ``ref``, and an old plugin name under ``enabledPlugins`` replaced by the current one;
+    the template's settings when the repo has none. Everything else in the file is kept."""
     path = root / SETTINGS
     text = path.read_text(encoding="utf-8") if path.exists() else (TEMPLATE / SETTINGS).read_text(encoding="utf-8")
     data = json.loads(fill(text, "", ref))
-    data.setdefault("extraKnownMarketplaces", {}).setdefault("ludvignion", {}).setdefault("source", {})["ref"] = ref
+    source = data.setdefault("extraKnownMarketplaces", {}).setdefault(MARKETPLACE, {}).setdefault("source", {})
+    source.update({"source": "github", "repo": f"{MARKETPLACE}/{PLUGIN_NAME}", "ref": ref})
+    enabled = data.setdefault("enabledPlugins", {})
+    for old in OLD_PLUGIN_NAMES:
+        if f"{old}@{MARKETPLACE}" in enabled:
+            enabled[f"{PLUGIN_NAME}@{MARKETPLACE}"] = enabled.pop(f"{old}@{MARKETPLACE}")
+    enabled.setdefault(f"{PLUGIN_NAME}@{MARKETPLACE}", True)
     return json.dumps(data, indent=2) + "\n"
 
 

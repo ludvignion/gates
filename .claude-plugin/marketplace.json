@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Gates: spec to briefs, grill to a plan gate, runner to a verdict gate, ship in words.",
-    "version": "0.10.0"
+    "version": "0.10.1"
   },
   "plugins": [
     {
       "name": "gates",
       "source": "./",
       "description": "Grill → plan gate → runner (tests-first build → CI → fresh-context verdict) → Gate 2 in words.",
-      "version": "0.10.0",
+      "version": "0.10.1",
       "category": "workflow",
       "keywords": [
         "gates",
