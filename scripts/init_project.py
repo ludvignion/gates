@@ -24,7 +24,7 @@ TEMPLATE = PLUGIN_ROOT / "templates" / "project"
 SETTINGS = ".claude/settings.json"
 UPDATE_SET = ("Makefile", ".gitignore", ".env.example", ".github/workflows/ci.yml", "docs/spec/.gitkeep")
 PROJECT_OWNED = ("kanban", "docs", "src", "tests", "traces")
-NEXT = "Next: write kanban/briefs/1-<slug>.md, then /harness-plugin:grill 1"
+NEXT = "Next: write kanban/briefs/1-<slug>.md, then /gates:grill 1"
 
 
 def plugin_version() -> str:
@@ -91,7 +91,7 @@ def update_diffs(root: Path, ref: str) -> list[tuple[str, str, str]]:
 def run_update(root: Path, ref: str, yes: bool) -> int:
     diffs = update_diffs(root, ref)
     if not diffs:
-        print(f"up to date with harness-plugin {ref}")
+        print(f"up to date with gates {ref}")
         print("Next: continue.")
         return 0
     for rel, current, wanted in diffs:
@@ -99,13 +99,13 @@ def run_update(root: Path, ref: str, yes: bool) -> int:
         sys.stdout.writelines(lines or [f"--- a/{rel}\n+++ b/{rel}\n(new empty file)\n"])
     if not yes:
         print(f"\n{len(diffs)} file(s) differ; nothing written.")
-        print("Next: /harness-plugin:init --update --yes")
+        print("Next: /gates:init --update --yes")
         return 0
     for rel, _, wanted in diffs:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(wanted, encoding="utf-8")
     print(f"\nupdated: {' '.join(rel for rel, _, _ in diffs)}")
-    print(f"Next: git commit -am 'chore: harness-plugin {ref}'")
+    print(f"Next: git commit -am 'chore: gates {ref}'")
     return 0
 
 
@@ -130,11 +130,11 @@ def run_init(root: Path, name: str | None) -> int:
             print(f"refused: make {target} failed; nothing committed", file=sys.stderr)
             return 1
     git(root, "add", "-A")
-    commit = git(root, "commit", "-q", "-m", f"init from harness-plugin {ref}")
+    commit = git(root, "commit", "-q", "-m", f"init from gates {ref}")
     if commit.returncode != 0:
         print(commit.stderr, file=sys.stderr)
         return 1
-    print(f"make install, make ci: OK; committed 'init from harness-plugin {ref}'")
+    print(f"make install, make ci: OK; committed 'init from gates {ref}'")
     print(NEXT)
     return 0
 

@@ -1,7 +1,7 @@
 ---
 name: init
 description: >-
-  /harness-plugin:init [--name <n>] | --update [--yes]. Create a project from the template the
+  /gates:init [--name <n>] | --update [--yes]. Create a project from the template the
   plugin ships: copies it into an empty git repo, pins the plugin to this version, runs make
   install and make ci, commits. --update diffs the template-owned files (Makefile, .gitignore,
   .env.example, CI workflow, docs/spec/.gitkeep, plugin pin) against the repo and writes them only with --yes. Use
@@ -20,4 +20,4 @@ tracked files, no git identity, a name that is not an identifier, a failed `make
 line on stderr: print it and stop. `--update` without `--yes` prints the diff and writes
 nothing; its last line is the script's own Next line.
 
-Next: write kanban/briefs/1-<slug>.md, then /harness-plugin:grill 1
+Next: write kanban/briefs/1-<slug>.md, then /gates:grill 1

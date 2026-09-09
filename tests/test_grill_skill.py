@@ -43,7 +43,7 @@ class GrillSkillTextTest(unittest.TestCase):
         """G2/J: the hand-off is computed from the stamp; the skill ends with one Next line."""
         body = SKILL.read_text(encoding="utf-8")
         rules = schemas.section(body, "Rules")
-        for shape in ("Next: /harness-plugin:runner plan <n>", "Next: /harness-plugin:runner <id>",
+        for shape in ("Next: /gates:runner plan <n>", "Next: /gates:runner <id>",
                       "Next: build from branch <base> (session backend by override)"):
             self.assertIn(shape, rules, shape)
         nonempty = [l for l in body.splitlines() if l.strip()]

@@ -3,13 +3,13 @@
     "ludvignion": {
       "source": {
         "source": "github",
-        "repo": "ludvignion/harness-plugin",
+        "repo": "ludvignion/gates",
         "ref": "{{plugin_ref}}"
       }
     }
   },
   "enabledPlugins": {
-    "harness-plugin@ludvignion": true
+    "gates@ludvignion": true
   },
   "permissions": {
     "allow": [

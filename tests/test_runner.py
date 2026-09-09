@@ -275,7 +275,7 @@ class RunnerSeatTest(unittest.TestCase):
             self.verdict()
         self.assertIn("[runner] verdict artifacts committed ", out.getvalue())
         log = subprocess.run(["git", "log", "--format=%s %an", "-1"], cwd=self.tmp, capture_output=True, text=True).stdout
-        self.assertEqual(log.strip(), "docs(1.1): verdict reject harness-runner")
+        self.assertEqual(log.strip(), "docs(1.1): verdict reject gates-runner")
         tracked = subprocess.run(["git", "ls-files", "traces/verdict"], cwd=self.tmp, capture_output=True, text=True).stdout.split()
         self.assertEqual(sorted(tracked), ["traces/verdict/1.1.html", "traces/verdict/1.1.input.md", "traces/verdict/1.1.json", "traces/verdict/1.1.summary.json"])
         self.assertEqual(subprocess.run(["git", "status", "--short"], cwd=self.tmp, capture_output=True, text=True).stdout.strip(), "")

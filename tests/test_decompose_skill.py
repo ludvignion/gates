@@ -17,12 +17,12 @@ class DecomposeSkillTest(unittest.TestCase):
         for needle in ("templates/decompose.md", "docs/spec/index.md", "make coverage", "0 violation(s)",
                        "`go`", "go, order:", "keep their numbers", "never edited", "make intake F=docs/spec/<file>"):
             self.assertIn(needle, body, needle)
-        self.assertEqual(lines[-1], "Next: /harness-plugin:grill <first brief number>")
+        self.assertEqual(lines[-1], "Next: /gates:grill <first brief number>")
         self.assertIn("disable-model-invocation: true", text)
 
     def test_template_serves_session_and_chat(self):
         text = " ".join(TEMPLATE.read_text(encoding="utf-8").split())
-        for needle in ("/harness-plugin:decompose", "make coverage", "exactly once", "Refuse a brief whose Outcome is a code property",
+        for needle in ("/gates:decompose", "make coverage", "exactly once", "Refuse a brief whose Outcome is a code property",
                        "letter the rows", "never renumbered", "- <id> — <reason>",
                        "Defer an id only when no user-observable outcome can cite it", "The reason names which"):
             self.assertIn(needle, text, needle)

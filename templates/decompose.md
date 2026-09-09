@@ -1,6 +1,6 @@
 # Decompose a spec into briefs
 
-`/harness-plugin:decompose` runs this in a Claude session inside the repo: it reads the spec and
+`/gates:decompose` runs this in a Claude session inside the repo: it reads the spec and
 `docs/spec/index.md`, writes the files in round 2, and runs `make coverage`. It also works as a
 plain prompt in any chat: paste this file, the spec, then the index; paste the files back. The
 model does the judgment; the repo checks the result.

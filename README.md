@@ -1,19 +1,19 @@
-# harness-plugin
+# gates
 
-The operating system for agentic development. Eight skills, two human gates, hooks that enforce
+Two human gates around agentic development, as a Claude Code plugin. Eight skills, two human gates, hooks that enforce
 ticket scope, scripts that render the only pages a human reads.
 
 ```
 spec → make intake → /decompose → briefs (make coverage green)
 brief → /grill → plan page (gate 1) → tickets → /build → /verdict → verdict page (gate 2) → merge
-                                    or: /harness-plugin:runner <id> | plan <n> → runner → gate 2 in words → ship
+                                    or: /gates:runner <id> | plan <n> → runner → gate 2 in words → ship
 ```
 
 ## Install
 
 ```
-claude plugin marketplace add ludvignion/harness-plugin
-claude plugin install harness-plugin@ludvignion
+claude plugin marketplace add ludvignion/gates
+claude plugin install gates@ludvignion
 ```
 
 ## Start a project
@@ -21,7 +21,7 @@ claude plugin install harness-plugin@ludvignion
 Restart `claude` after any plugin install or update; a running session keeps the old version.
 
 1. Install the plugin (above).
-2. `/harness-plugin:init` in an empty git repo with a git identity set. Writes the template,
+2. `/gates:init` in an empty git repo with a git identity set. Writes the template,
    runs `make install && make ci`, commits, pins the plugin version in `.claude/settings.json`.
 3. Fill `docs/domain-pack/charter.md`: every verdict judges against it, and an item without an
    `Applies to:` line is refused. Replace the first paragraph of `AGENTS.md`.
@@ -29,16 +29,16 @@ Restart `claude` after any plugin install or update; a running session keeps the
    - **From a spec.** One file into `docs/spec/`: markdown with headings (the id is the heading
      path, `contacts/call-log`; å ä ö are fine) or CSV with an `id` column (ids verbatim).
      Convert pdf, docx, xlsx outside first. Then `make intake F=docs/spec/<file>` (writes
-     `docs/spec/index.md`, one row per unit with its sha), then `/harness-plugin:decompose` in a
+     `docs/spec/index.md`, one row per unit with its sha), then `/gates:decompose` in a
      Claude session in the repo: it prints one table (brief, outcome, spec_refs, after) plus
      deferred rows, every id once; you answer `go` or `go, order: C, A, B`; it writes
      `kanban/briefs/<n>-<slug>.md` and `docs/spec/deferred.md` and runs `make coverage` until
      green. All rows at once: the partition is the deliverable, later briefs stay thin until
      their grill. Commit.
    - **Without a spec.** Write `kanban/briefs/1-<slug>.md` from `templates/brief.md`.
-5. `/harness-plugin:grill 1` in a fresh session. Evidence first, questions only for decisions,
+5. `/gates:grill 1` in a fresh session. Evidence first, questions only for decisions,
    plan page, you say approve, tickets. Its last line is the runner command.
-6. `/harness-plugin:runner plan 1` (or one ticket id). Build, ci, verdict, result block, Gate 2
+6. `/gates:runner plan 1` (or one ticket id). Build, ci, verdict, result block, Gate 2
    in words: `ship`, `reject: <reason>`, `child from F1`, `home F1 to 1.3`, `waive F1: <reason>`.
 
 When a requirement changes later: edit the spec, `make intake` again; `make coverage` goes red
@@ -49,29 +49,29 @@ together with the new index. `make ci` runs `kanban` (the kanban invariants) and
 
 ```
 make plugin                                  # refresh the marketplace clone and the installed plugin
-/harness-plugin:init --update --yes          # diff and write Makefile, ci workflow, .gitignore, .env.example, docs/spec/.gitkeep, the pin
-git commit -am 'chore: harness-plugin v<version>'
+/gates:init --update --yes          # diff and write Makefile, ci workflow, .gitignore, .env.example, docs/spec/.gitkeep, the pin
+git commit -am 'chore: gates v<version>'
 ```
 
 The update runs from the plugin version the session loaded. If it answers `up to date with
-harness-plugin v<old>`, run the new version's script by path, then restart `claude`:
+gates v<old>`, run the new version's script by path, then restart `claude`:
 
 ```
-python3 ~/.claude/plugins/cache/ludvignion/harness-plugin/<version>/scripts/init_project.py init --update --yes
+python3 ~/.claude/plugins/cache/ludvignion/gates/<version>/scripts/init_project.py init --update --yes
 ```
 
 ## What's here
 
 | Path | Role |
 |---|---|
-| `skills/init` | `/harness-plugin:init [--name <n>]`: the project template, copied from `templates/project/` into an empty repo, placeholders filled, plugin pinned to this version, `make install && make ci`, one commit. `--update [--yes]` diffs the template-owned files (Makefile, .gitignore, .env.example, CI workflow, `docs/spec/.gitkeep`, plugin pin) and writes them only with `--yes`; never `kanban/`, the rest of `docs/`, `src/`, `tests/`, `traces/`. |
-| `skills/decompose` | `/harness-plugin:decompose [first number]`: spec index → briefs. Round 1 one table, every id once; the human ranks; round 2 writes the brief files and `docs/spec/deferred.md`, runs `make coverage` to green. Never edits the spec, never renumbers. |
+| `skills/init` | `/gates:init [--name <n>]`: the project template, copied from `templates/project/` into an empty repo, placeholders filled, plugin pinned to this version, `make install && make ci`, one commit. `--update [--yes]` diffs the template-owned files (Makefile, .gitignore, .env.example, CI workflow, `docs/spec/.gitkeep`, plugin pin) and writes them only with `--yes`; never `kanban/`, the rest of `docs/`, `src/`, `tests/`, `traces/`. |
+| `skills/decompose` | `/gates:decompose [first number]`: spec index → briefs. Round 1 one table, every id once; the human ranks; round 2 writes the brief files and `docs/spec/deferred.md`, runs `make coverage` to green. Never edits the spec, never renumbers. |
 | `skills/grill` | brief → plan + tickets. Evidence first; human only for decisions; options ranked against the repo's invariants before cost. ACs are machine-verifiable or tagged `(human)` and confirmed at Gate 2 with `ship`; approval-turn remarks land in `traces/grill-misses.jsonl`; ends with one hand-off line computed from the routing stamp. |
 | `skills/build` | tests-first, scope-bound implementation. CI is the authority. |
 | `skills/verdict` | fresh-context review in one model call over a prepared input → verdict page. |
 | `skills/briefing` | opt-in response style: what changed, then lettered options. |
-| `skills/finding` | `/harness-plugin:finding <text>`: one dated line into `traces/harness-findings.md` with the plugin version and the active ticket — the human's notebook of what the harness got wrong. |
-| `skills/runner` | `/harness-plugin:runner <id>` or `plan <n>`: starts `runner.py` in the background, watches the state file with a repeated short `tail` (phase lines and a 30-second heartbeat while the build runs), prints the result block (build and verdict time, tokens, what was built, findings with file:line and the Gate 2 words, charter items held or not judged, human ACs to confirm, files changed, the recommended words); Gate 2 in words (ship, reject, child, home, waive) through `kanban_ops.py`; ends with one hand-off line. |
+| `skills/finding` | `/gates:finding <text>`: one dated line into `traces/harness-findings.md` with the plugin version and the active ticket — the human's notebook of what the harness got wrong. |
+| `skills/runner` | `/gates:runner <id>` or `plan <n>`: starts `runner.py` in the background, watches the state file with a repeated short `tail` (phase lines and a 30-second heartbeat while the build runs), prints the result block (build and verdict time, tokens, what was built, findings with file:line and the Gate 2 words, charter items held or not judged, human ACs to confirm, files changed, the recommended words); Gate 2 in words (ship, reject, child, home, waive) through `kanban_ops.py`; ends with one hand-off line. |
 | `hooks/guard_writes.py` | blocks writes to closed tickets, and outside the active ticket's `writes:`. |
 | `hooks/trace_stop.py` | one JSONL line per agent turn into `traces/sessions.jsonl`. |
 | `skills/verdict/verdict-prompt.md` | the judging prompt, copied into every packet; its sha is in the verdict stamp. |

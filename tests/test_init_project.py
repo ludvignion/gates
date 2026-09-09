@@ -87,7 +87,7 @@ class InitTest(unittest.TestCase):
         proc = run(root, env={"UV_PROJECT_ENVIRONMENT": str(self.tmp / "venv")})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(proc.stdout.rstrip().splitlines()[-1], init_project.NEXT)
-        self.assertEqual(git(root, "log", "--format=%s"), f"init from harness-plugin v{VERSION}\n")
+        self.assertEqual(git(root, "log", "--format=%s"), f"init from gates v{VERSION}\n")
         self.assertEqual(git(root, "status", "--short"), "")
         tracked = git(root, "ls-files").split()
         self.assertIn("src/demo_proj/__init__.py", tracked)
@@ -163,7 +163,7 @@ class InitTest(unittest.TestCase):
             self.assertTrue(all(before[k] == after[k] for k in before if k.startswith(owned + "/")), owned)
 
         proc = run(root, "--update")
-        self.assertIn(f"up to date with harness-plugin v{VERSION}", proc.stdout)
+        self.assertIn(f"up to date with gates v{VERSION}", proc.stdout)
 
 
 class InitSkillTest(unittest.TestCase):

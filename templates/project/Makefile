@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 -include .env
 export
-PLUGIN ?= $(shell ls -d ~/.claude/plugins/cache/ludvignion/harness-plugin/* 2>/dev/null | sort -V | tail -1)
+PLUGIN ?= $(shell ls -d ~/.claude/plugins/cache/ludvignion/gates/* 2>/dev/null | sort -V | tail -1)
 SCRIPTS := $(PLUGIN)/scripts
 
 # The venv lives outside the repo: on a Windows drvfs mount (/mnt/c) uv cannot
@@ -14,7 +14,7 @@ install:  ## Sync venv.
 
 plugin:  ## Refresh the marketplace clone, then update the plugin.
 	claude plugin marketplace update ludvignion
-	claude plugin update harness-plugin@ludvignion
+	claude plugin update gates@ludvignion
 
 test:  ## Unit tests.
 	uv run pytest tests --ignore=tests/evals -q
@@ -48,7 +48,7 @@ eval:  ## Product evals (only if src/ calls a model). Costs money. Never in ci.
 board:  ## Render traces/board.html (the runner and the Stop hook do this too). Open it in a browser.
 	python3 $(SCRIPTS)/render_board.py .
 
-run:  ## Headless build→ci→verdict. Usage: make run T=1.2  or  make run P=1  (a plan, pausing at every Gate 2). From a session: /harness-plugin:runner
+run:  ## Headless build→ci→verdict. Usage: make run T=1.2  or  make run P=1  (a plan, pausing at every Gate 2). From a session: /gates:runner
 	@if [ -f .env ] && [ -z "$(OPIK_URL_OVERRIDE)" ] && [ "$(OPIK_DISABLE)" != "1" ]; then \
 	  echo "OPIK_URL_OVERRIDE is empty in .env. Set it, or run with OPIK_DISABLE=1 to go untraced." >&2; exit 1; fi
 	@if [ -z "$(T)$(P)" ]; then echo "usage: make run T=<id> | make run P=<plan>" >&2; exit 1; fi

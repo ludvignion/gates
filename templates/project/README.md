@@ -2,8 +2,8 @@
 
 <!-- FILL IN: what this repo builds, for whom -->
 
-Workflow comes from harness-plugin, pinned in `.claude/settings.json`. `make plugin` refreshes
-the installed plugin; `/harness-plugin:init --update` moves the pin and the template files.
+Workflow comes from gates, pinned in `.claude/settings.json`. `make plugin` refreshes
+the installed plugin; `/gates:init --update` moves the pin and the template files.
 
 ## Before the first build
 
@@ -14,13 +14,13 @@ paragraph of `AGENTS.md`.
 
 From a spec: put it in `docs/spec/` (one file, markdown with headings or CSV with an `id`
 column; convert pdf, docx, xlsx outside first), `make intake F=docs/spec/<file>`,
-`/harness-plugin:decompose` (one table, you rank, it writes the briefs), `make coverage` green.
+`/gates:decompose` (one table, you rank, it writes the briefs), `make coverage` green.
 A changed requirement is `drift` until the citing brief is reviewed and committed with the new index.
 
 1. Write `kanban/briefs/<n>-<slug>.md` (template: the plugin's `templates/brief.md`).
 2. `/grill <n>`; say "approve" in that session (the grill runs `kanban_ops.py approve <n>`),
    or `make approve N=<n>` from a terminal.
-3. `/harness-plugin:runner <n>.<m>` or `/harness-plugin:runner plan <n>` in a Claude session:
+3. `/gates:runner <n>.<m>` or `/gates:runner plan <n>` in a Claude session:
    it starts the runner, relays the phases, prints the result block, and takes Gate 2 in words
    (`ship`, `reject: <reason>`, `child from F#`, `home F# to <id>`, `waive F#: <reason>`).
    Watch `traces/board.html` meanwhile; it refreshes itself while a run is on.

@@ -591,7 +591,7 @@ def trace_verdict(client, *, tid: str, packet: Path, verdict: "schemas.Verdict |
 
 
 VERDICT_ARTIFACTS = ("{tid}.input.md", "{tid}.json", "{tid}.summary.json", "{tid}.html")
-GIT_IDENTITY = ["-c", "user.name=harness-runner", "-c", "user.email=runner@harness"]
+GIT_IDENTITY = ["-c", "user.name=gates-runner", "-c", "user.email=runner@gates"]
 
 
 def commit_verdict(cwd: Path, tid: str, decision: str) -> str | None:

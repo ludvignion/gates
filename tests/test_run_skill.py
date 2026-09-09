@@ -59,7 +59,7 @@ class RunSkillTextTest(unittest.TestCase):
         never = schemas.section(body, "Never")
         self.assertIn("session stamp", never)
         self.assertIn("dirty tree", never)
-        self.assertIn("/harness-plugin:runner", body)
+        self.assertIn("/gates:runner", body)
 
     def test_watch_is_a_repeated_short_tail_and_the_result_shape_is_named(self):
         """E26: the Bash tool returns output at exit, so the watch is `sleep 20; tail -n +<K>` repeated;

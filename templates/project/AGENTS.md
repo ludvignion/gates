@@ -2,7 +2,7 @@
 
 <One paragraph: what this repo builds, for whom. Replace.>
 
-Workflow comes from **harness-plugin** (pinned in `.claude/settings.json`). Do not copy skills into this repo.
+Workflow comes from **gates** (pinned in `.claude/settings.json`). Do not copy skills into this repo.
 
 # Where things live
 
@@ -20,7 +20,7 @@ Workflow comes from **harness-plugin** (pinned in `.claude/settings.json`). Do n
 
 # Commands
 
-`make help`. Core: `install · ci · board · approve N= · run T=|P= · gate A= · verdict T= · digest · replay`. From a session: `/harness-plugin:runner`.
+`make help`. Core: `install · ci · board · approve N= · run T=|P= · gate A= · verdict T= · digest · replay`. From a session: `/gates:runner`.
 
 # Invariants agents can't infer
 

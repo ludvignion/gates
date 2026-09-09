@@ -95,8 +95,8 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
 12. **Hand off** (G2). After the tickets are written, compute the last line from the plan's
    stamp and the tickets, never from the shape of a previous plan:
    - `backend: runner` and more than one ticket `status: ready` →
-     `Next: /harness-plugin:runner plan <n>`
-   - `backend: runner` and one ready ticket → `Next: /harness-plugin:runner <id>`
+     `Next: /gates:runner plan <n>`
+   - `backend: runner` and one ready ticket → `Next: /gates:runner <id>`
    - `backend: session` → `Next: build from branch <base> (session backend by override)`,
      `<base>` being the plan's `base:`.
    Print it as the last line, alone. No menu, no second option.
@@ -133,7 +133,7 @@ before ship. Full = per-ticket verdict as ship gate for each slice. The charter 
 apply identically in both.
 
 Backend sets who owns the control flow: runner = scripts/runner.py drives, started by
-/harness-plugin:runner (one ticket, or a plan in depends_on order, stopping at Gate 2; ticket
+/gates:runner (one ticket, or a plan in depends_on order, stopping at Gate 2; ticket
 branch, status protocol, retries); session = the human drives interactively, only by override;
 workflow = a generated orchestration script drives the DAG, invoking build and verdict per
 ticket under the same contract: tickets in, traces out, stops at the gates.

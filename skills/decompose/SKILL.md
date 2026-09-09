@@ -1,7 +1,7 @@
 ---
 name: decompose
 description: >-
-  /harness-plugin:decompose [first brief number]. Turn docs/spec/index.md and its spec into
+  /gates:decompose [first brief number]. Turn docs/spec/index.md and its spec into
   briefs: round 1 is one table (brief, outcome, spec_refs, after) plus deferred rows with every
   id exactly once; the human ranks; round 2 writes kanban/briefs/<n>-<slug>.md and
   docs/spec/deferred.md and makes `make coverage` green. Use whenever the user says decompose,
@@ -27,4 +27,4 @@ and `make coverage` printing `0 violation(s)`.
 4. Run `make coverage`. A red line names an id and a brief: fix the brief or the deferred file,
    never the index, until the last line is `coverage: 0 violation(s) over <n> units`. Print it.
 
-Next: /harness-plugin:grill <first brief number>
+Next: /gates:grill <first brief number>

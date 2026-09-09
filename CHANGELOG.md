@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.10.0 — 2026-09-09
+
+Renamed: `harness-plugin` is `gates`. A harness is what runs the model; this is the process a
+human runs on top of it, and the distinctive part is the two gates.
+
+- `.claude-plugin/plugin.json`, `marketplace.json` — name `gates`; install is
+  `claude plugin marketplace add ludvignion/gates` then `claude plugin install gates@ludvignion`;
+  skills are `/gates:init`, `/gates:decompose`, `/gates:grill`, `/gates:runner`, `/gates:finding`.
+- `templates/project/` — settings pin `ludvignion/gates`, Makefile plugin path and `make plugin`.
+- `scripts/` — the runner's git identity is `gates-runner <runner@gates>`.
+- `traces/harness-findings.md` keeps its name: it is a project-owned file.
+
+Consuming projects: `claude plugin marketplace add ludvignion/gates`,
+`claude plugin install gates@ludvignion`, then run the new version's
+`init_project.py init --update --yes` by path (the old plugin cannot move its own pin), commit,
+restart claude. The old marketplace entry can be removed with `claude plugin marketplace remove`.
+
 ## 0.9.1 — 2026-09-09
 
 - `templates/decompose.md` — rule 5 states the deferral criterion the 0.9.0 run applied without

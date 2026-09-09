@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 
-GIT_IDENTITY = ["-c", "user.name=harness-runner", "-c", "user.email=runner@harness"]
+GIT_IDENTITY = ["-c", "user.name=gates-runner", "-c", "user.email=runner@gates"]
 STAMP_FIELDS = ("scrutiny", "backend")
 
 

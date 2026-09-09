@@ -1,7 +1,7 @@
 ---
 name: runner
 description: >-
-  /harness-plugin:runner <id> | plan <n>. Run one ticket, or a plan's tickets in depends_on
+  /gates:runner <id> | plan <n>. Run one ticket, or a plan's tickets in depends_on
   order, through the headless runner (build → ci → verdict), stream its phase and heartbeat
   lines from the state file, print the result block, then take the Gate 2 decision in plain
   words. Use whenever the user says run, runner, or run plan with a ticket or plan id. The
@@ -17,7 +17,7 @@ verdict, the close-out, the commits, the state file, the result block, the board
 `traces/runs/<id>.state`, prints `traces/runs/<id>.result` when the run is done, and turns the
 human's words at Gate 2 into `kanban_ops.py` calls. Nothing else happens here.
 
-## Start: `/harness-plugin:runner <id>` or `plan <n>`
+## Start: `/gates:runner <id>` or `plan <n>`
 One Bash call, the first of the three commands this skill allows (Start, Watch, Gate 2 table):
 ```
 rm -f traces/runs/<id>.state traces/runs/<id>.pid && mkdir -p traces/runs && nohup python3 ${CLAUDE_PLUGIN_ROOT}/scripts/runner.py <id> --cwd . > traces/runs/<id>.log 2>&1 &   # a plan: `--plan <n>` in place of `<id>`, log, state and pid are traces/runs/plan-<n>.{log,state,pid}; when the runner refused a plan stamped backend: session and the human then says "override", the same line again with `--override backend=runner` after the id
@@ -123,7 +123,7 @@ The human answers with the recommended words or changes one. `ship` merges the t
 into base, pushes, deletes the branch and closes the gate; it is also the human's confirmation
 of every `human:` line in the result — the board logs each as confirmed by `--who`. `reject`
 sends the ticket back to `in_progress` and leaves the branch checked out;
-`/harness-plugin:runner <id>` again is the retry. `child`, `home` and `waive` leave the gate
+`/gates:runner <id>` again is the retry. `child`, `home` and `waive` leave the gate
 open: the human says the next line. Words that match none of the five are a question back to
 the human, not an action.
 
@@ -141,9 +141,9 @@ The session's last line is one of these, and nothing follows it:
 | After | The last line |
 |---|---|
 | `ship` inside a plan walk | `Next: keep watching (the walk resumes)` |
-| `ship` of a single ticket whose plan is `<n>` | `Next: /harness-plugin:runner plan <n>` |
+| `ship` of a single ticket whose plan is `<n>` | `Next: /gates:runner plan <n>` |
 | `ship` of a single ticket with no plan left to walk | `Next: /grill <next brief>` |
-| `reject` | `Next: /harness-plugin:runner <id>` |
+| `reject` | `Next: /gates:runner <id>` |
 | a refusal or a `done error` | `Next: <the runner's own line>` — the human decides |
 
 ## Never

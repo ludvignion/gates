@@ -1,7 +1,7 @@
 ---
 name: finding
 description: >-
-  /harness-plugin:finding <text>. Note one harness finding — something the plugin got wrong or
+  /gates:finding <text>. Note one harness finding — something the plugin got wrong or
   could do better — as one dated line in traces/harness-findings.md, stamped with the plugin
   version and the active ticket. The human invokes it; nothing else changes.
 disable-model-invocation: false
