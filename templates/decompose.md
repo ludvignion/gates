@@ -32,7 +32,10 @@ Rules for the table:
    touches and produces something a user can see.
 4. `after` lists every brief that must ship first. When the dependencies are unclear, list all
    candidates; the human strikes the ones that are not real when ranking.
-5. Do not number the briefs yet; letter the rows (A, B, C).
+5. Defer an id only when no user-observable outcome can cite it: narrative, definitions,
+   figures, strategy, roadmap. The reason names which. A unit that describes a behaviour,
+   implemented or proposed, goes in a brief, even when the rest of that unit is description.
+6. Do not number the briefs yet; letter the rows (A, B, C).
 
 **Round 2: after the human ranks the table** (`go` keeps the table's order; `go, order: C, A, B`
 sets it), one file per row in the shape below, numbered from the number the human gave or the

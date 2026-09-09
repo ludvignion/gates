@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 — 2026-09-09
+
+- `templates/decompose.md` — rule 5 states the deferral criterion the 0.9.0 run applied without
+  writing it down: defer an id only when no user-observable outcome can cite it (narrative,
+  definitions, figures, strategy, roadmap), the reason names which; a unit that describes a
+  behaviour, implemented or proposed, goes in a brief.
+
+Consuming projects: nothing to do; the skill reads the template from the installed plugin.
+
 ## 0.9.0 — 2026-09-09
 
 The eighth skill. The first real spec (57 units) showed the copy-paste round trip of 0.8.0

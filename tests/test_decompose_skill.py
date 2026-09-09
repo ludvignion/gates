@@ -23,7 +23,8 @@ class DecomposeSkillTest(unittest.TestCase):
     def test_template_serves_session_and_chat(self):
         text = " ".join(TEMPLATE.read_text(encoding="utf-8").split())
         for needle in ("/harness-plugin:decompose", "make coverage", "exactly once", "Refuse a brief whose Outcome is a code property",
-                       "letter the rows", "never renumbered", "- <id> — <reason>"):
+                       "letter the rows", "never renumbered", "- <id> — <reason>",
+                       "Defer an id only when no user-observable outcome can cite it", "The reason names which"):
             self.assertIn(needle, text, needle)
 
     def test_manifest_lists_eight_skills(self):
