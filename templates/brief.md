@@ -1,3 +1,8 @@
+---
+spec_refs: []            # spec ids this brief covers, from docs/spec/index.md: [contacts/call-log, crm-77]; coverage.py checks every id lands in one brief
+after: []                # brief numbers that must be shipped first: [1, 3]; grill refuses while one is not
+---
+
 # Brief: <task name>
 
 ## What I want

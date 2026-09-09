@@ -28,7 +28,14 @@ complexity:  ## Simplicity gates (radon).
 mutation:  ## Mutation testing on critical modules (slow).
 	uv run mutmut run
 
-ci: lint test complexity  ## What CI runs.
+intake:  ## Index the spec into docs/spec/index.md. Usage: make intake F=docs/spec/<file>  (markdown with headings, or CSV with an id column)
+	@if [ -z "$(F)" ]; then echo "usage: make intake F=docs/spec/<file>" >&2; exit 1; fi
+	python3 $(SCRIPTS)/spec_intake.py $(F)
+
+coverage:  ## Every spec id in one brief or docs/spec/deferred.md, cited units unchanged since the brief, after briefs exist. Silent without an index.
+	python3 $(SCRIPTS)/coverage.py .
+
+ci: lint test complexity coverage  ## What CI runs.
 
 eval:  ## Product evals (only if src/ calls a model). Costs money. Never in ci.
 	uv run pytest tests/evals -q
@@ -65,4 +72,4 @@ loop:  ## Renamed. Use make run.
 help:  ## Show this help.
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*##' '{printf "  %-12s %s\n", $$1, $$2}'
 
-.PHONY: install plugin test lint complexity mutation ci eval board approve run gate verdict digest replay loop help
+.PHONY: install plugin test lint complexity mutation intake coverage ci eval board approve run gate verdict digest replay loop help

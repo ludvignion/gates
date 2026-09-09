@@ -1,5 +1,6 @@
 """lint_kanban.py: closed tickets only grow their append-only sections; findings have homes;
-no ship past an open block; approved plans carry a routing stamp; charter items say what they reach."""
+no ship past an open block; approved plans carry a routing stamp; charter items say what they reach;
+approved plans name every spec id their brief cites."""
 import json
 import shutil
 import subprocess
@@ -257,3 +258,33 @@ class ClosedTicketDiffTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpecIdsInAcsTest(unittest.TestCase):
+    """Rule 6: an approved plan whose brief cites spec ids names each one as [id] on an AC line."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        shutil.copytree(FIXTURE, self.tmp / "kanban")
+        (self.tmp / "kanban/briefs").mkdir()
+        git(self.tmp, "init", "-q")
+        git(self.tmp, "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A")
+        git(self.tmp, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "fixture")
+        self.plan = self.tmp / "kanban" / "plans" / "2.plan.md"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_missing_and_named_ids(self):
+        self.assertEqual(lint_kanban.spec_ids_in_acs(self.tmp), [])  # no brief file, nothing to say
+        (self.tmp / "kanban/briefs/2-models.md").write_text("---\nspec_refs: [contacts/call-log, crm-77]\nafter: []\n---\n# Brief\n")
+        self.assertEqual(lint_kanban.spec_ids_in_acs(self.tmp), [
+            "kanban/plans/2.plan.md: plan 2 is approved but no AC line names [contacts/call-log] from brief 2",
+            "kanban/plans/2.plan.md: plan 2 is approved but no AC line names [crm-77] from brief 2"])
+        self.assertEqual(lint_kanban.lint(self.tmp), lint_kanban.spec_ids_in_acs(self.tmp))
+        s = self.plan.read_text().replace("Then it exports the record models.", "Then it exports the record models [contacts/call-log].")
+        s = s.replace("Then it passes.", "Then it passes [crm-77].\n\nProse naming [contacts/call-log] outside an AC line does not count.")
+        self.plan.write_text(s)
+        self.assertEqual(lint_kanban.lint(self.tmp), [])
+        self.plan.write_text(self.plan.read_text().replace("approved: reviewer 2026-09-01", "approved:").replace("[crm-77]", ""))
+        self.assertEqual(lint_kanban.spec_ids_in_acs(self.tmp), [])  # unapproved: exempt

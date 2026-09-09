@@ -1080,3 +1080,18 @@ class VerdictEvalTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpecPacketCapTest(RunnerSeatTest):
+    def test_a_huge_cited_unit_trips_the_packet_cap_not_a_crash(self):
+        """0.8.0: a brief citing a 5,000-word unit lands in the Spec section and counts toward the cap."""
+        (self.tmp / "docs/spec").mkdir(); (self.tmp / "kanban/briefs").mkdir()
+        (self.tmp / "docs/spec/crm.md").write_text("## Big\n" + ("requirement " * 5000) + "\n")
+        r = subprocess.run([sys.executable, str(runner.SCRIPTS / "spec_intake.py"), "docs/spec/crm.md"], cwd=self.tmp, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr); self.assertIn("warn: big has 5000 words", r.stderr)
+        (self.tmp / "kanban/briefs/1-big.md").write_text("---\nspec_refs: [big]\nafter: []\n---\n# Brief\n")
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(runner.Refusal) as cm:
+            self.verdict(packet_cap=12000)
+        self.assertEqual((cm.exception.code, cm.exception.state), (2, "error packet too big"))
+        self.assertGreater(runner.packet_tokens(self.tmp / "traces/verdict/1.1.input.md"), 12000)
+        self.assertIn("## Spec\n- big — Big\n  requirement requirement", (self.tmp / "traces/verdict/1.1.input.md").read_text())

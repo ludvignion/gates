@@ -5,12 +5,15 @@ existing project's template files up to this plugin's version.
 placeholders (``{{project_name}}`` from --name or the directory, ``{{plugin_ref}}`` from this
 plugin's own version), runs ``make install && make ci``, commits, prints the Next line.
 ``init --update`` diffs the template-owned files (Makefile, .gitignore, .env.example, the CI
-workflow, the plugin pin in .claude/settings.json) against the repo and applies with --yes.
-It never touches kanban/, docs/, src/, tests/ or traces/: those are the project's.
+workflow, docs/spec/.gitkeep, the plugin pin in .claude/settings.json) against the repo and
+applies with --yes. It never touches kanban/, docs/ (beyond that .gitkeep), src/, tests/ or
+traces/: those are the project's. Both make calls of init run with PLUGIN set to this plugin's
+own root, so the template's ci target finds the scripts of the version that created the project.
 """
 import argparse
 import difflib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -19,7 +22,7 @@ from pathlib import Path
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = PLUGIN_ROOT / "templates" / "project"
 SETTINGS = ".claude/settings.json"
-UPDATE_SET = ("Makefile", ".gitignore", ".env.example", ".github/workflows/ci.yml")
+UPDATE_SET = ("Makefile", ".gitignore", ".env.example", ".github/workflows/ci.yml", "docs/spec/.gitkeep")
 PROJECT_OWNED = ("kanban", "docs", "src", "tests", "traces")
 NEXT = "Next: write kanban/briefs/1-<slug>.md, then /harness-plugin:grill 1"
 
@@ -75,9 +78,9 @@ def update_diffs(root: Path, ref: str) -> list[tuple[str, str, str]]:
     out = []
     for rel in UPDATE_SET:
         wanted = fill((TEMPLATE / rel).read_text(encoding="utf-8"), "", ref)
-        current = (root / rel).read_text(encoding="utf-8") if (root / rel).exists() else ""
-        if current != wanted:
-            out.append((rel, current, wanted))
+        current = (root / rel).read_text(encoding="utf-8") if (root / rel).exists() else None
+        if current != wanted:  # a missing file always differs, an empty .gitkeep included
+            out.append((rel, current or "", wanted))
     wanted = pinned_settings(root, ref)
     current = (root / SETTINGS).read_text(encoding="utf-8") if (root / SETTINGS).exists() else ""
     if current != wanted:
@@ -92,8 +95,8 @@ def run_update(root: Path, ref: str, yes: bool) -> int:
         print("Next: continue.")
         return 0
     for rel, current, wanted in diffs:
-        sys.stdout.writelines(difflib.unified_diff(
-            current.splitlines(keepends=True), wanted.splitlines(keepends=True), f"a/{rel}", f"b/{rel}"))
+        lines = list(difflib.unified_diff(current.splitlines(keepends=True), wanted.splitlines(keepends=True), f"a/{rel}", f"b/{rel}"))
+        sys.stdout.writelines(lines or [f"--- a/{rel}\n+++ b/{rel}\n(new empty file)\n"])
     if not yes:
         print(f"\n{len(diffs)} file(s) differ; nothing written.")
         print("Next: /harness-plugin:init --update --yes")
@@ -120,7 +123,8 @@ def run_init(root: Path, name: str | None) -> int:
     written = copy_template(root, pkg, ref)
     print(f"wrote {len(written)} files for package {pkg}, plugin pinned to {ref}")
     for target in ("install", "ci"):
-        proc = subprocess.run(["make", target], cwd=root, capture_output=True, text=True)
+        proc = subprocess.run(["make", target], cwd=root, capture_output=True, text=True,
+                              env={**os.environ, "PLUGIN": str(PLUGIN_ROOT)})
         if proc.returncode != 0:
             print(proc.stdout[-2000:] + proc.stderr[-2000:], file=sys.stderr)
             print(f"refused: make {target} failed; nothing committed", file=sys.stderr)

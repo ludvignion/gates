@@ -24,6 +24,10 @@ Shapes here:
                          sections, and the arm says which sections exist.
 - ``Verdict``, ``VerdictMeta`` — ``traces/verdict/<id>.json`` and its optional ``meta`` stamp
                          (arm, vendor, plugin_version, prompt_sha, packet_sha).
+- ``SpecIndex``, ``Deferred``, ``BriefRefs`` — ``docs/spec/index.md`` (one row per requirement
+                         unit: id, title, words, sha), ``docs/spec/deferred.md`` and a brief's
+                         ``spec_refs``/``after`` frontmatter; coverage.py, lint_kanban.py and
+                         verdict_prep.py read them (0.8.0).
 """
 import fnmatch
 import hashlib
@@ -82,6 +86,11 @@ class Plan:
             if (m := _SLICE_LINE_RE.match(item))
         )
         return cls(acs=acs, slices=slices)
+
+    @staticmethod
+    def ac_lines(body: str) -> tuple[str, ...]:
+        """The ``- AC-n`` items of ``## Acceptance criteria`` as written (lint rule 6 reads ``[id]`` from them)."""
+        return tuple(it for it in _items(section(body, "Acceptance criteria")) if _AC_LINE_RE.match(it))
 
 
 @dataclass(frozen=True)
@@ -441,7 +450,7 @@ ARMS = ("blind", "packet", "repo")
 DEFAULT_ARM = "packet"
 PACKET_SECTIONS = (
     "Instructions", "Seat", "Acceptance criteria", "Out of scope", "Human waivers (Log)",
-    "Plan: verdict must attack", "Charter items", "Previous verdict: blocks to re-run", "CI",
+    "Plan: verdict must attack", "Spec", "Charter items", "Previous verdict: blocks to re-run", "CI",
     "Mechanical findings (copy verbatim into findings)",
     "Tests added on this branch that name an AC", "Diff stat", "Diff",
 )
@@ -643,3 +652,127 @@ class Verdict:
 
     def with_decision(self, decision: str) -> "Verdict":
         return replace(self, decision=decision)
+
+
+# --- Spec coverage (0.8.0) -------------------------------------------------------------------
+# ``docs/spec/index.md`` is what spec_intake.py writes and coverage.py, lint_kanban.py and
+# verdict_prep.py read: one row per requirement unit (id, title, words, sha). A brief's
+# ``spec_refs`` cites ids; ``docs/spec/deferred.md`` parks ids with a reason.
+SPEC_INDEX = "docs/spec/index.md"
+SPEC_DEFERRED = "docs/spec/deferred.md"
+SPEC_DIR = "docs/spec"
+SPEC_ID_BRACKET_RE = re.compile(r"\[([a-z0-9][a-z0-9/_.-]*)\]")  # [contacts/call-log] in an AC line
+_INDEX_ROW_RE = re.compile(r"^\|\s*(?P<id>[^|]+?)\s*\|\s*(?P<title>[^|]*?)\s*\|\s*(?P<words>\d+)\s*\|\s*(?P<sha>[0-9a-f]{12})\s*\|\s*$")
+_DEFERRED_RE = re.compile(r"^-\s+(?P<id>\S+)\s*(?:—|--|-)?\s*(?P<reason>.*?)\s*$")
+_BRIEF_NAME_RE = re.compile(r"^(?P<n>\d+)-(?P<slug>.+)\.md$")
+
+
+def unit_sha(text: str) -> str:
+    """First 12 hex of sha256 over the unit text with CRLF folded to LF and trailing whitespace
+    stripped from every line and the end, so an editor's line endings never read as drift."""
+    lines = [l.rstrip() for l in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    return sha256("\n".join(lines).strip())[:12]
+
+
+class SpecUnit(NamedTuple):
+    id: str
+    title: str
+    words: int
+    sha: str
+
+
+@dataclass(frozen=True)
+class SpecIndex:
+    """``docs/spec/index.md``: frontmatter ``spec:`` (the one spec file, relative to the root)
+    and ``units:``, then a table ``| id | title | words | sha |``."""
+
+    spec: str
+    units: tuple[SpecUnit, ...] = ()
+
+    @classmethod
+    def parse(cls, text: str) -> "SpecIndex":
+        import _fm  # local, as in Packet
+
+        fm, body = _fm.parse(text)
+        units = tuple(
+            SpecUnit(m.group("id"), m.group("title"), int(m.group("words")), m.group("sha"))
+            for line in body.splitlines()
+            if (m := _INDEX_ROW_RE.match(line.strip())) and m.group("id") != "id" and not set(m.group("id")) <= {"-", ":"}
+        )
+        return cls(spec=str(fm.get("spec", "")), units=units)
+
+    @classmethod
+    def load(cls, path: Path) -> "SpecIndex":
+        return cls.parse(path.read_text(encoding="utf-8"))
+
+    @property
+    def ids(self) -> tuple[str, ...]:
+        return tuple(u.id for u in self.units)
+
+    def sha_of(self, uid: str) -> str | None:
+        return next((u.sha for u in self.units if u.id == uid), None)
+
+    def render(self) -> str:
+        rows = "\n".join(f"| {u.id} | {u.title.replace('|', '/')} | {u.words} | {u.sha} |" for u in self.units)
+        return (f"---\nspec: {self.spec}\nunits: {len(self.units)}\n---\n\n# Spec index\n\n"
+                f"Written by spec_intake.py from `{self.spec}`; re-run `make intake F={self.spec}` after editing it.\n\n"
+                f"| id | title | words | sha |\n|---|---|---|---|\n{rows}\n")
+
+
+class DeferredLine(NamedTuple):
+    line_no: int
+    id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class Deferred:
+    """``docs/spec/deferred.md``: one ``- <id> — <reason>`` line per parked unit."""
+
+    lines: tuple[DeferredLine, ...] = ()
+
+    @classmethod
+    def parse(cls, text: str) -> "Deferred":
+        out = []
+        for i, raw in enumerate(text.splitlines(), 1):
+            if (m := _DEFERRED_RE.match(raw.strip())):
+                out.append(DeferredLine(i, m.group("id").strip("`"), m.group("reason")))
+        return cls(lines=tuple(out))
+
+    @property
+    def ids(self) -> tuple[str, ...]:
+        return tuple(l.id for l in self.lines)
+
+
+class BriefRefs(NamedTuple):
+    """A brief file: its number from the name, ``spec_refs`` (deduplicated, order kept) and ``after``."""
+
+    path: Path
+    n: int
+    spec_refs: tuple[str, ...]
+    after: tuple[int, ...]
+    has_frontmatter: bool
+
+
+def brief_number(name: str) -> int | None:
+    m = _BRIEF_NAME_RE.match(name)
+    return int(m.group("n")) if m else None
+
+
+def briefs(kanban: Path) -> list[BriefRefs]:
+    """Every ``kanban/briefs/<n>-<slug>.md`` through _fm; a bad ``after`` entry is kept as -1."""
+    import _fm  # local, as in Packet
+
+    out = []
+    for p in sorted((kanban / "briefs").glob("*.md")) if (kanban / "briefs").is_dir() else []:
+        n = brief_number(p.name)
+        if n is None:
+            continue
+        fm, _ = _fm.parse(p.read_text(encoding="utf-8", errors="ignore"))
+        refs = fm.get("spec_refs") or []
+        refs = [refs] if isinstance(refs, str) and refs else refs
+        after = fm.get("after") or []
+        after = [after] if isinstance(after, str) and after else after
+        out.append(BriefRefs(p, n, tuple(dict.fromkeys(str(r).strip("`") for r in refs)),
+                             tuple(int(a) if str(a).isdigit() else -1 for a in after), bool(fm)))
+    return out

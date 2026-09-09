@@ -19,6 +19,8 @@ Rules, each loading through scripts/schemas.py (no parsing of its own):
    tickets), ``scrutiny`` and ``backend`` in its frontmatter. (RoutingStamp)
 5. CHARTER REACH. Every item in ``docs/domain-pack/charter.md`` carries an ``Applies to:`` glob
    line, so the verdict can tell which items a diff reaches (E22). (Charter)
+6. SPEC IDS IN ACS. An approved plan whose brief has ``spec_refs`` names every cited id in
+   square brackets on an AC line, ``[contacts/call-log]``. (briefs, Plan)
 """
 import json
 import subprocess
@@ -141,8 +143,30 @@ def charter_reach(root: Path) -> list[str]:
     return [f"{CHARTER_PATH}: charter item {n} has no Applies to: line" for n in charter.missing_applies()]
 
 
+def spec_ids_in_acs(root: Path) -> list[str]:
+    """Rule 6: every id the plan's brief cites is named ``[id]`` on one of the plan's AC lines."""
+    out = []
+    plans = sorted((root / "kanban").rglob("*.plan.md")) if (root / "kanban").is_dir() else []
+    briefs = {b.n: b for b in schemas.briefs(root / "kanban")} if plans else {}
+    for p in plans:
+        text = p.read_text()
+        fm, body = _fm.parse(text)
+        if not fm.get("approved") or not str(fm.get("brief", "")).isdigit():
+            continue
+        brief = briefs.get(int(fm["brief"]))
+        if brief is None or not brief.spec_refs:
+            continue
+        named = {m for line in schemas.Plan.ac_lines(body) for m in schemas.SPEC_ID_BRACKET_RE.findall(line)}
+        n = p.name[: -len(".plan.md")]
+        for uid in brief.spec_refs:
+            if uid not in named:
+                out.append(f"{_rel(root, p)}: plan {n} is approved but no AC line names [{uid}] from brief {brief.n}")
+    return out
+
+
 def lint(root: Path, base: str = "HEAD") -> list[str]:
-    return closed_tickets(root, base) + finding_homes(root) + open_blocks(root) + routing_stamps(root) + charter_reach(root)
+    return (closed_tickets(root, base) + finding_homes(root) + open_blocks(root) + routing_stamps(root)
+            + charter_reach(root) + spec_ids_in_acs(root))
 
 
 def main(argv: list[str]) -> int:

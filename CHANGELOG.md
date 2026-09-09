@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.8.0 — 2026-09-09
+
+A spec in the repo: intake, spec ids, coverage lint. Decomposition stays in a chat.
+
+- `scripts/spec_intake.py` — `make intake F=docs/spec/<file>` writes `docs/spec/index.md`
+  (frontmatter `spec:`, `units:`; one row per unit `id | title | words | sha`, sha = first 12
+  hex of sha256 over the unit text with CRLF folded and trailing whitespace stripped). Markdown:
+  a unit per heading with a non-empty body, id = slugged heading path (`contacts/call-log`),
+  empty-bodied headings are containers, `#` in a fence is text, a lone opening `#` is the
+  title. CSV: `id` column, BOM tolerated, ids verbatim, the other cells as the text. Refuses
+  (stderr, exit 1): no headings and no id column, a duplicate id, an empty id cell, a heading
+  that slugs to nothing (add an id column), a file outside `docs/spec/`, a second spec file.
+  Over 400 words is a warning. The spec is never modified.
+- `templates/brief.md` — frontmatter `spec_refs: []` and `after: []`, one line each; `_fm.py`
+  parses them as they are.
+- `scripts/coverage.py` — `make coverage`, in the template's `ci`: silent and green without an
+  index; with one: every index id in exactly one brief's `spec_refs` or on one
+  `- <id> — <reason>` line of `docs/spec/deferred.md`; every cited id exists (a renamed heading
+  names the brief that cited the old id); `drift: [<id>] changed since brief <n>` when a cited
+  unit's sha differs from the index at the commit that added the brief (git is the record; an
+  uncommitted brief or one older than the index is not judged); `after` names briefs with a
+  file, no cycle; every deferred line has a reason; a brief numbered 1 or higher cites at least
+  one id. `path: message` lines, exit 1.
+- `scripts/lint_kanban.py` — rule 6: an approved plan whose brief has `spec_refs` names every
+  cited id as `[<id>]` on an AC line.
+- `scripts/verdict_prep.py` — a `## Spec` packet section with the cited units' text, from the
+  ticket's plan's brief only; counts toward the packet cap. Nothing else in the verdict path.
+- `skills/grill/SKILL.md` — `spec_refs` are evidence paths `docs/spec/<file>#<id>`, opened
+  before a fact node closes; every cited id gets an AC naming it in brackets; a brief whose
+  `after` names an unshipped brief is refused (shipped = plan `approved:` and every ticket
+  `done` or `superseded`). Inert without an index.
+- `templates/decompose.md` — the prompt a human pastes into a chat with the spec and index:
+  round 1 one table `brief | outcome | spec_refs | after` plus `deferred | reason | ids`,
+  every id once, outcomes as what a user can do (the grill's code-property refusal quoted),
+  tracer bullet first, all dependency candidates in `after`; round 2 one file per ranked row
+  in the brief shape, numbered from the next free number, never renumbering.
+- `templates/project/` — `docs/spec/.gitkeep`, `make intake F=`, `make coverage`,
+  `ci: lint test complexity coverage`; `kanban/briefs/0-example.md` is gone (the lint reads
+  nothing from it; `templates/brief.md` is the example), `kanban/briefs/.gitkeep` holds the
+  directory; README and kanban README point at the spec flow. `init --update` carries the
+  Makefile and `docs/spec/.gitkeep`; `init` runs its `make install && make ci` with `PLUGIN`
+  set to the plugin's own root.
+- `README.md` — "From a spec", four steps.
+- `tests/` — `test_spec_intake.py`, `test_coverage.py`: fenced `#` is not a heading, same text
+  under two parents, the same path twice refused, CRLF = LF shas, BOM header, an id cited twice
+  in one brief counts once and in two briefs fails, a renamed heading names the brief, drift
+  after the brief's commit but not in it, `after` to a missing brief and a 2→3→2 cycle, a
+  deferred line without a reason, no index prints nothing; `_fm` list parsing; lint rule 6;
+  the Spec packet section and a 5,000-word unit tripping the packet cap; `--update` on a
+  0.7.0 project shows the Makefile lines and `docs/spec/.gitkeep`.
+
+Consuming projects: `/harness-plugin:init --update --yes`, then `make intake` when a spec lands.
+
 ## 0.7.0 — 2026-09-08
 
 The project template ships inside the plugin. project-template is archived after this tag.

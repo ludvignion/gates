@@ -4,7 +4,7 @@ description: >-
   /harness-plugin:init [--name <n>] | --update [--yes]. Create a project from the template the
   plugin ships: copies it into an empty git repo, pins the plugin to this version, runs make
   install and make ci, commits. --update diffs the template-owned files (Makefile, .gitignore,
-  .env.example, CI workflow, plugin pin) against the repo and writes them only with --yes. Use
+  .env.example, CI workflow, docs/spec/.gitkeep, plugin pin) against the repo and writes them only with --yes. Use
   whenever the user says init, new project, or update the template. The session runs one
   script and edits nothing.
 disable-model-invocation: true

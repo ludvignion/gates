@@ -49,6 +49,20 @@ class GrillSkillTextTest(unittest.TestCase):
         nonempty = [l for l in body.splitlines() if l.strip()]
         self.assertTrue(nonempty[-1].startswith("Next:"), nonempty[-1])
 
+    def test_spec_refs_are_evidence_and_acs_name_ids(self):
+        """0.8.0: cited units are opened as evidence; every id gets a bracketed AC; unshipped after briefs are refused."""
+        body = SKILL.read_text(encoding="utf-8")
+        rules = schemas.section(body, "Rules")
+        self.assertIn("`docs/spec/<file>#<id>`", rules)
+        self.assertIn("before closing any `fact` node", rules)
+        self.assertIn("`[contacts/call-log]`", rules)
+        self.assertIn("No `docs/spec/index.md`", rules)
+        shape = schemas.section(body, "Brief shape")
+        self.assertIn("`after` names a brief that is not shipped", shape)
+        self.assertIn("`done` or `superseded`", shape)
+        self.assertIn("Refuse a brief whose Outcome is a code property", shape)
+        self.assertIn("2 rounds", rules)
+
     def test_routing_default_is_runner(self):
         routing = schemas.section(SKILL.read_text(encoding="utf-8"), "Routing")
         self.assertIn("backend: runner | workflow | session", routing)

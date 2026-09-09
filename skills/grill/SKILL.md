@@ -31,7 +31,10 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    A question exists only to close a `decision` node. No question without a node.
 2. **Evidence before asking.** For every node, first search: `src/`, `tests/`, `docs/`, closed
    tickets in `kanban/tickets/`, `traces/blind-spots.md`. If the answer is there, resolve it and cite the
-   path. Facts are your job. Decisions are the human's.
+   path. Facts are your job. Decisions are the human's. The brief's `spec_refs` are evidence
+   paths `docs/spec/<file>#<id>`: open each cited unit (its row in `docs/spec/index.md`, its
+   text in the spec file) before closing any `fact` node. No `docs/spec/index.md`: this rule,
+   the AC rule in 11 and the `after` refusal are inert.
 3. **Read `traces/blind-spots.md` first** if it exists. Those are categories the grill missed before.
    Check each against this brief explicitly.
 4. **Ask the human only decisions** — intent, trade-offs, priority, scope. Each question names the
@@ -84,7 +87,9 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    Human ACs stay out of the verdict packet; the Gate 2 page lists them under "Human checks"
    and the runner's result block prints one `Human: AC-7 — ...` line each and names the check in its `Next:` line.
    The human confirms them by saying `ship`. An untagged AC no test can name is a warn on
-   every verdict — tag it or rewrite it as something the diff shows.
+   every verdict — tag it or rewrite it as something the diff shows. Every id in the brief's
+   `spec_refs` gets at least one AC that names it in square brackets, `[contacts/call-log]`;
+   `lint_kanban.py` rule 6 fails an approved plan that misses one.
 12. **Hand off** (G2). After the tickets are written, compute the last line from the plan's
    stamp and the tickets, never from the shape of a previous plan:
    - `backend: runner` and more than one ticket `status: ready` →
@@ -165,6 +170,9 @@ things is closed only by a probe that exercises every member named in the ACs.
 Refuse a brief whose Outcome is a code property — validation, typing, models, a refactor,
 "add X across stages" — rather than a behaviour observable in the CLI or an output file. That is
 a horizontal phase. Say so and name the vertical ticket that first needs it. Refuse likewise while
-any ticket of an unshipped tracer-bullet plan is `in_progress` or `in_review`.
+any ticket of an unshipped tracer-bullet plan is `in_progress` or `in_review`. Refuse a brief whose
+`after` names a brief that is not shipped: shipped means its plan carries `approved:` and every
+ticket of that plan is `done` or `superseded` (no other status counts, none is invented). Name
+the brief and the tickets still open.
 
 Next: the hand-off line from rule 12, computed from the stamp, as the session's last line.

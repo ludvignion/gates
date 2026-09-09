@@ -720,3 +720,46 @@ class VerdictEvalFixtureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpecSectionTest(unittest.TestCase):
+    """0.8.0: the packet's Spec section carries the units the plan's brief cites; nothing without an index."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        for rel, text in {
+            "kanban/plans/1.plan.md": PLAN, "kanban/tickets/1.1.tracer-bullet.md": TICKET,
+            "docs/domain-pack/charter.md": CHARTER, "docs/glossary.md": "# Glossary\n",
+            "src/app/run.py": "def run(x):\n    return x\n",
+        }.items():
+            (self.tmp / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.tmp / rel).write_text(text)
+        git(self.tmp, "init", "-q", "-b", "main"); git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "base")
+        git(self.tmp, "checkout", "-q", "-b", "ticket/1.1")
+        (self.tmp / "src/app/run.py").write_text("def run(x):\n    return x + 1\n")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "feat(1.1)")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def intake(self, spec: str) -> None:
+        (self.tmp / "docs/spec").mkdir(exist_ok=True)
+        (self.tmp / "docs/spec/crm.md").write_text(spec)
+        r = subprocess.run([sys.executable, str(REPO / "scripts/spec_intake.py"), "docs/spec/crm.md"], cwd=self.tmp, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_spec_section_from_the_plans_brief(self):
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        self.assertIn("## Spec\n- none\n", text)  # no index: nothing
+        self.intake("## Contacts\n\n### Call log\nLog every call.\nWith its duration.\n\n### Notes\nFree text.\n")
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        self.assertIn("## Spec\n- none\n", text)  # index, but no brief cites anything
+        (self.tmp / "kanban/briefs").mkdir()
+        (self.tmp / "kanban/briefs/1-calls.md").write_text("---\nspec_refs: [contacts/call-log, gone/unit]\nafter: []\n---\n# Brief\n")
+        text = verdict_prep.build(self.tmp, "1.1", "main", ci=False)
+        self.assertIn("## Spec\n- contacts/call-log — Call log\n  Log every call.\n  With its duration.\n- gone/unit — not in the spec (coverage.py reports it)\n", text)
+        self.assertNotIn("Free text", text)  # uncited units stay out
+        packet = schemas.Packet.parse(text)
+        self.assertEqual([t for t, _ in packet.sections], list(schemas.PACKET_SECTIONS))
+        self.assertNotIn("Spec", [t for t, _ in packet.rearm("blind").sections])
+        self.assertIn("Spec", [t for t, _ in packet.rearm("repo").sections])

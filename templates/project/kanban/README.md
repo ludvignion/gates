@@ -1,7 +1,8 @@
 # kanban
 
-- `briefs/<n>-<slug>.md` — you write these (template in the plugin).
+- `briefs/<n>-<slug>.md` — you write these (template: the plugin's `templates/brief.md`).
   "Success looks like" / "Not this" are optional; the grill turns them into an AC and a verdict attack.
+  `spec_refs:` names the `docs/spec/index.md` ids the brief covers; `after:` the briefs shipped first.
 - `plans/<n>.plan.md` — the grill writes; you approve by adding `approved: <name> <date>`.
   That line is the gate, not `status:` — build refuses a plan without it.
 - `tickets/<n>.<m>.<slug>.md` — one vertical slice. `status:` in frontmatter, `## Log`

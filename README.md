@@ -21,11 +21,22 @@ claude plugin install harness-plugin@ludvignion
 2. `/harness-plugin:init` in an empty git repo — the template ships inside the plugin.
 3. Write `kanban/briefs/1-<slug>.md`, then `/harness-plugin:grill 1`.
 
+## From a spec
+
+1. Put the spec in `docs/spec/` (one file). Two shapes: markdown with headings (the id is the
+   heading path, `contacts/call-log`), or CSV with an `id` column (ids verbatim). Convert pdf,
+   docx, xlsx outside first.
+2. `make intake F=docs/spec/<file>` writes `docs/spec/index.md`: one row per unit with its sha.
+3. Paste `templates/decompose.md`, the spec and the index into a chat; rank the table it
+   returns; paste the briefs and `docs/spec/deferred.md` it writes into the repo.
+4. `make coverage` green (every id in one brief or deferred, nothing drifted), then
+   `/harness-plugin:grill 1`.
+
 ## What's here
 
 | Path | Role |
 |---|---|
-| `skills/init` | `/harness-plugin:init [--name <n>]`: the project template, copied from `templates/project/` into an empty repo, placeholders filled, plugin pinned to this version, `make install && make ci`, one commit. `--update [--yes]` diffs the template-owned files (Makefile, .gitignore, .env.example, CI workflow, plugin pin) and writes them only with `--yes`; never `kanban/`, `docs/`, `src/`, `tests/`, `traces/`. |
+| `skills/init` | `/harness-plugin:init [--name <n>]`: the project template, copied from `templates/project/` into an empty repo, placeholders filled, plugin pinned to this version, `make install && make ci`, one commit. `--update [--yes]` diffs the template-owned files (Makefile, .gitignore, .env.example, CI workflow, `docs/spec/.gitkeep`, plugin pin) and writes them only with `--yes`; never `kanban/`, the rest of `docs/`, `src/`, `tests/`, `traces/`. |
 | `skills/grill` | brief → plan + tickets. Evidence first; human only for decisions; options ranked against the repo's invariants before cost. ACs are machine-verifiable or tagged `(human)` and confirmed at Gate 2 with `ship`; approval-turn remarks land in `traces/grill-misses.jsonl`; ends with one hand-off line computed from the routing stamp. |
 | `skills/build` | tests-first, scope-bound implementation. CI is the authority. |
 | `skills/verdict` | fresh-context review in one model call over a prepared input → verdict page. |
@@ -41,7 +52,10 @@ claude plugin install harness-plugin@ludvignion
 | `scripts/verdict_eval.py` | archived packets → Opik dataset; one arm × one verdict command as an Opik experiment. |
 | `scripts/verdict_canned.py` | verdict command that copies a prepared JSON to `{output}`; CI's model-free seat. |
 | `scripts/render_board.py` | the board: routing stamp with its rule (Gate 1), progress per plan, status columns, dependency graph, and per running ticket its phase, elapsed time and last builder lines, auto-refreshing while a run is on. Runs on every Stop and after every runner phase. |
-| `scripts/lint_kanban.py` | CI check: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp. |
+| `scripts/lint_kanban.py` | CI check: closed tickets immutable, findings have homes, no ship past an open block, approved plans carry a routing stamp, approved plans name every cited spec id in an AC. |
+| `scripts/spec_intake.py` | `make intake F=`: the spec (markdown headings or CSV `id` column) → `docs/spec/index.md`, one row per unit: id, title, words, sha. Never edits the spec. |
+| `scripts/coverage.py` | `make coverage`: every index id in exactly one brief's `spec_refs` or `docs/spec/deferred.md`; cited ids exist; no drift since the brief's commit (git is the record); `after` briefs exist, no cycle. Silent without an index. |
+| `templates/decompose.md` | the prompt a human pastes into a chat with the spec and the index: one table (brief, outcome, spec_refs, after) plus deferred rows, every id once; then one file per row. |
 | `scripts/grill_digest.py` | grill-misses → blind-spots the grill reads. |
 | `scripts/replay.py` | re-run grill on golden briefs, diff escalations. |
 | `scripts/runner.py` | headless build → ci → verdict state machine: loads the project's `.env`, branches in place and stays on the ticket branch after the verdict (`--parallel` for worktrees), streamed build that ends at close-out, phase lines, board after every phase; `--plan <n>` walks a plan in depends_on order and pauses at Gate 2; writes `traces/runs/<id>.{log,state,result}`; `--arm`, `--verdict-cmd` pick the verdict seat; `--override` restamps routing. |
@@ -49,7 +63,7 @@ claude plugin install harness-plugin@ludvignion
 | `scripts/kanban_ops.py` | the writes a human made by hand: Log entry, status, routing override, commit. The one Log writer. `kanban_ops.py ship\|reject\|child\|home\|waive\|order` is the board's Gate 2 from a shell. |
 | `scripts/vendor.py` | one shell model call and how its JSON envelope is read; runner and render_verdict share it. |
 | `scripts/init_project.py` | `init` and `init --update`: what the init skill runs. |
-| `templates/` | brief, plan, ticket, ADR skeletons; `templates/project/` is the whole project skeleton `init` copies (`{{project_name}}`, `{{plugin_ref}}` are its only placeholders). |
+| `templates/` | brief (`spec_refs`, `after`), plan, ticket, ADR skeletons; `templates/project/` is the whole project skeleton `init` copies (`{{project_name}}`, `{{plugin_ref}}` are its only placeholders). |
 
 `scripts/` is the runtime the skills and project Makefiles call; `tests/` tests it. Neither is
 invoked by users directly.

@@ -17,6 +17,10 @@ Diff stat. Lock files, fixtures, kanban/ and traces/ are neither in the diff nor
 the stat ends with one line "N files excluded (lock, fixture, kanban)". An included file over
 2000 diff lines is a stat line only, and the whole diff is truncated past 4000 lines.
 
+The Spec section (0.8.0) carries the text of the units the ticket's plan's brief cites in
+`spec_refs`, read from docs/spec/index.md and the spec file; `- none` without an index or a
+citing brief. It counts toward the runner's packet cap like every other section.
+
 `always_writable` names the paths every ticket may touch (docs/glossary.md, the parent plan's
 Log) so the reviewer does not warn on them. Refuses to build without a charter, and refuses a
 charter item without an `Applies to:` line. The Charter section lists only the items whose
@@ -40,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import _fm  # noqa: E402
 import kanban_ops  # noqa: E402
 import schemas  # noqa: E402
+import spec_intake  # noqa: E402
 import verdict_checks as vc  # noqa: E402
 
 DIFF_CAP = 4000  # lines; beyond this the diff is truncated and says so
@@ -117,6 +122,26 @@ def charter_section(charter: schemas.Charter, paths: list[str]) -> list[str]:
     return ["\n  ".join([f"{it.id}: {it.title}", *it.pattern_lines()]) for it in charter.items if it.id in reach]
 
 
+def spec_section(root: Path, plan_fm: dict) -> list[str]:
+    """One entry per unit the plan's brief cites: ``<id> — <title>`` with the unit text under it.
+    Empty without an index, a brief, or spec_refs; an id the spec no longer has says so."""
+    index_path = root / schemas.SPEC_INDEX
+    if not index_path.is_file() or not str(plan_fm.get("brief", "")).isdigit():
+        return []
+    brief = next((b for b in schemas.briefs(root / "kanban") if b.n == int(plan_fm["brief"])), None)
+    if brief is None or not brief.spec_refs:
+        return []
+    texts = spec_intake.unit_texts(root, schemas.SpecIndex.load(index_path))
+    out = []
+    for uid in brief.spec_refs:
+        if uid in texts:
+            title, text = texts[uid]
+            out.append(f"{uid} — {title}\n  " + text.replace("\n", "\n  "))
+        else:
+            out.append(f"{uid} — not in the spec (coverage.py reports it)")
+    return out
+
+
 def plugin_version() -> str:
     manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
     return json.loads(manifest.read_text()).get("version", "") if manifest.exists() else ""
@@ -170,7 +195,7 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     ticket = schemas.Ticket.parse(body)
     plan_n = str(fm.get("parent", tid.split(".")[0]))
     plan_path = next((root / "kanban").rglob(f"{plan_n}.plan.md"), None)
-    plan_body = _fm.read(plan_path)[1] if plan_path else ""
+    plan_fm, plan_body = _fm.read(plan_path) if plan_path else ({}, "")
     attacks = schemas.Attacks.parse(plan_body).items
     charter_path = root / "docs" / "domain-pack" / "charter.md"
     charter = schemas.Charter.parse(charter_path.read_text(errors="ignore")) if charter_path.exists() else schemas.Charter()
@@ -208,6 +233,7 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
         ("Out of scope", _sec(ticket.out_of_scope)),
         ("Human waivers (Log)", _sec(ticket.waivers)),
         ("Plan: verdict must attack", _sec(attacks)),
+        ("Spec", _sec(spec_section(root, plan_fm))),
         ("Charter items", _sec(charter_section(charter, kept))),
         ("Previous verdict: blocks to re-run", _sec([
             f"{b['id']} {b.get('status')} ({b.get('ac') or b.get('charter')}): {b['text']} — repro: `{b.get('repro')}`" for b in prev_blocks])),
