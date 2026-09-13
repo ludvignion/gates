@@ -64,6 +64,39 @@ class GrillSkillTextTest(unittest.TestCase):
         self.assertIn("Refuse a brief whose Outcome is a code property", shape)
         self.assertIn("2 rounds", rules)
 
+    def test_decisions_carry_kind_and_only_functional_is_asked(self):
+        """0.11.0: the reader test decides `kind`; technical is closed by evidence and invariants, never asked;
+        the trace record carries kind; a technical node resolved by a human is a grill miss."""
+        body = SKILL.read_text(encoding="utf-8")
+        rules = schemas.section(body, "Rules")
+        flat = " ".join(rules.split())
+        self.assertIn("`kind: functional|technical`", rules)
+        self.assertIn("would the reader notice the difference in behaviour?", flat)
+        self.assertIn("Ask the human only functional decisions", rules)
+        self.assertIn("A question exists only to close a `functional` decision node.", rules)
+        self.assertIn("technical decisions table", flat)
+        self.assertIn('"kind": "functional|technical|null"', rules)
+        self.assertIn('`"kind": "technical"` and `"resolved_by": "human"` is a grill miss', flat)
+        self.assertIn("Ask a technical question.", schemas.section(body, "Do not"))
+
+    def test_gate_1_notes_are_informational(self):
+        """Dependency, licence, paid service, data leaving the repo: shown at Gate 1, never asked."""
+        rules = " ".join(schemas.section(SKILL.read_text(encoding="utf-8"), "Rules").split())
+        self.assertIn("## Gate 1 notes", rules)
+        for word in ("runtime dependency", "a licence", "a paid service", "data leaving the repo"):
+            self.assertIn(word, rules, word)
+        self.assertIn("informational only, never a question", rules)
+        self.assertIn("the Outcome line, the human ACs, the Gate 1 notes, the Options entries to pick", rules)
+        self.assertIn("`Next: approve plan <n>, or say what to change`", rules)
+        self.assertIn("do not print them", rules)
+        self.assertIn("| Capability | Provided by | Provider evidence | Access evidence |", (REPO / "templates" / "plan.md").read_text(encoding="utf-8"))
+        template = (REPO / "templates" / "plan.md").read_text(encoding="utf-8")
+        self.assertIn("## Technical decisions I made", template)
+        self.assertIn("## Gate 1 notes", template)
+        build = schemas.section((REPO / "skills" / "build" / "SKILL.md").read_text(encoding="utf-8"), "Rules") or (REPO / "skills" / "build" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("A technical ambiguity (how to build it)", " ".join(build.split()))
+        self.assertIn("is never NEEDS_CONTEXT", " ".join(build.split()))
+
     def test_routing_default_is_runner(self):
         routing = schemas.section(SKILL.read_text(encoding="utf-8"), "Routing")
         self.assertIn("backend: runner | workflow | session", routing)

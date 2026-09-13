@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.11.0 — 2026-09-13
+
+The human decides what, the LLM decides how. A pilot user reported the grill as neurotic:
+small technical questions the reader could not judge. Nothing in the skills said "functional,
+not technical"; `decision` was "intent, trade-off, priority, scope", and every technical fork
+is a trade-off.
+
+- `skills/grill/SKILL.md` — every `decision` node carries `kind: functional|technical`, decided
+  by one test: would the reader notice the difference in behaviour? Functional closes on a human
+  answer. Technical closes on evidence and the `AGENTS.md` invariants, is recorded in the plan's
+  new "Technical decisions I made" table, and is never asked; one the grill cannot close is an
+  Options entry. Rule 4 asks only functional decisions ("trade-off" is gone from the human's
+  list). Rule 7 adds "## Gate 1 notes": one line each, informational, for a runtime dependency,
+  a licence, a paid service, or data leaving the repo; and fixes what Gate 1 shows: Outcome,
+  human ACs, Gate 1 notes, Options, one Next line — the ACs, tables and stamp stay in the file.
+  Rule 10's trace record carries `kind`; technical resolved by human is a grill miss.
+- `skills/build/SKILL.md` — NEEDS_CONTEXT only for a functional ambiguity; a technical one is
+  decided by `AGENTS.md` and named in the close-out.
+- `templates/plan.md` — "Technical decisions I made", "Gate 1 notes"; the Dependencies table has
+  the four columns grill rule 6 names (provider evidence, access evidence).
+- `tests/test_grill_skill.py` — the sentences above are pinned.
+
+Not in this release: `kind` on verdict findings and the send-back of technical findings to the
+builder (brief 5); approve refusing an untestable AC (brief 6).
+
+Consuming projects: `init --update --yes` moves the pin; no project file changes.
+
 ## 0.10.1 — 2026-09-09
 
 - `scripts/init_project.py` — `init --update` migrates a project's `.claude/settings.json` from

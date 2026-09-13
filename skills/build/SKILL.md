@@ -40,9 +40,10 @@ the runner, in place or in a worktree), plus ticket `## Log` entries.
    traces to nothing: revert it, or log it as a finding. Set `status: in_review`. Clear `kanban/.active`.
 10. **Report.** Append the final Log entry:
     `### [build] <timestamp> — status: DONE | NEEDS_CONTEXT | BLOCKED`
-    followed by one line of reason. NEEDS_CONTEXT = an AC is ambiguous and the ticket + domain
-    pack don't resolve it; the reason line must name the AC and the question — it feeds grill
-    tuning. BLOCKED = cannot finish for a reason outside the ticket (dependency, access, baseline).
+    followed by one line of reason. NEEDS_CONTEXT = an AC is ambiguous in what the reader
+    would notice, and the ticket + domain pack don't resolve it; the reason line must name
+    the AC and the question — it feeds grill tuning. A technical ambiguity (how to build it)
+    is never NEEDS_CONTEXT: decide it by `AGENTS.md`, name the choice in the close-out. BLOCKED = cannot finish for a reason outside the ticket (dependency, access, baseline).
     On either, stop immediately: do not commit implementation, do not guess.
     Then print the branch, the commit list, and the one-line command to run the thing.
     **The session ends here.** The status line is the last write and the report is the last

@@ -25,10 +25,20 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
      present in `.env`/`.env.example` and a successful auth-level call, an installed package,
      or a plan tier confirmed. A human naming the tool closes neither. A capability with
      provider verified but access unverified is NOT closed — it goes to Options (rule 6).
-   - `decision` — intent, trade-off, priority, scope. Closes on a human answer.
+   - `decision` — a fork the evidence does not close. Every decision node carries
+     `kind: functional|technical`. The test is one question: **would the reader notice the
+     difference in behaviour?** Yes — `functional` (what the product does, for whom, what it
+     shows, what it refuses, what comes first). Closes on a human answer. No — `technical`
+     (how it is built: library, schema, storage, protocol, retry, naming, structure, any
+     trade-off between two ways of doing the same thing). Closes on evidence and the
+     invariants in `AGENTS.md`; you decide it, record it in the plan's technical decisions
+     table with the evidence, and never ask. A technical node neither evidence nor the
+     invariants can close is a capability gap: an entry under **## Options** (rule 6), not a
+     question.
    - `assumption` — could not be closed by evidence or one human answer. Never closes;
      it goes into the plan's assumptions table.
-   A question exists only to close a `decision` node. No question without a node.
+   A question exists only to close a `functional` decision node. No question without a node,
+   and no question the reader cannot answer without reading code.
 2. **Evidence before asking.** For every node, first search: `src/`, `tests/`, `docs/`, closed
    tickets in `kanban/tickets/`, `traces/blind-spots.md`. If the answer is there, resolve it and cite the
    path. Facts are your job. Decisions are the human's. The brief's `spec_refs` are evidence
@@ -37,7 +47,8 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    the AC rule in 11 and the `after` refusal are inert.
 3. **Read `traces/blind-spots.md` first** if it exists. Those are categories the grill missed before.
    Check each against this brief explicitly.
-4. **Ask the human only decisions** — intent, trade-offs, priority, scope. Each question names the
+4. **Ask the human only functional decisions** — intent, priority, scope, what the reader sees.
+   Never a technical one: the human decides what, you decide how. Each question names the
    node it unblocks and carries a recommended answer. Ask in rounds, numbered. Cap: 5 per round,
    2 rounds. If more remain, the brief is too big — say so and propose a split.
    Rank the options against the repo's invariants first, cost second (G1): `AGENTS.md` names
@@ -45,7 +56,8 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    recommendation names the invariant it preserves; the cheapest option is recommended only
    when it preserves them all.
 5. **Stop when the frontier is empty.** No question count. If a node cannot be resolved by
-   evidence or one human answer, it becomes an explicit assumption.
+   evidence or one human answer, it becomes an explicit assumption. A technical node never
+   waits for a human: close it yourself or file it under Options.
 6. **Dependencies before the plan.** Every `capability` node becomes a row in the plan's
    Dependencies table: `capability | provided by | provider evidence | access evidence`.
    For each node that did not fully close, write an entry under the plan's **## Options**:
@@ -57,9 +69,18 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
 7. **Write back, then wait.** Produce `<n>.plan.md` from `templates/plan.md`:
    outcome, ACs (Given/When/Then, tagged behavioral / property / critical / human — rule 11),
    out of scope, named modules, `base:` (the branch tickets branch from and ship into, `main`
-   unless the human said otherwise), and the **assumptions list** — every node you resolved
-   yourself, with its evidence. Stamp `signals:`, `scrutiny:`, and `backend:` per the Routing
-   section. The human approves the plan, not the questions. When they say so, first record
+   unless the human said otherwise), the **assumptions list** — every node you resolved
+   yourself, with its evidence — and the **technical decisions table** — every `technical`
+   decision node, with the evidence or invariant that closed it. Under **## Gate 1 notes**,
+   one line each, informational only, never a question: every decision that adds a runtime
+   dependency, a licence, a paid service, or data leaving the repo; the section is present
+   even when empty. Stamp `signals:`, `scrutiny:`, and `backend:` per the Routing section.
+   The human approves the plan, not the questions; a technical decision they disagree with
+   is a remark at approval (G3 below), not a reopened question. What you show at Gate 1, in
+   this order and nothing else: the Outcome line, the human ACs, the Gate 1 notes, the
+   Options entries to pick; then one line, `Next: approve plan <n>, or say what to change`.
+   The ACs, the tables and the stamp are in the file for whoever opens it; do not print them.
+   When they say so, first record
    what they said about any option or recommendation in that turn (G3): one line per remark
    appended to `traces/grill-misses.jsonl`,
    `{"plan": n, "source": "approval", "said": "<their words>", "about": "<option or recommendation>", "ts": "<ISO time>"}`,
@@ -78,8 +99,10 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    The first ticket is the tracer bullet.
 10. **Trace.** Append one record per node to `traces/grill/<n>.jsonl`:
    `{"brief": n, "node": "...", "type": "fact|capability|decision|assumption",
-"resolved_by": "evidence|human|assumption|open", "evidence": "path|url|command|null",
-"question": "...", "answer": "..."}`.
+"kind": "functional|technical|null", "resolved_by": "evidence|human|assumption|open",
+"evidence": "path|url|command|null", "question": "...", "answer": "..."}`.
+   `kind` is set on decision nodes and null elsewhere. A record with `"kind": "technical"`
+   and `"resolved_by": "human"` is a grill miss.
 11. **Every AC is machine-verifiable, or tagged human** (E30). An AC holds when the diff and
    the tests show it: a test names it, or a file the ticket writes carries it. An AC only a
    person can confirm — a look at a page, a judgement of tone, a call to a live system — is
@@ -149,6 +172,7 @@ override — it means the derivation rules are wrong, and they get tuned, not th
 ## Do not
 
 - Ask what the codebase can answer.
+- Ask a technical question. The reader cannot judge it; the invariants can.
 - Ask questions to reach a number.
 - Restate the brief back as a question.
 - Propose architecture the ACs don't require.

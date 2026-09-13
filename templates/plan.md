@@ -23,8 +23,8 @@ I want <X> so that <Y>.
 - `src/<pkg>/<module>/` — <one sentence, no "and">
 
 ## Dependencies
-| Capability | Provided by | Evidence |
-|-----------|-------------|----------|
+| Capability | Provided by | Provider evidence | Access evidence |
+|-----------|-------------|-------------------|-----------------|
 
 ## Blocking risks
 - <capability nodes without evidence; empty means none>
@@ -34,9 +34,17 @@ I want <X> so that <Y>.
 |---|-----------|----------|
 | 1 | ... | `path` |
 
+## Technical decisions I made
+| # | Decision | Closed by |
+|---|----------|-----------|
+| 1 | ... | `path` or `AGENTS.md` invariant |
+
 ## Decisions the human made
 | # | Question | Answer |
 |---|----------|--------|
+
+## Gate 1 notes
+- <one line each, informational: a runtime dependency, a licence, a paid service, data leaving the repo; "none" when none>
 
 ## Verdict must attack
 - <failure modes carried over from the brief's "Not this">
