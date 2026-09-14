@@ -3,7 +3,8 @@
 
 Answers the subset of `gh` scripts/tickets.py calls: `label create`, `issue list --label ticket
 --json number`, `issue view <n> --json number,title,body,labels,comments`. Issue data comes from
-$FAKE_GH_DATA (a JSON file: {"issues": [{"number", "title", "body", "labels", "comments"}, ...]}).
+$FAKE_GH_DATA (a JSON file: {"issues": [...], "fail_view": [<number>, ...]}); a number in
+`fail_view` makes that issue's `issue view` call fail, as `gh` does on a network or auth error.
 Every call is appended to $FAKE_GH_LOG, one argv per line.
 """
 import json
@@ -32,6 +33,9 @@ def main() -> int:
         return 0
     if argv[:2] == ["issue", "view"]:
         number = int(argv[2])
+        if number in data.get("fail_view", []):
+            print(f"gh: issue view {number} failed (simulated)", file=sys.stderr)
+            return 1
         issue = next((i for i in issues if i["number"] == number), None)
         if issue is None:
             print(f"no issue {number}", file=sys.stderr)
