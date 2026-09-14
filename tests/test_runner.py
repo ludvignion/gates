@@ -526,14 +526,51 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertIn("[runner] permission denied after close-out, ignored: WebFetch", out)
         self.assertIn("] verdict", out)
 
-    def test_red_ci_after_build_retries_then_skips_build(self):
+    def test_red_ci_after_build_retries_with_a_second_build(self):
+        """0.11.2: attempt 2 used to skip the build (in_review with the commits) and rerun CI on the same tree."""
         self.scenario.write_text(json.dumps(closeout_steps() + [{"cmd": "rm -f green && git " + " ".join(GIT_ID) + " commit -qam 'chore(1.1): drop green'"}]))
         rc, out = self._main()
         self.assertEqual(rc, 1, out)
         self.assertEqual(out.count("[runner] ci red"), 2)
-        self.assertEqual(len(self._calls()), 1)  # attempt 2 skipped the build: in_review with the commits
-        self.assertIn("] build 2 skipped in_review", out)
+        self.assertEqual(len(self._calls()), 2)  # attempt 2 built again
+        self.assertIn("] build 2\n", out); self.assertNotIn("build 2 skipped", out)
         self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state")[-1], "done error retry cap")
+
+    def test_reject_writes_the_verdict_log_entry_and_the_retry_builds(self):
+        """0.11.2, first self-run: a reject with rework blocks looped build-skipped → ci → verdict to the retry
+        cap on one unchanged packet, and the ticket Log never got the [verdict] entry the build skill's
+        retry check reads. Now the entry lands, is committed with the artifacts, and attempt 2 builds."""
+        verdict = {"ticket": "1.1", "decision": "reject", "held": ["AC-2"], "ci": {"green": True}, "findings": [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "text": "boundary unguarded", "spawn_child": False},
+            {"id": "F2", "severity": "warn", "status": "open", "charter": "charter-2", "text": "no file named", "spawn_child": False},
+            {"id": "F3", "severity": "block", "status": "open", "text": "belongs elsewhere", "spawn_child": True},
+            {"id": "F4", "severity": "note", "status": "open", "text": "style"},
+            {"id": "F5", "severity": "block", "status": "resolved", "ac": "AC-1", "text": "fixed already"}]}
+        envelope = self.tmp / "verdict_envelope.json"
+        envelope.write_text(json.dumps({"type": "result", "subtype": "success", "is_error": False, "num_turns": 1, "total_cost_usd": 0.03,
+                                        "usage": {"input_tokens": 100, "output_tokens": 50}, "permission_denials": [], "result": json.dumps(verdict)}))
+        with mock.patch.dict(os.environ, {"FAKE_VERDICT_ENVELOPE": str(envelope)}):
+            rc, out = self._main()
+        self.assertEqual(rc, 2, out)  # verdict 2 repeats F1: same blocks, human needed
+        self.assertIn("[runner] same blocks as previous verdict", out)
+        calls = self._calls()
+        self.assertEqual(len(calls), 4, calls)  # build, verdict, build, verdict
+        self.assertEqual(["stream-json" in c for c in calls], [True, False, True, False])
+        self.assertNotIn("build 2 skipped", out)
+        phases = state_phases(self.repo / "traces/runs/1.1.state")
+        self.assertEqual([p for p in phases if p.startswith("build ") and "close-out" not in p], ["build 1", "build 2"])
+        log = schemas.Log.parse((self.repo / "kanban/tickets/1.1.tracer-bullet.md").read_text())
+        entries = [e for e in log.entries if e.role == "verdict"]
+        self.assertEqual(len(entries), 2)
+        self.assertTrue(entries[0].head.endswith("— reject"), entries[0].head)
+        self.assertEqual(entries[0].text.splitlines()[1:], [
+            "- block F1 AC-1: boundary unguarded",
+            "- warn F2 charter-2: no file named",
+            "- block F3 -: belongs elsewhere → child"])  # notes and resolved findings stay out
+        out_of = lambda *a: subprocess.run(["git", *a], cwd=self.repo, capture_output=True, text=True).stdout
+        self.assertNotIn("kanban/", out_of("status", "--short"))  # the Log entry is committed with the artifacts (prev.json stays untracked, as before)
+        self.assertIn("docs(1.1): verdict reject", out_of("log", "--format=%s", "-8"))
+        self.assertEqual(out_of("diff", "--name-only", "HEAD~1", "HEAD").count("kanban/tickets/1.1.tracer-bullet.md"), 1)
 
     def test_parallel_uses_worktrees_dir(self):
         rc, out = self._main("--parallel")

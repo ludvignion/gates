@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.11.2 — 2026-09-14
+
+Second lesson of the self-run: the retry never retried. After a REJECT with rework blocks the
+runner's attempt 2 found the ticket `in_review` with its commits, skipped the build, reran CI
+and the verdict on the same tree, and reached the retry cap in ten minutes with no rework in
+between. And the build skill's retry check (step 3: the last `[verdict]` Log entry's `- block`
+lines are the brief) had nothing to read: only the verdict *skill* wrote that entry, the runner
+never did.
+
+- `scripts/runner.py` — `log_verdict` appends `### [verdict] <timestamp> — <decision>` to the
+  ticket Log after every verdict, one `- <severity> <id> <ac|charter|->: <text>` line per open
+  block or warn, ` → child` when it spawns one: the entry the verdict skill writes by hand, now
+  in the runner path too. `commit_verdict` commits it with the artifacts. `verdict_eval` and
+  `lint_kanban` read the same entry.
+- `scripts/runner.py` — only attempt 1 skips the build on `in_review` with the commits (the
+  rerun case). A retry always builds; the skill's retry check finds the blocks in the Log and
+  addresses those alone. The retry cap now means what it says: N builds, N verdicts.
+
+Still known: CI runs twice per verdict (the runner's phase and the packet's `run_ci`).
+
 ## 0.11.1 — 2026-09-14
 
 First self-run: `/gates:runner plan 4` on this repo. Ticket 4.1 built green in 13 minutes and
