@@ -1,15 +1,17 @@
 {
  "ticket": "4.1",
- "decision": "reject",
+ "decision": "ship",
  "held": [
+  "AC-1",
+  "AC-2",
+  "AC-3",
+  "AC-4",
+  "AC-5",
+  "AC-6",
   "attack-2",
   "attack-3",
   "attack-4",
-  "AC-1",
-  "AC-2",
-  "AC-4",
-  "AC-5",
-  "AC-6"
+  "charter-1"
  ],
  "findings": [
   {
@@ -36,7 +38,7 @@
    "covered_by": "tests/test_tickets_sync.py::test_no_marker_makes_no_gh_call",
    "repro": "python -m unittest test_init_project",
    "waived_by": null,
-   "text": "Marker absent: no gh call, no write; 257 tests OK."
+   "text": "Marker absent: no gh call, no write; 259 tests OK."
   },
   {
    "id": "F3",
@@ -46,10 +48,10 @@
    "charter": "charter-1",
    "home": null,
    "spawn_child": false,
-   "covered_by": "tests/test_tickets_sync.py::test_sync_skips_an_issue_without_a_status_label",
+   "covered_by": "tests/test_tickets_sync.py::test_sync_aborts_on_an_issue_without_a_status_label",
    "repro": null,
    "waived_by": null,
-   "text": "tickets.py:72 now raises on a missing status label; no longer guesses ready."
+   "text": "tickets.py:73 raises on a missing status label; no longer guesses ready."
   },
   {
    "id": "F5",
@@ -67,15 +69,15 @@
   {
    "id": "F6",
    "severity": "block",
-   "status": "open",
+   "status": "resolved",
    "ac": null,
    "charter": "charter-1",
    "home": null,
    "spawn_child": false,
-   "covered_by": null,
+   "covered_by": "tests/test_tickets_sync.py::test_sync_writes_nothing_when_one_of_several_issues_lacks_a_status_label",
    "repro": null,
    "waived_by": null,
-   "text": "tickets.py:108 skips one bad issue, writes the rest, exits 0: partial mirror."
+   "text": "tickets.py:105 stages every render before writing; one bad issue aborts all."
   },
   {
    "id": "F7",
@@ -86,48 +88,35 @@
    "home": null,
    "spawn_child": false,
    "covered_by": null,
-   "repro": "git diff --name-only main...HEAD",
+   "repro": "git diff --name-only main...HEAD | grep gitignore",
    "waived_by": null,
-   "text": "Mirror not gitignored: diff lacks templates/project/.gitignore, so a commit can carry mirrors."
+   "text": "templates/project/.gitignore untouched; mirror is committable though tickets.py:4 calls it never-committed (attack-1)."
   },
   {
    "id": "F8",
    "severity": "warn",
    "status": "open",
-   "ac": "AC-3",
+   "ac": null,
    "charter": null,
-   "home": "plan 4: kanban_ops writes",
+   "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "AC-3's issue-write half unverifiable: no code writes issue bodies this slice."
+   "text": "tickets.py:60 checks frontmatter only; a status: line in body prose mirrors unreported."
   },
   {
    "id": "F9",
    "severity": "warn",
    "status": "open",
    "ac": null,
-   "charter": "charter-1",
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "tickets.py:48 two status labels: first by STATUS_LABELS order wins silently."
-  },
-  {
-   "id": "F10",
-   "severity": "warn",
-   "status": "open",
-   "ac": "AC-4",
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "guard_writes.py:62 unresolved cwd vs resolved target: relative_to fails, guard silently allows."
+   "text": "tickets.py:113 never prunes stale mirrors; a retitled issue leaves two files, double-counted."
   }
  ],
  "ci": {
@@ -139,15 +128,15 @@
   "vendor": "claude",
   "plugin_version": "0.11.2",
   "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
-  "packet_sha": "24749a13bebe14078be2a456c34f29ed5fb20ca3863a70fe5cdf2fe5ab10d535",
-  "cost_usd": 0.36441100000000004,
+  "packet_sha": "b4bb8d6539d84df1384a1830fddde38fc3e418500ce94683b1ca5c096c1583ea",
+  "cost_usd": 0.372725,
   "tokens": {
    "input_tokens": 2,
-   "cache_creation_input_tokens": 16390,
+   "cache_creation_input_tokens": 16856,
    "cache_read_input_tokens": 3054,
-   "output_tokens": 7516,
+   "output_tokens": 7648,
    "output_tokens_details": {
-    "thinking_tokens": 6149
+    "thinking_tokens": 6398
    },
    "server_tool_use": {
     "web_search_requests": 0,
@@ -155,26 +144,26 @@
    },
    "service_tier": "standard",
    "cache_creation": {
-    "ephemeral_1h_input_tokens": 16390,
+    "ephemeral_1h_input_tokens": 16856,
     "ephemeral_5m_input_tokens": 0
    },
    "inference_geo": "not_available",
    "iterations": [
     {
      "input_tokens": 2,
-     "output_tokens": 7516,
+     "output_tokens": 7648,
      "cache_read_input_tokens": 3054,
-     "cache_creation_input_tokens": 16390,
+     "cache_creation_input_tokens": 16856,
      "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
-      "ephemeral_1h_input_tokens": 16390
+      "ephemeral_1h_input_tokens": 16856
      },
      "type": "message"
     }
    ],
    "speed": "standard"
   },
-  "seconds": 94.95028810799886,
+  "seconds": 92.75427763900007,
   "opik": "untraced (OPIK_URL_OVERRIDE unset)"
  }
 }

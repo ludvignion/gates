@@ -1,8 +1,8 @@
 {
- "built": "Sync stages all writes after gh succeeds; gh failure partway leaves no file. render_mirror rejects missing status label. main catches gh error, exits 1 with one stderr line. 3 new tests; 257 pass.",
- "review": "REJECT \u2014 open blocks. Eight criteria held. Resolved: F1 scope, F2 no marker, F3 label, F5 gh atomic, error line. Open: F6 partial write, F7 gitignore; warns F8 AC-3, F9 label order, F10 cwd. CI green but blocks.",
+ "built": "Sync aborts entire process if any issue has bad data; error propagates instead of per-issue skip. Main catches error, logs one line to stderr, exits with code 1; no partial file writes. Tests added for abort behavior, multi-issue scenario (one good, one bad), and missing status label; 259 pass.",
+ "review": "Ship. Held AC-1\u2013AC-6 and charter-1; all blocks resolved, CI green. F6 (abort on one bad issue) verified by test; F3 (status check) and F5 (gh error) also covered. F7 warns .gitignore untouched (mirror committable, code says never-committed). F8\u2013F9 open: body-prose status lines, stale mirror pruning.",
  "model": "haiku",
- "inputs_sha": "db1041626fa6c480c3e62e97fac1933cbcb4162f7a25d98cb90d12b3b7f61995",
- "cost_usd": 0.0458052,
+ "inputs_sha": "b34b8e51a6c4803188ebe29bd3eba28cc79e7217adbc5f30d4c23ddd21ee748c",
+ "cost_usd": 0.027017199999999998,
  "error": null
 }
