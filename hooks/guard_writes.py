@@ -4,7 +4,10 @@
 1. Closed tickets are immutable. A write to a ticket file whose frontmatter `status:` is one of
    `schemas.CLOSED_STATUSES` (done, superseded) is refused, whether or not a ticket is active.
    New work is a new ticket with `depends_on:`; a human reopens by changing the status by hand.
-2. Scope. If `kanban/.active` names a ticket with a `writes:` list, refuse any write outside it.
+2. The mirror is read-only. When `kanban/.issues` names a repo (brief 4, decision 1), any write
+   under `kanban/tickets/` is refused: it is a derived cache `make sync` rewrites, never a place
+   an agent edits directly.
+3. Scope. If `kanban/.active` names a ticket with a `writes:` list, refuse any write outside it.
 
 Reads the tool call from stdin (JSON). Exit 0 = allow. Exit 2 = block (stderr goes to the
 agent). No active ticket, or a ticket without `writes:` → rule 2 is off. Rule 1 is always on.
@@ -54,6 +57,17 @@ def main() -> int:
             "A human reopens by changing status: by hand.\n"
         )
         return 2
+    if (cwd / "kanban" / ".issues").exists():
+        try:
+            rel = Path(target).resolve().relative_to(cwd)
+        except ValueError:
+            rel = None
+        if rel is not None and rel.parts[:2] == ("kanban", "tickets"):
+            sys.stderr.write(
+                f"BLOCKED: {rel} is a read-only mirror of the project's GitHub Issues. "
+                "Run `make sync` instead of editing it directly.\n"
+            )
+            return 2
     active = cwd / "kanban" / ".active"
     if not active.exists():
         return 0

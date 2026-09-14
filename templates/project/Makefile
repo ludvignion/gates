@@ -48,6 +48,9 @@ eval:  ## Product evals (only if src/ calls a model). Costs money. Never in ci.
 board:  ## Render traces/board.html (the runner and the Stop hook do this too). Open it in a browser.
 	python3 $(SCRIPTS)/render_board.py .
 
+sync:  ## Mirror kanban/.issues' GitHub Issues into kanban/tickets/. No-op without the marker.
+	python3 $(SCRIPTS)/tickets.py sync
+
 run:  ## Headless build→ci→verdict. Usage: make run T=1.2  or  make run P=1  (a plan, pausing at every Gate 2). From a session: /gates:runner
 	@if [ -f .env ] && [ -z "$(OPIK_URL_OVERRIDE)" ] && [ "$(OPIK_DISABLE)" != "1" ]; then \
 	  echo "OPIK_URL_OVERRIDE is empty in .env. Set it, or run with OPIK_DISABLE=1 to go untraced." >&2; exit 1; fi
@@ -77,4 +80,4 @@ loop:  ## Renamed. Use make run.
 help:  ## Show this help.
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*##' '{printf "  %-12s %s\n", $$1, $$2}'
 
-.PHONY: install plugin test lint complexity mutation intake kanban coverage ci eval board approve run gate verdict digest replay loop help
+.PHONY: install plugin test lint complexity mutation intake kanban coverage ci eval board sync approve run gate verdict digest replay loop help
