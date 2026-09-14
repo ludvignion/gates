@@ -504,6 +504,31 @@ class VerdictScriptsTest(unittest.TestCase):
         self.assertIn("scripts/x.py", [f["path"] for f in verdict_prep.changed_vs_base(self.tmp, "main", verdict_prep.ticket_writes(self.tmp, "1.1"))["files"]])
         self.assertNotIn("scripts/x.py", [f["path"] for f in verdict_prep.changed_vs_base(self.tmp, "main")["files"]])
 
+    def test_run_ci_reads_a_recorded_run_instead_of_running_make(self):
+        """0.11.3: the runner has just run CI on the same commit; --ci-from carries that run into the packet."""
+        rec = self.tmp / "traces/runs/1.1.ci.log"; rec.parent.mkdir(parents=True, exist_ok=True)
+        rec.write_text("exit 0\n" + "\n".join(f"line {i}" for i in range(40)) + "\n")
+        with mock.patch.object(verdict_prep.subprocess, "run", side_effect=AssertionError("make ci must not run")):
+            green, tail = verdict_prep.run_ci(self.tmp, rec)
+        self.assertTrue(green); self.assertEqual(tail.splitlines()[0], "line 15"); self.assertEqual(tail.splitlines()[-1], "line 39")
+        rec.write_text("exit 2\nFAILED (failures=1)\n")
+        self.assertEqual(verdict_prep.run_ci(self.tmp, rec), (False, "FAILED (failures=1)"))
+        rec.write_text("no header\n")
+        with self.assertRaises(SystemExit) as cm:
+            verdict_prep.run_ci(self.tmp, rec)
+        self.assertIn("first line must be `exit <code>`", str(cm.exception))
+        rec.write_text("exit 0\nall green here\n")
+        real_run = subprocess.run
+        def no_make(args, **kw):
+            if args and args[0] == "make":
+                raise AssertionError("make ci must not run")
+            return real_run(args, **kw)
+        with mock.patch.object(verdict_prep.subprocess, "run", no_make), contextlib.chdir(self.tmp), contextlib.redirect_stdout(io.StringIO()):
+            verdict_prep.main(["verdict_prep.py", "1.1", "--base", "main", "--ci-from", str(rec)])
+        packet = schemas.Packet.load(self.tmp / "traces/verdict/1.1.input.md")
+        self.assertEqual(packet.section("CI").strip().splitlines()[:2], ["green", "```"])
+        self.assertIn("all green here", packet.section("CI"))
+
     def test_run_ci_is_not_silent_and_drops_inherited_make_flags(self):
         """0.11.1: `make -s ci` put -s into MAKEFLAGS; a nested make inside test_init_project stopped echoing
         its commands, an assertion on that echo failed, and a green CI came into the packet as RED."""

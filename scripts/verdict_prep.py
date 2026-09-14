@@ -23,6 +23,10 @@ The Spec section (0.8.0) carries the text of the units the ticket's plan's brief
 `spec_refs`, read from docs/spec/index.md and the spec file; `- none` without an index or a
 citing brief. It counts toward the runner's packet cap like every other section.
 
+The CI section is `make ci` run here, or, with `--ci-from <file>`, the run the caller recorded
+(first line `exit <code>`, then the output; the runner records its own ci phase so the packet
+never reruns CI on the same commit, 0.11.3). Either way the packet carries the last 25 lines.
+
 `always_writable` names the paths every ticket may touch (docs/glossary.md, the parent plan's
 Log) so the reviewer does not warn on them. Refuses to build without a charter, and refuses a
 charter item without an `Applies to:` line. The Charter section lists only the items whose
@@ -175,14 +179,28 @@ def always_writable(plan_n: str) -> list[str]:
     return [x.format(n=plan_n) for x in vc.ALWAYS_WRITABLE]
 
 
-def run_ci(root: Path) -> tuple[bool | None, str]:
+CI_TAIL = 25  # lines of `make ci` output the packet carries
+
+
+def read_ci(path: Path) -> tuple[bool, str]:
+    """A recorded `make ci` (runner.ci with `record`): first line ``exit <code>``, then the output.
+    0.11.3: the runner had just run CI on the same commit; the packet reran it for 25 lines of output."""
+    head, _, body = path.read_text(encoding="utf-8", errors="replace").partition("\n")
+    if not head.startswith("exit "):
+        raise SystemExit(f"--ci-from {path}: first line must be `exit <code>`, got {head[:40]!r}")
+    return int(head[5:].strip()) == 0, "\n".join(body.splitlines()[-CI_TAIL:])
+
+
+def run_ci(root: Path, ci_from: Path | None = None) -> tuple[bool | None, str]:
+    if ci_from is not None:
+        return read_ci(ci_from)
     if not (root / "Makefile").exists() or "ci:" not in (root / "Makefile").read_text(errors="ignore"):
         return None, "no `make ci` target"
     # No -s, and no inherited make flags: `-s` reached a nested make inside a test through MAKEFLAGS,
     # silenced its command echo and turned a green `make ci` red in the packet (0.11.1).
     env = {k: v for k, v in os.environ.items() if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL")}
     r = subprocess.run(["make", "ci"], cwd=root, capture_output=True, text=True, timeout=900, env=env)
-    tail = "\n".join((r.stdout + r.stderr).splitlines()[-25:])
+    tail = "\n".join((r.stdout + r.stderr).splitlines()[-CI_TAIL:])
     return r.returncode == 0, tail
 
 
@@ -206,7 +224,7 @@ def diff_and_stat(root: Path, rng: str, writes=()) -> tuple[str, str]:
     return diff, stat
 
 
-def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
+def gather(root: Path, tid: str, base: str, ci: bool, ci_from: Path | None = None) -> schemas.Packet:
     """The full (packet-seat) packet; ``Packet.rearm`` narrows it."""
     tpath = vc.find_ticket(root, tid)
     fm, body = _fm.read(tpath)
@@ -230,7 +248,7 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     if cur.exists():  # the last verdict on this ticket is the previous one; archive before the new run
         shutil.copyfile(cur, prev_path)
     prev_blocks = schemas.Verdict.load(prev_path).blocks() if prev_path.exists() else ()
-    ci_green, ci_tail = run_ci(root) if ci else (None, "skipped (--no-ci)")
+    ci_green, ci_tail = run_ci(root, ci_from) if ci else (None, "skipped (--no-ci)")
     found = vc.checks(root, tid, base, ci_green)
     rng = f"{base}...HEAD"
     diff, stat = diff_and_stat(root, rng, writes)
@@ -266,8 +284,8 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     return schemas.Packet(fm=head, sections=sections)
 
 
-def build(root: Path, tid: str, base: str, ci: bool, arm: str = schemas.DEFAULT_ARM) -> str:
-    return gather(root, tid, base, ci).rearm(arm).render()
+def build(root: Path, tid: str, base: str, ci: bool, arm: str = schemas.DEFAULT_ARM, ci_from: Path | None = None) -> str:
+    return gather(root, tid, base, ci, ci_from).rearm(arm).render()
 
 
 FILE_CAP = 2000  # diff lines per included file; beyond this the file is a stat line only
@@ -313,10 +331,11 @@ def main(argv: list[str]) -> int:
                     help="how much context the reviewer sees: blind = diff + prompt; packet = everything (default); repo = packet + read-only access to the tree")
     ap.add_argument("--base", default=None, help="the branch the diff is judged against; default: the plan's base: (kanban_ops.base_branch)")
     ap.add_argument("--no-ci", action="store_true")
+    ap.add_argument("--ci-from", default=None, help="a recorded `make ci` (first line `exit <code>`, then the output) to carry instead of running CI again; the runner passes its own run")
     a = ap.parse_args(argv[1:])
     root = Path(".").resolve()
     base = a.base or default_base(root, a.ticket.split(".")[0])
-    text = build(root, a.ticket, base, ci=not a.no_ci, arm=a.arm)
+    text = build(root, a.ticket, base, ci=not a.no_ci, arm=a.arm, ci_from=Path(a.ci_from) if a.ci_from else None)
     out = packet_path(root, a.ticket)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
