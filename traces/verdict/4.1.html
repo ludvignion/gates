@@ -1,0 +1,20 @@
+<!doctype html><meta charset=utf-8><title>Verdict 4.1</title>
+<style>body{font-family:system-ui;max-width:1000px;margin:2rem auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.3rem .6rem;text-align:left}
+.hero{font-size:2rem;padding:1rem;color:#fff;background:#c0392b}
+li.block{background:#fdd}li.warn{background:#ffe9c7}
+li{margin:.3rem 0;padding:.2rem .4rem;list-style:none}ul{padding-left:0}
+.meta{color:#666;font-size:.85rem}.invalid{color:#c0392b;font-weight:bold}td.no{background:#fdd}details{margin:.4rem 0}
+section.top{background:#f6f6f6;padding:.6rem 1rem;border-radius:8px;margin:.6rem 0}pre{white-space:pre-wrap;font-size:.85rem}</style>
+<div class=hero>REJECT — 4.1</div>
+<p class=meta>Seat: claude · packet seat · cost $0.2432 · tokens in/out 2/3863 · 53 s · untraced (OPIK_URL_OVERRIDE unset)</p>
+<p>CI: RED · mutation: None</p>
+
+<section class=top><h2>What was built</h2><p>Ticket 4.1 adds issue sync (scripts/tickets.py) to push board state to GitHub, guards mirror as read-only when kanban exists (guard_writes.py), updates schema to parse issue numbers. Includes Makefile sync target and test fixtures. 251 tests pass.</p></section>
+<section class=top><h2>What the reviewer said</h2><p>REJECT; held attack-1, attack-2, attack-4. Blocks: CI red (make ci); charter.md outside write permissions. Diff shows tests only—implementation files (tickets.py, guard_writes.py, Makefile) absent, so AC-1..6 unverifiable. Attack-3 (closed-issue refuse) untested. All ACs remain unaccounted.</p><p><b>Reject.</b> Held: attack-1, attack-2, attack-4. 2 open blocks: C1 (this ticket) make ci is red; F1 (this ticket) docs/domain-pack/charter.md:1 new file outside writes: and always_writable. 8 warns: F2 Diff shows tests only; tickets.py, guard_writes.py, Makefile absent, so AC-1..AC-6 unverifiable; F3 attack-3: no test shows tickets.py refusing a write on a closed issue; C2 unaccounted: AC-1; C3 unaccounted: AC-2; C4 unaccounted: AC-3; C5 unaccounted: AC-4; C6 unaccounted: AC-5; C7 unaccounted: AC-6.</p></section>
+<section class=top><h2>Recommended action</h2><ul><li><b>C1</b> rework in place</li><li><b>F1</b> rework in place</li><li><b>F2</b> waive</li><li><b>F3</b> waive</li><li><b>C2</b> waive</li><li><b>C3</b> waive</li><li><b>C4</b> waive</li><li><b>C5</b> waive</li><li><b>C6</b> waive</li><li><b>C7</b> waive</li></ul></section>
+
+<p class=meta>Held: attack-1, attack-2, attack-4</p>
+<h2>Blocks (2)</h2><ul><li class=block><b>C1</b> <code>ci</code> make ci is red<div class=meta>repro <code>make ci</code></div></li><li class=block><b>F1</b> <code>writes</code> docs/domain-pack/charter.md:1 new file outside writes: and always_writable<div class=meta>repro <code>git diff --name-only main...HEAD</code></div></li></ul>
+<h2>Warnings (8)</h2><ul><li class=warn><b>F2</b> <code>—</code> Diff shows tests only; tickets.py, guard_writes.py, Makefile absent, so AC-1..AC-6 unverifiable</li><li class=warn><b>F3</b> <code>—</code> attack-3: no test shows tickets.py refusing a write on a closed issue</li><li class=warn><b>C2</b> <code>AC-1</code> unaccounted: AC-1</li><li class=warn><b>C3</b> <code>AC-2</code> unaccounted: AC-2</li><li class=warn><b>C4</b> <code>AC-3</code> unaccounted: AC-3</li><li class=warn><b>C5</b> <code>AC-4</code> unaccounted: AC-4</li><li class=warn><b>C6</b> <code>AC-5</code> unaccounted: AC-5</li><li class=warn><b>C7</b> <code>AC-6</code> unaccounted: AC-6</li></ul>
+
+<h2>Quality</h2><table><tr><th>File</th><th>1 SRP</th><th>2 AC-trace</th><th>3 YAGNI</th><th>4 rule-of-3</th><th>5 ISP</th><th>6 DIP</th></tr></table>
