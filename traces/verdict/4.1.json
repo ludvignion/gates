@@ -2,45 +2,46 @@
  "ticket": "4.1",
  "decision": "reject",
  "held": [
-  "attack-2",
-  "attack-4",
+  "AC-1",
   "AC-2",
   "AC-3",
   "AC-4",
-  "AC-5",
-  "AC-6"
+  "AC-6",
+  "attack-2",
+  "attack-3",
+  "attack-4"
  ],
  "findings": [
   {
    "id": "C1",
    "severity": "block",
-   "status": "open",
-   "ac": "ci",
+   "status": "resolved",
+   "ac": null,
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": "make ci",
    "waived_by": null,
-   "text": "make ci is red"
+   "text": "make ci was red; packet CI now green, 254 tests OK (skipped=1)."
   },
   {
    "id": "F1",
    "severity": "block",
-   "status": "open",
-   "ac": "writes",
+   "status": "resolved",
+   "ac": null,
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": "git diff --name-only main...HEAD",
    "waived_by": null,
-   "text": "docs/domain-pack/charter.md:1 new file outside writes: and always_writable"
+   "text": "docs/domain-pack/charter.md no longer in the diff stat; write scope clean."
   },
   {
    "id": "F2",
    "severity": "block",
-   "status": "open",
+   "status": "resolved",
    "ac": "AC-1",
    "charter": null,
    "home": null,
@@ -48,20 +49,20 @@
    "covered_by": null,
    "repro": "python -m unittest test_init_project",
    "waived_by": null,
-   "text": "existing test breaks: template ci no longer emits coverage.py, tests/test_init_project.py:103"
+   "text": "template ci untouched this branch; Makefile adds only sync, all tests pass."
   },
   {
    "id": "F3",
-   "severity": "warn",
+   "severity": "block",
    "status": "open",
-   "ac": "AC-4",
-   "charter": null,
+   "ac": null,
+   "charter": "charter-1",
    "home": null,
    "spawn_child": false,
    "covered_by": null,
-   "repro": "git ls-files kanban/tickets/",
+   "repro": null,
    "waived_by": null,
-   "text": "kanban excluded from diff; cannot verify no mirror file committed under kanban/tickets/"
+   "text": "tickets.py:70 issue lacking a status label mirrors as `status: ready`; guesses, --state all includes closed."
   },
   {
    "id": "F4",
@@ -74,27 +75,79 @@
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "attack-3 unverified: no tickets.py GitHub write path shown; closed-issue refusal untested"
+   "text": "templates/project/.gitignore untouched though in writes:; mirror files stay committable (attack-1)."
+  },
+  {
+   "id": "F5",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-5",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "AC-5 grouping unevidenced: render_board.py unchanged, test row omits `parent:`; only slice counting shown."
+  },
+  {
+   "id": "F6",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "tickets.py:101 sync never prunes; a retitled issue leaves a stale second mirror per id."
+  },
+  {
+   "id": "F7",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "tickets.py:33 gh failure raises uncaught RuntimeError: traceback, not one line (charter-1)."
+  },
+  {
+   "id": "F8",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-4",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "guard_writes.py:63 symlinked cwd makes relative_to raise; mirror write then allowed silently."
   }
  ],
  "ci": {
-  "green": false,
+  "green": true,
   "mutation_score": null
  },
  "meta": {
   "arm": "packet",
   "vendor": "claude",
-  "plugin_version": "0.10.1",
+  "plugin_version": "0.11.1",
   "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
-  "packet_sha": "b7a801feafdce524d865d131bbd9d7c6c5909e3d0aa947f9b89ddb82e318549a",
-  "cost_usd": 0.277998,
+  "packet_sha": "ae920af327d1b06b3858a86cfdcdad93247aed4904d513d114dc3d67d8c13b5e",
+  "cost_usd": 0.469154,
   "tokens": {
    "input_tokens": 2,
-   "cache_creation_input_tokens": 11020,
-   "cache_read_input_tokens": 3054,
-   "output_tokens": 6371,
+   "cache_creation_input_tokens": 18094,
+   "cache_read_input_tokens": 0,
+   "output_tokens": 11126,
    "output_tokens_details": {
-    "thinking_tokens": 5693
+    "thinking_tokens": 9911
    },
    "server_tool_use": {
     "web_search_requests": 0,
@@ -102,26 +155,26 @@
    },
    "service_tier": "standard",
    "cache_creation": {
-    "ephemeral_1h_input_tokens": 11020,
+    "ephemeral_1h_input_tokens": 18094,
     "ephemeral_5m_input_tokens": 0
    },
    "inference_geo": "not_available",
    "iterations": [
     {
      "input_tokens": 2,
-     "output_tokens": 6371,
-     "cache_read_input_tokens": 3054,
-     "cache_creation_input_tokens": 11020,
+     "output_tokens": 11126,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 18094,
      "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
-      "ephemeral_1h_input_tokens": 11020
+      "ephemeral_1h_input_tokens": 18094
      },
      "type": "message"
     }
    ],
    "speed": "standard"
   },
-  "seconds": 82.90486692499962,
+  "seconds": 136.1224064979997,
   "opik": "untraced (OPIK_URL_OVERRIDE unset)"
  }
 }

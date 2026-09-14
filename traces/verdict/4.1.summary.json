@@ -1,8 +1,8 @@
 {
- "built": "Implements GitHub sync to kanban: scripts/tickets.py syncs marked issues, hooks/guard_writes.py enforces read-only mirror, schemas.py accepts issue numbers, Makefile sync target. Tests verify acceptance criteria. Broken: make ci red, charter.md outside writes, test_init_project:103 breaks.",
- "review": "Reject. Three blockers: make ci red (C1), charter.md outside writes (F1), test_init_project breaks (F2). Core AC-2-6 implemented but held. Two warns: kanban excluded so mirror unverified (F3), GitHub writes to closed issues untested (F4).",
+ "built": "Adds tickets.py for GitHub issue sync with gh seams (marker/sync/ensure_labels/render_mirror, AC-1/2/3/6). Mirror guarded read-only when kanban/.issues exists (AC-4). Schema parsing extended for dotted IDs (AC-5). 254 tests pass.",
+ "review": "Reject: open block F3 (charter-1). Issues without status default to ready; --state all includes closed. ACs and attack tests held. Five warns on robustness: .gitignore untouched (attack-1), AC-5 grouping unevidenced, sync lacks pruning, gh error uncaught, symlinked cwd breaks mirror guard. Resubmit when status logic fixed and error handling hardened.",
  "model": "haiku",
- "inputs_sha": "e233ab510bc6ae07c4c2c9a8a2164911d9c486dc9e37a91226c8220df7c5dcbf",
- "cost_usd": 0.0315072,
+ "inputs_sha": "cf85d729518311030bc82e3728a3da8616e070e55cd4d58c278764dedfa79e9e",
+ "cost_usd": 0.04333999999999999,
  "error": null
 }
