@@ -1,8 +1,8 @@
 {
- "built": "Ticket 4.1 adds issue sync (scripts/tickets.py) to push board state to GitHub, guards mirror as read-only when kanban exists (guard_writes.py), updates schema to parse issue numbers. Includes Makefile sync target and test fixtures. 251 tests pass.",
- "review": "REJECT; held attack-1, attack-2, attack-4. Blocks: CI red (make ci); charter.md outside write permissions. Diff shows tests only\u2014implementation files (tickets.py, guard_writes.py, Makefile) absent, so AC-1..6 unverifiable. Attack-3 (closed-issue refuse) untested. All ACs remain unaccounted.",
+ "built": "Implements GitHub sync to kanban: scripts/tickets.py syncs marked issues, hooks/guard_writes.py enforces read-only mirror, schemas.py accepts issue numbers, Makefile sync target. Tests verify acceptance criteria. Broken: make ci red, charter.md outside writes, test_init_project:103 breaks.",
+ "review": "Reject. Three blockers: make ci red (C1), charter.md outside writes (F1), test_init_project breaks (F2). Core AC-2-6 implemented but held. Two warns: kanban excluded so mirror unverified (F3), GitHub writes to closed issues untested (F4).",
  "model": "haiku",
- "inputs_sha": "2d6925b26db9a7779600d4158118ad6c9ec087585084178b311034d5aa0f3573",
- "cost_usd": 0.032466,
+ "inputs_sha": "e233ab510bc6ae07c4c2c9a8a2164911d9c486dc9e37a91226c8220df7c5dcbf",
+ "cost_usd": 0.0315072,
  "error": null
 }

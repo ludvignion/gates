@@ -2,9 +2,13 @@
  "ticket": "4.1",
  "decision": "reject",
  "held": [
-  "attack-1",
   "attack-2",
-  "attack-4"
+  "attack-4",
+  "AC-2",
+  "AC-3",
+  "AC-4",
+  "AC-5",
+  "AC-6"
  ],
  "findings": [
   {
@@ -35,71 +39,19 @@
   },
   {
    "id": "F2",
-   "severity": "warn",
-   "status": "open",
-   "ac": null,
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "Diff shows tests only; tickets.py, guard_writes.py, Makefile absent, so AC-1..AC-6 unverifiable"
-  },
-  {
-   "id": "F3",
-   "severity": "warn",
-   "status": "open",
-   "ac": null,
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "attack-3: no test shows tickets.py refusing a write on a closed issue"
-  },
-  {
-   "id": "C2",
-   "severity": "warn",
+   "severity": "block",
    "status": "open",
    "ac": "AC-1",
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
-   "repro": null,
+   "repro": "python -m unittest test_init_project",
    "waived_by": null,
-   "text": "unaccounted: AC-1"
+   "text": "existing test breaks: template ci no longer emits coverage.py, tests/test_init_project.py:103"
   },
   {
-   "id": "C3",
-   "severity": "warn",
-   "status": "open",
-   "ac": "AC-2",
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "unaccounted: AC-2"
-  },
-  {
-   "id": "C4",
-   "severity": "warn",
-   "status": "open",
-   "ac": "AC-3",
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "unaccounted: AC-3"
-  },
-  {
-   "id": "C5",
+   "id": "F3",
    "severity": "warn",
    "status": "open",
    "ac": "AC-4",
@@ -107,35 +59,22 @@
    "home": null,
    "spawn_child": false,
    "covered_by": null,
-   "repro": null,
+   "repro": "git ls-files kanban/tickets/",
    "waived_by": null,
-   "text": "unaccounted: AC-4"
+   "text": "kanban excluded from diff; cannot verify no mirror file committed under kanban/tickets/"
   },
   {
-   "id": "C6",
+   "id": "F4",
    "severity": "warn",
    "status": "open",
-   "ac": "AC-5",
+   "ac": null,
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "unaccounted: AC-5"
-  },
-  {
-   "id": "C7",
-   "severity": "warn",
-   "status": "open",
-   "ac": "AC-6",
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "unaccounted: AC-6"
+   "text": "attack-3 unverified: no tickets.py GitHub write path shown; closed-issue refusal untested"
   }
  ],
  "ci": {
@@ -147,15 +86,15 @@
   "vendor": "claude",
   "plugin_version": "0.10.1",
   "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
-  "packet_sha": "6a26e1cb528423f9d996bc97236bd6288c65bec506cad958ae964d43228eb288",
-  "cost_usd": 0.24321700000000002,
+  "packet_sha": "b7a801feafdce524d865d131bbd9d7c6c5909e3d0aa947f9b89ddb82e318549a",
+  "cost_usd": 0.277998,
   "tokens": {
    "input_tokens": 2,
-   "cache_creation_input_tokens": 13971,
-   "cache_read_input_tokens": 0,
-   "output_tokens": 3863,
+   "cache_creation_input_tokens": 11020,
+   "cache_read_input_tokens": 3054,
+   "output_tokens": 6371,
    "output_tokens_details": {
-    "thinking_tokens": 3345
+    "thinking_tokens": 5693
    },
    "server_tool_use": {
     "web_search_requests": 0,
@@ -163,26 +102,26 @@
    },
    "service_tier": "standard",
    "cache_creation": {
-    "ephemeral_1h_input_tokens": 13971,
+    "ephemeral_1h_input_tokens": 11020,
     "ephemeral_5m_input_tokens": 0
    },
    "inference_geo": "not_available",
    "iterations": [
     {
      "input_tokens": 2,
-     "output_tokens": 3863,
-     "cache_read_input_tokens": 0,
-     "cache_creation_input_tokens": 13971,
+     "output_tokens": 6371,
+     "cache_read_input_tokens": 3054,
+     "cache_creation_input_tokens": 11020,
      "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
-      "ephemeral_1h_input_tokens": 13971
+      "ephemeral_1h_input_tokens": 11020
      },
      "type": "message"
     }
    ],
    "speed": "standard"
   },
-  "seconds": 53.04833257899918,
+  "seconds": 82.90486692499962,
   "opik": "untraced (OPIK_URL_OVERRIDE unset)"
  }
 }
