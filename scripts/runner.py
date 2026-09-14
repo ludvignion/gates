@@ -217,8 +217,17 @@ def merged_into(repo: Path, branch: str, base: str) -> bool:
     return tips[0] != tips[1] and sh(["git", "merge-base", "--is-ancestor", branch, base], repo) == 0
 
 
-def ci(cwd: Path) -> bool:
-    return sh(["make", "ci"], cwd) == 0
+def ci(cwd: Path, record: Path | None = None) -> bool:
+    """`make ci` in cwd. With `record`, the output is captured, echoed, and written there as
+    ``exit <code>`` plus the output, for verdict_prep --ci-from (0.11.3: one CI run per attempt,
+    not one for the gate and one for the packet)."""
+    if record is None:
+        return sh(["make", "ci"], cwd) == 0
+    r = subprocess.run(["make", "ci"], cwd=cwd, capture_output=True, text=True)
+    sys.stdout.write(r.stdout + r.stderr)
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(f"exit {r.returncode}\n" + r.stdout + r.stderr, encoding="utf-8")
+    return r.returncode == 0
 
 
 def build_status(cwd: Path, tid: str) -> str:
@@ -547,11 +556,11 @@ def call_vendor(cmd: str, cwd: Path, output: Path) -> VendorCall:
 NOTHING_TO_JUDGE = "nothing to judge"  # verdict_prep's refusal on an empty included diff (contract G, E20)
 
 
-def prep(cwd: Path, tid: str, arm: str, base: str | None = None) -> Path:
+def prep(cwd: Path, tid: str, arm: str, base: str | None = None, ci_from: Path | None = None) -> Path:
     """Write the packet through verdict_prep.py (--base from kanban_ops.base_branch, E21). Its
     "nothing to judge" refusal becomes a Refusal here, before any model call (E20)."""
-    r = subprocess.run([sys.executable, str(SCRIPTS / "verdict_prep.py"), tid, "--arm", arm, *(["--base", base] if base else [])],
-                       cwd=cwd, capture_output=True, text=True)
+    r = subprocess.run([sys.executable, str(SCRIPTS / "verdict_prep.py"), tid, "--arm", arm, *(["--base", base] if base else []),
+                        *(["--ci-from", str(ci_from)] if ci_from else [])], cwd=cwd, capture_output=True, text=True)
     if r.returncode != 0:
         if any(l.startswith(NOTHING_TO_JUDGE) for l in r.stderr.splitlines()):
             raise Refusal(2, f"error {NOTHING_TO_JUDGE}", f"[runner] {NOTHING_TO_JUDGE}")
@@ -634,7 +643,7 @@ def log_verdict(cwd: Path, tid: str, v: "schemas.Verdict") -> str | None:
 
 def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
             template: str = DEFAULT_VERDICT_CMD, summary_model: str = render_verdict.DEFAULT_SUMMARY_MODEL,
-            base: str | None = None, packet_cap: int = PACKET_TOKEN_CAP) -> tuple[str, bool, bool]:
+            base: str | None = None, packet_cap: int = PACKET_TOKEN_CAP, ci_from: Path | None = None) -> tuple[str, bool, bool]:
     """Returns (decision, retryable, progressed).
     retryable: an open block the builder can fix here (not spawn_child).
     progressed: at least one open block is new since the previous verdict; False means the
@@ -648,7 +657,7 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
     if p.exists():
         p.replace(prev)
         prev_open = {f["id"] for f in schemas.Verdict.load(prev).open_blocks()}
-    packet = prep(cwd, tid, arm, base)
+    packet = prep(cwd, tid, arm, base, ci_from)
     if (size := packet_tokens(packet)) > packet_cap:
         raise Refusal(2, "error packet too big", f"[runner] packet too big: ~{size} tokens (cap {packet_cap}); narrow the ticket or raise --packet-cap")
     cmd = verdict_cmd(template, packet=str(packet.relative_to(cwd)), output=str(p.relative_to(cwd)), model=model, ticket=tid)
@@ -928,14 +937,15 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
                     print("[runner] build blocked — see ticket Log; human needed")
                     return finish(3, "error blocked")
             phases.mark("ci")
-            green = ci(tree)
+            ci_log = repo / "traces" / "runs" / f"{tid}.ci.log"
+            green = ci(tree, ci_log)
             trace_build(client, tid=tid, cwd=tree, base=base, attempt=attempt, call=call, ci_green=green, seconds=phases.finish())
             if not green:
                 print("[runner] ci red")
                 continue
             phases.mark("verdict")
             decision, retryable, progressed = verdict(tree, tid, a.verdict_model, a.arm, a.verdict_cmd, a.summary_model,
-                                                      base=base_name, packet_cap=getattr(a, "packet_cap", PACKET_TOKEN_CAP))
+                                                      base=base_name, packet_cap=getattr(a, "packet_cap", PACKET_TOKEN_CAP), ci_from=ci_log)
             phases.mark("close-out")
             print(f"[runner] verdict: {decision}{' (retryable)' if retryable else ''}")
             import verdict_eval  # here, not at the top: verdict_eval imports runner

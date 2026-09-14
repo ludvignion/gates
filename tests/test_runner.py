@@ -536,6 +536,19 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertIn("] build 2\n", out); self.assertNotIn("build 2 skipped", out)
         self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state")[-1], "done error retry cap")
 
+    def test_ci_runs_once_per_attempt_and_the_packet_carries_it(self):
+        """0.11.3: the runner records its ci phase and hands it to verdict_prep --ci-from; the packet never reruns make."""
+        (self.repo / "Makefile").write_text("ci:\n\t@test -f green && echo CI-RAN-$$(date +%s%N)\n")
+        git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "stamp ci")
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        rec = (self.repo / "traces/runs/1.1.ci.log").read_text()
+        self.assertEqual(rec.splitlines()[0], "exit 0"); self.assertEqual(rec.count("CI-RAN-"), 1)
+        stamp = rec.splitlines()[1]
+        ci_section = schemas.Packet.load(self.repo / "traces/verdict/1.1.input.md").section("CI")
+        self.assertEqual(ci_section.strip().splitlines()[0], "green"); self.assertIn(stamp, ci_section)  # the same run, not a second one
+        self.assertEqual(out.count("CI-RAN-"), 1)  # the recorded phase's echo; ci-pre streams to the real stdout, unrecorded
+
     def test_reject_writes_the_verdict_log_entry_and_the_retry_builds(self):
         """0.11.2, first self-run: a reject with rework blocks looped build-skipped → ci → verdict to the retry
         cap on one unchanged packet, and the ticket Log never got the [verdict] entry the build skill's
@@ -716,6 +729,14 @@ class RunnerBuildSeatTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             call = runner.build(self.repo, "1.1", "sonnet")
         self.assertEqual((call.returncode, call.result, call.denied, call.closed_out, call.orbit, call.cost_usd), (0, "ok", "WebFetch", False, (), 0.7))
+        rec = self.tmp / "rec" / "1.1.ci.log"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertTrue(runner.ci(self.repo, rec))
+        self.assertEqual(rec.read_text().splitlines()[0], "exit 0")  # under a parent make, MAKEFLAGS adds directory lines: only the header is fixed
+        (self.repo / "green").unlink()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(runner.ci(self.repo, rec))
+        self.assertEqual(rec.read_text().splitlines()[0], "exit 2"); (self.repo / "green").write_text("")
         git(self.repo, "checkout", "-q", "-b", "ticket/1.1")
         self.scenario.write_text(json.dumps(closeout_steps() + [{"cmd": "echo probe"}]))
         marks = []

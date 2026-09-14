@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.3 — 2026-09-14
+
+One `make ci` per attempt, not two. The runner ran CI as its gate, then `verdict_prep` ran it
+again on the same commit for the 25 lines the packet carries. On the self-run that was 90
+seconds twice per attempt.
+
+- `scripts/runner.py` — `ci(cwd, record)` captures the ci phase, echoes it into the log, and
+  writes `traces/runs/<id>.ci.log` as `exit <code>` plus the output; `prep` passes it as
+  `--ci-from`. `ci-pre` still streams, unrecorded.
+- `scripts/verdict_prep.py` — `--ci-from <file>` carries a recorded run into the CI section
+  (green from the exit code, the last 25 lines) instead of running make. Standalone
+  `make verdict` without the flag runs CI as before. A file without the `exit <code>` header
+  is refused in one line.
+
 ## 0.11.2 — 2026-09-14
 
 Second lesson of the self-run: the retry never retried. After a REJECT with rework blocks the
