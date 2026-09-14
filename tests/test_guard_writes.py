@@ -53,6 +53,16 @@ class GuardWritesTest(unittest.TestCase):
         self.assertEqual(run_hook(self.tmp, self.tmp / "src" / "match" / "a.py").returncode, 0)
         self.assertEqual(run_hook(self.tmp, self.tmp / "src" / "transform" / "a.py").returncode, 2)
 
+    def test_mirror_is_blocked_when_issues_marker_present(self):
+        (self.tmp / "kanban" / ".issues").write_text("ludvignion/gates\n")
+        (self.tmp / "kanban" / ".active").write_text("1.2")
+        res = run_hook(self.tmp, self.tickets / "1.2.match-stage.md")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("make sync", res.stderr)
+
+    def test_mirror_is_untouched_without_the_marker(self):
+        self.assertEqual(run_hook(self.tmp, self.tickets / "1.2.match-stage.md").returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
