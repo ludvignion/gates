@@ -100,19 +100,23 @@ class TicketsSyncTest(unittest.TestCase):
         buf.seek(0)
         self.assertIn("#42", buf.read())
 
-    def test_sync_skips_an_issue_without_a_status_label(self):
+    def test_sync_aborts_on_an_issue_without_a_status_label(self):
         (self.tmp / "kanban" / ".issues").write_text("ludvignion/gates\n")
         unlabelled = {**ISSUE, "labels": ["ticket"]}
         self._write_issues(unlabelled)
-        buf = tempfile.TemporaryFile(mode="w+")
-        with mock.patch.object(sys, "stderr", buf):
-            written = tickets.sync(self.tmp)
-        self.assertEqual(written, [])
+        with self.assertRaises(ValueError) as ctx:
+            tickets.sync(self.tmp)
+        self.assertIn("#42", str(ctx.exception))
+        self.assertIn("status label", str(ctx.exception))
         self.assertEqual(list((self.tmp / "kanban" / "tickets").iterdir()), [])
-        buf.seek(0)
-        err = buf.read()
-        self.assertIn("#42", err)
-        self.assertIn("status label", err)
+
+    def test_sync_writes_nothing_when_one_of_several_issues_lacks_a_status_label(self):
+        (self.tmp / "kanban" / ".issues").write_text("ludvignion/gates\n")
+        unlabelled = {**ISSUE, "number": 43, "title": "Second ticket", "labels": ["ticket"]}
+        self._write_issues(ISSUE, unlabelled)
+        with self.assertRaises(ValueError):
+            tickets.sync(self.tmp)
+        self.assertEqual(list((self.tmp / "kanban" / "tickets").iterdir()), [])
 
     def test_sync_writes_nothing_when_a_gh_call_fails_partway(self):
         (self.tmp / "kanban" / ".issues").write_text("ludvignion/gates\n")
@@ -125,6 +129,20 @@ class TicketsSyncTest(unittest.TestCase):
     def test_main_refuses_a_gh_failure_in_one_line_not_a_traceback(self):
         (self.tmp / "kanban" / ".issues").write_text("ludvignion/gates\n")
         self.gh_data.write_text(json.dumps({"issues": [ISSUE], "fail_view": [42]}))
+        buf = tempfile.TemporaryFile(mode="w+")
+        with mock.patch.object(sys, "stderr", buf):
+            rc = tickets.main(["tickets.py", "sync", "--cwd", str(self.tmp)])
+        self.assertEqual(rc, 1)
+        buf.seek(0)
+        lines = buf.read().strip().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertNotIn("Traceback", lines[0])
+        self.assertEqual(list((self.tmp / "kanban" / "tickets").iterdir()), [])
+
+    def test_main_refuses_a_missing_status_label_in_one_line_not_a_traceback(self):
+        (self.tmp / "kanban" / ".issues").write_text("ludvignion/gates\n")
+        unlabelled = {**ISSUE, "labels": ["ticket"]}
+        self._write_issues(unlabelled)
         buf = tempfile.TemporaryFile(mode="w+")
         with mock.patch.object(sys, "stderr", buf):
             rc = tickets.main(["tickets.py", "sync", "--cwd", str(self.tmp)])
