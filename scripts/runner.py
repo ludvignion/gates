@@ -4,7 +4,7 @@ Usage: python runner.py <ticket id> | --plan <n> [--max-retries 2] [--cwd .] [--
                         [--verdict-model opus] [--arm blind|packet|repo] [--verdict-cmd "<template>"]
                         [--summary-model haiku] [--parallel] [--override backend=<x>|scrutiny=<y>]
                         [--packet-cap 40000]
-States: branch → ci-pre → build (skipped when in_review with tests/feat/close-out commits) →
+States: branch → ci-pre → build (attempt 1 skipped when in_review with tests/feat/close-out commits; a retry always builds, the verdict's blocks in the ticket Log as its brief) →
 status → ci → verdict → close-out → (ship | block→retry | child→human). Phase names:
 branch|worktree · ci-pre · build <n> · build <n> close-out · build <n> skipped · tests-commit ·
 feat-commit · ci · verdict · close-out · done <decision>.
@@ -374,16 +374,23 @@ def head_subject(cwd: Path) -> str:
     return subprocess.run(["git", "log", "-1", "--format=%s"], cwd=cwd, capture_output=True, text=True).stdout.strip()
 
 
-def closed_out(cwd: Path, tid: str) -> bool:
-    """The build reached its close-out: the committed ticket (HEAD) carries the status line.
-    Committed state only: the builder's next command may already be running while the runner
-    reads the previous result, so the working tree is never consulted here."""
+def status_marks(cwd: Path, tid: str) -> int:
+    """How many ``### [build] … — status:`` lines the committed ticket (HEAD) carries."""
     ticket = kanban_ops.find_ticket(cwd, tid)
     if ticket is None:
-        return False
+        return 0
     rel = ticket.relative_to(cwd).as_posix()
     committed = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=cwd, capture_output=True, text=True).stdout
-    return bool(STATUS_RE.search(committed))
+    return len(STATUS_RE.findall(committed))
+
+
+def closed_out(cwd: Path, tid: str, before: int = 0) -> bool:
+    """The build reached its close-out: the committed ticket (HEAD) carries a status line it did
+    not carry when the session started (`before`; a retry's Log already holds the first build's
+    close-out, and 0.11.2 read that as an orbit on the builder's first tool call). Committed
+    state only: the builder's next command may already be running while the runner reads the
+    previous result, so the working tree is never consulted here."""
+    return status_marks(cwd, tid) > before
 
 
 BOARD_TICK = 10.0  # seconds between board renders while the build streams (the page refreshes every 5 s)
@@ -406,6 +413,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
     t0 = time.monotonic()
     last_tick = last_beat = t0
     last_line, last_at = "", time.strftime("%H:%M:%S")
+    before = status_marks(cwd, tid)  # a retry starts with the previous close-out in the Log
     proc = subprocess.Popen(build_cmd(tid, model), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     report: dict = {}
     orbit: list[str] = []
@@ -420,7 +428,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
             if subject.startswith(prefix) and mark not in seen:
                 seen.add(mark)
                 phase(mark)
-        if not done and closed_out(cwd, tid):
+        if not done and closed_out(cwd, tid, before):
             done = True
             phase(f"build {attempt} close-out")
 
@@ -489,7 +497,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
         if pipe:
             pipe.close()
     sys.stderr.write(stderr or "")
-    if not done and closed_out(cwd, tid):
+    if not done and closed_out(cwd, tid, before):
         done = True
         phase(f"build {attempt} close-out")
     denials = tuple(d for d in (report.get("permission_denials") or ()) if isinstance(d, dict))
@@ -598,6 +606,8 @@ def commit_verdict(cwd: Path, tid: str, decision: str) -> str | None:
     """Commit the verdict artifacts on the ticket branch (git add -f: projects ignore the html).
     Returns the short sha, or None when there was nothing new to commit."""
     files = [f"traces/verdict/{name.format(tid=tid)}" for name in VERDICT_ARTIFACTS if (cwd / "traces" / "verdict" / name.format(tid=tid)).exists()]
+    if (tpath := kanban_ops.find_ticket(cwd, tid)) is not None:
+        files.append(str(tpath.relative_to(cwd)))  # the ticket Log's [verdict] entry (log_verdict)
     subprocess.run(["git", "add", "-f", *files], cwd=cwd, capture_output=True)
     if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=cwd).returncode == 0:
         return None
@@ -606,6 +616,20 @@ def commit_verdict(cwd: Path, tid: str, decision: str) -> str | None:
         print(f"[runner] verdict artifacts not committed: {r.stderr.strip()[-200:]}")
         return None
     return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=cwd, capture_output=True, text=True).stdout.strip()
+
+
+def log_verdict(cwd: Path, tid: str, v: "schemas.Verdict") -> str | None:
+    """Append ``### [verdict] <timestamp> — <decision>`` to the ticket's Log, one
+    ``- <severity> <id> <ac|charter|->: <text>`` line per open block or warn, `` → child`` when it
+    spawns one: the same entry the verdict skill writes by hand. The build skill's retry check
+    reads it (0.11.2: the runner never wrote it, so a retry had no brief), and so do
+    verdict_eval and lint_kanban. Returns the entry, or None without the ticket."""
+    path = kanban_ops.find_ticket(cwd, tid)
+    if path is None:
+        return None
+    lines = tuple(f"- {f.get('severity')} {f.get('id')} {f.get('ac') or f.get('charter') or '-'}: {f.get('text', '')}" + (" → child" if f.get("spawn_child") else "")
+                  for f in v.findings if f.get("severity") in ("block", "warn") and v.is_open(f))
+    return kanban_ops.append_log(path, "verdict", v.decision, lines)
 
 
 def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
@@ -646,6 +670,7 @@ def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,
     for x in violations:
         print(f"[runner] verdict invalid: {x}")
     v = schemas.Verdict.load(p)
+    log_verdict(cwd, tid, v)
     spath = render_verdict.summary_path(cwd, tid)
     summary = json.loads(spath.read_text(encoding="utf-8")) if spath.exists() else None
     sha = commit_verdict(cwd, tid, v.decision)
@@ -880,7 +905,7 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
                 print("[runner] baseline red on a fresh branch — not this ticket's fault; fix main first")
                 return finish(1, "error baseline red")
         for attempt in range(1, a.max_retries + 1):
-            if already_built(tree, tid, base):
+            if attempt == 1 and already_built(tree, tid, base):  # a retry always builds: the blocks are its brief (0.11.2)
                 phases.mark(f"build {attempt} skipped in_review with tests/feat/close-out commits")
                 call = BuildCall(0, (), "", closed_out=True)
             else:
