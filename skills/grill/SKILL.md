@@ -178,11 +178,6 @@ override — it means the derivation rules are wrong, and they get tuned, not th
 - Propose architecture the ACs don't require.
 - Write code, tests, or ADRs. Note ADR candidates in the plan under "Decisions worth an ADR".
 
-## Child tickets
-
-A rejected verdict spawns `kanban/tickets/<n>.<m>.<p>.<slug>.md`. The rejection is the brief. Skip gate 1.
-Run rules 1–3 and 9 only; no human round unless a decision is genuinely open.
-
 ## Evidence discipline
 `resolved_by: evidence` is allowed only after opening the source. For a file path, `evidence`
 quotes its first line and its line count. For a schema, it quotes the header row or field list
