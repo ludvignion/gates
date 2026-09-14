@@ -40,7 +40,7 @@ from typing import NamedTuple
 AC_ID_RE = re.compile(r"\bAC-\d+\b")
 _SECTION_RE = re.compile(r"^## (?P<title>.+?)\s*$", re.MULTILINE)
 _AC_LINE_RE = re.compile(r"^- (?P<id>AC-\d+)\b")
-_SLICE_LINE_RE = re.compile(r"^\s*(?:\d+\.|[-*])\s+`?(?P<id>\d+(?:\.\d+)+)`?(?:\s|$)")
+_SLICE_LINE_RE = re.compile(r"^\s*(?:\d+\.|[-*])\s+`?(?:#(?P<num>\d+)|(?P<dotted>\d+(?:\.\d+)+))`?(?:\s|$)")
 _PAREN_RE = re.compile(r"\(([^()]*)\)")
 _PLAN_REF_RE = re.compile(r"\bplan (?P<n>\d+)\b")
 
@@ -81,7 +81,7 @@ class Plan:
             if (m := _AC_LINE_RE.match(item))
         )
         slices = tuple(
-            m.group("id")
+            m.group("num") or m.group("dotted")
             for item in _items(section(body, "Slices"))
             if (m := _SLICE_LINE_RE.match(item))
         )
