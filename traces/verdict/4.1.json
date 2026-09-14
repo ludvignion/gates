@@ -7,36 +7,23 @@
   "attack-4",
   "AC-1",
   "AC-2",
-  "AC-3",
   "AC-4",
+  "AC-5",
   "AC-6"
  ],
  "findings": [
-  {
-   "id": "C1",
-   "severity": "block",
-   "status": "resolved",
-   "ac": null,
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": "make ci",
-   "waived_by": null,
-   "text": "CI green in packet, 254 tests OK (skipped=1)."
-  },
   {
    "id": "F1",
    "severity": "block",
    "status": "resolved",
    "ac": null,
-   "charter": null,
+   "charter": "charter-1",
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": "git diff --name-only main...HEAD",
    "waived_by": null,
-   "text": "docs/domain-pack/charter.md no longer in diff stat; write scope clean."
+   "text": "Write scope clean; no charter.md in diff stat."
   },
   {
    "id": "F2",
@@ -46,39 +33,39 @@
    "charter": null,
    "home": null,
    "spawn_child": false,
-   "covered_by": null,
+   "covered_by": "tests/test_tickets_sync.py::test_no_marker_makes_no_gh_call",
    "repro": "python -m unittest test_init_project",
    "waived_by": null,
-   "text": "template ci untouched; Makefile adds only sync; all tests pass."
+   "text": "Marker absent: no gh call, no write; 257 tests OK."
   },
   {
    "id": "F3",
    "severity": "block",
-   "status": "open",
+   "status": "resolved",
    "ac": null,
    "charter": "charter-1",
    "home": null,
    "spawn_child": false,
-   "covered_by": null,
+   "covered_by": "tests/test_tickets_sync.py::test_sync_skips_an_issue_without_a_status_label",
    "repro": null,
    "waived_by": null,
-   "text": "tickets.py:70 issue lacking a status label mirrors as `status: ready`; guesses, --state all includes closed."
-  },
-  {
-   "id": "F4",
-   "severity": "warn",
-   "status": "open",
-   "ac": null,
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": "git check-ignore -v kanban/tickets/42.x.md",
-   "waived_by": null,
-   "text": "templates/project/.gitignore untouched; mirrors stay committable despite 'never-committed cache' docstring."
+   "text": "tickets.py:72 now raises on a missing status label; no longer guesses ready."
   },
   {
    "id": "F5",
+   "severity": "block",
+   "status": "resolved",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_tickets_sync.py::test_main_refuses_a_gh_failure_in_one_line_not_a_traceback",
+   "repro": "cd $(mktemp -d) && mkdir kanban && echo no/such > kanban/.issues && python3 $OLDPWD/scripts/tickets.py sync",
+   "waived_by": null,
+   "text": "gh failure: one stderr line, rc 1, staged writes never land."
+  },
+  {
+   "id": "F6",
    "severity": "block",
    "status": "open",
    "ac": null,
@@ -86,22 +73,61 @@
    "home": null,
    "spawn_child": false,
    "covered_by": null,
-   "repro": "cd $(mktemp -d) && mkdir kanban && echo no/such > kanban/.issues && python3 $OLDPWD/scripts/tickets.py sync",
+   "repro": null,
    "waived_by": null,
-   "text": "tickets.py:29 gh failure raises a traceback, not one line; mirrors already written stay."
+   "text": "tickets.py:108 skips one bad issue, writes the rest, exits 0: partial mirror."
   },
   {
-   "id": "F6",
+   "id": "F7",
    "severity": "warn",
    "status": "open",
-   "ac": "AC-5",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "git diff --name-only main...HEAD",
+   "waived_by": null,
+   "text": "Mirror not gitignored: diff lacks templates/project/.gitignore, so a commit can carry mirrors."
+  },
+  {
+   "id": "F8",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-3",
+   "charter": null,
+   "home": "plan 4: kanban_ops writes",
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "AC-3's issue-write half unverifiable: no code writes issue bodies this slice."
+  },
+  {
+   "id": "F9",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "tickets.py:48 two status labels: first by STATUS_LABELS order wins silently."
+  },
+  {
+   "id": "F10",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-4",
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "tests/test_render_board.py progress row lacks `parent:`; AC-5 grouping-under-plan clause untested."
+   "text": "guard_writes.py:62 unresolved cwd vs resolved target: relative_to fails, guard silently allows."
   }
  ],
  "ci": {
@@ -111,17 +137,17 @@
  "meta": {
   "arm": "packet",
   "vendor": "claude",
-  "plugin_version": "0.11.1",
+  "plugin_version": "0.11.2",
   "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
-  "packet_sha": "b0380c9e372ddffec8f99fa9a6fc362f063a2b1df7c6e3584651b6ebaee5025b",
-  "cost_usd": 0.36284,
+  "packet_sha": "24749a13bebe14078be2a456c34f29ed5fb20ca3863a70fe5cdf2fe5ab10d535",
+  "cost_usd": 0.36441100000000004,
   "tokens": {
    "input_tokens": 2,
-   "cache_creation_input_tokens": 15099,
+   "cache_creation_input_tokens": 16390,
    "cache_read_input_tokens": 3054,
-   "output_tokens": 8008,
+   "output_tokens": 7516,
    "output_tokens_details": {
-    "thinking_tokens": 6970
+    "thinking_tokens": 6149
    },
    "server_tool_use": {
     "web_search_requests": 0,
@@ -129,26 +155,26 @@
    },
    "service_tier": "standard",
    "cache_creation": {
-    "ephemeral_1h_input_tokens": 15099,
+    "ephemeral_1h_input_tokens": 16390,
     "ephemeral_5m_input_tokens": 0
    },
    "inference_geo": "not_available",
    "iterations": [
     {
      "input_tokens": 2,
-     "output_tokens": 8008,
+     "output_tokens": 7516,
      "cache_read_input_tokens": 3054,
-     "cache_creation_input_tokens": 15099,
+     "cache_creation_input_tokens": 16390,
      "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
-      "ephemeral_1h_input_tokens": 15099
+      "ephemeral_1h_input_tokens": 16390
      },
      "type": "message"
     }
    ],
    "speed": "standard"
   },
-  "seconds": 101.3896290850007,
+  "seconds": 94.95028810799886,
   "opik": "untraced (OPIK_URL_OVERRIDE unset)"
  }
 }

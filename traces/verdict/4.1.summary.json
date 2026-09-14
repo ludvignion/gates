@@ -1,8 +1,8 @@
 {
- "built": "Adds scripts/tickets.py as GitHub seam with marker/sync/ensure_labels and render_mirror/body_status_problem operations. Updates hooks/guard_writes.py to make mirror read-only when kanban/.issues exists, schemas.py to accept #<number> alongside dotted ids, Makefile to add sync target. 297 insertions, CI passes 251 tests.",
- "review": "Reject: F3 and F5 open, both block merge. F3: issues lacking status labels default to status:ready (guesses), --state all includes closed. F5: gh failures raise tracebacks not one line, already-written mirrors stay. Eight ACs held: AC-1\u20136, attack-2\u20134. Warns: F4 mirrors committable despite docstring; F6 progress row missing parent: with AC-5 untested.",
+ "built": "Sync stages all writes after gh succeeds; gh failure partway leaves no file. render_mirror rejects missing status label. main catches gh error, exits 1 with one stderr line. 3 new tests; 257 pass.",
+ "review": "REJECT \u2014 open blocks. Eight criteria held. Resolved: F1 scope, F2 no marker, F3 label, F5 gh atomic, error line. Open: F6 partial write, F7 gitignore; warns F8 AC-3, F9 label order, F10 cwd. CI green but blocks.",
  "model": "haiku",
- "inputs_sha": "09ea265b93bce44e82fc11179666714d2601a21e5e49167800f758f93c2951b0",
- "cost_usd": 0.0346482,
+ "inputs_sha": "db1041626fa6c480c3e62e97fac1933cbcb4162f7a25d98cb90d12b3b7f61995",
+ "cost_usd": 0.0458052,
  "error": null
 }
