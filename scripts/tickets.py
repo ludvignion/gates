@@ -63,11 +63,14 @@ def body_status_problem(body: str) -> bool:
 
 def render_mirror(issue: dict) -> str:
     """The mirror text for one issue: frontmatter with `status:` from the label, the body
-    sections verbatim, and every comment concatenated under `## Log` in creation order."""
+    sections verbatim, and every comment concatenated under `## Log` in creation order.
+    Raises ValueError, never guesses, when the issue carries no status label (charter 1)."""
     import _fm  # local: keeps this importable from a bare python3, as Packet.parse does
 
     number = issue["number"]
-    status = _status_label(issue.get("labels") or []) or "ready"
+    status = _status_label(issue.get("labels") or [])
+    if status is None:
+        raise ValueError(f"#{number}: no status label; refusing to guess")
     fm, rest = _fm.parse(issue.get("body") or "")
     depends = ", ".join(str(d) for d in fm.get("depends_on") or [])
     writes = ", ".join(str(w) for w in fm.get("writes") or [])
@@ -82,7 +85,10 @@ def render_mirror(issue: dict) -> str:
 
 def sync(root: Path) -> list[Path]:
     """Mirror every `ticket`-labelled issue of `kanban/.issues`'s repo into
-    `kanban/tickets/<number>.<slug>.md`. No-op, no `gh` call, when the marker is absent."""
+    `kanban/tickets/<number>.<slug>.md`. No-op, no `gh` call, when the marker is absent.
+
+    Every `gh` call runs before any file is written, so a `gh` failure partway through
+    changes nothing on disk (charter 1): the caller reports it and the tree stays as it was."""
     repo = marker(root)
     if not repo:
         return []
@@ -92,14 +98,21 @@ def sync(root: Path) -> list[Path]:
         for i in json.loads(_gh(["issue", "list", "-R", repo, "--label", TICKET_LABEL, "--state", "all", "--json", "number"]))
     ]
     tickets_dir = root / "kanban" / "tickets"
-    tickets_dir.mkdir(parents=True, exist_ok=True)
-    written = []
+    staged = []
     for n in numbers:
         issue = json.loads(_gh(["issue", "view", str(n), "-R", repo, "--json", "number,title,body,labels,comments"]))
+        try:
+            text = render_mirror(issue)
+        except ValueError as e:
+            print(f"[sync] {e}", file=sys.stderr)
+            continue
         if body_status_problem(issue.get("body") or ""):
             print(f"[sync] #{n}: body carries a status: line; status is the label, ignoring it", file=sys.stderr)
-        path = tickets_dir / f"{n}.{slug(issue.get('title', ''))}.md"
-        path.write_text(render_mirror(issue), encoding="utf-8")
+        staged.append((tickets_dir / f"{n}.{slug(issue.get('title', ''))}.md", text))
+    tickets_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for path, text in staged:
+        path.write_text(text, encoding="utf-8")
         written.append(path)
     return written
 
@@ -109,7 +122,12 @@ def main(argv: list[str]) -> int:
         print("usage: tickets.py sync [--cwd .]", file=sys.stderr)
         return 2
     cwd = argv[argv.index("--cwd") + 1] if "--cwd" in argv else "."
-    for p in sync(Path(cwd).resolve()):
+    try:
+        paths = sync(Path(cwd).resolve())
+    except RuntimeError as e:
+        print(f"[sync] {e}", file=sys.stderr)
+        return 1
+    for p in paths:
         print(p)
     return 0
 
