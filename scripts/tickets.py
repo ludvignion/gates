@@ -87,8 +87,10 @@ def sync(root: Path) -> list[Path]:
     """Mirror every `ticket`-labelled issue of `kanban/.issues`'s repo into
     `kanban/tickets/<number>.<slug>.md`. No-op, no `gh` call, when the marker is absent.
 
-    Every `gh` call runs before any file is written, so a `gh` failure partway through
-    changes nothing on disk (charter 1): the caller reports it and the tree stays as it was."""
+    Every `gh` call and every render runs before any file is written, so a `gh` failure or an
+    issue lacking a status label partway through changes nothing on disk (charter 1): the
+    caller reports it and the tree stays as it was — never a mirror of some issues but not
+    others."""
     repo = marker(root)
     if not repo:
         return []
@@ -101,11 +103,7 @@ def sync(root: Path) -> list[Path]:
     staged = []
     for n in numbers:
         issue = json.loads(_gh(["issue", "view", str(n), "-R", repo, "--json", "number,title,body,labels,comments"]))
-        try:
-            text = render_mirror(issue)
-        except ValueError as e:
-            print(f"[sync] {e}", file=sys.stderr)
-            continue
+        text = render_mirror(issue)
         if body_status_problem(issue.get("body") or ""):
             print(f"[sync] #{n}: body carries a status: line; status is the label, ignoring it", file=sys.stderr)
         staged.append((tickets_dir / f"{n}.{slug(issue.get('title', ''))}.md", text))
@@ -124,7 +122,7 @@ def main(argv: list[str]) -> int:
     cwd = argv[argv.index("--cwd") + 1] if "--cwd" in argv else "."
     try:
         paths = sync(Path(cwd).resolve())
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
         print(f"[sync] {e}", file=sys.stderr)
         return 1
     for p in paths:
