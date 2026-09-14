@@ -2,14 +2,14 @@
  "ticket": "4.1",
  "decision": "reject",
  "held": [
+  "attack-2",
+  "attack-3",
+  "attack-4",
   "AC-1",
   "AC-2",
   "AC-3",
   "AC-4",
-  "AC-6",
-  "attack-2",
-  "attack-3",
-  "attack-4"
+  "AC-6"
  ],
  "findings": [
   {
@@ -23,7 +23,7 @@
    "covered_by": null,
    "repro": "make ci",
    "waived_by": null,
-   "text": "make ci was red; packet CI now green, 254 tests OK (skipped=1)."
+   "text": "CI green in packet, 254 tests OK (skipped=1)."
   },
   {
    "id": "F1",
@@ -36,7 +36,7 @@
    "covered_by": null,
    "repro": "git diff --name-only main...HEAD",
    "waived_by": null,
-   "text": "docs/domain-pack/charter.md no longer in the diff stat; write scope clean."
+   "text": "docs/domain-pack/charter.md no longer in diff stat; write scope clean."
   },
   {
    "id": "F2",
@@ -49,7 +49,7 @@
    "covered_by": null,
    "repro": "python -m unittest test_init_project",
    "waived_by": null,
-   "text": "template ci untouched this branch; Makefile adds only sync, all tests pass."
+   "text": "template ci untouched; Makefile adds only sync; all tests pass."
   },
   {
    "id": "F3",
@@ -73,12 +73,25 @@
    "home": null,
    "spawn_child": false,
    "covered_by": null,
-   "repro": null,
+   "repro": "git check-ignore -v kanban/tickets/42.x.md",
    "waived_by": null,
-   "text": "templates/project/.gitignore untouched though in writes:; mirror files stay committable (attack-1)."
+   "text": "templates/project/.gitignore untouched; mirrors stay committable despite 'never-committed cache' docstring."
   },
   {
    "id": "F5",
+   "severity": "block",
+   "status": "open",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "cd $(mktemp -d) && mkdir kanban && echo no/such > kanban/.issues && python3 $OLDPWD/scripts/tickets.py sync",
+   "waived_by": null,
+   "text": "tickets.py:29 gh failure raises a traceback, not one line; mirrors already written stay."
+  },
+  {
+   "id": "F6",
    "severity": "warn",
    "status": "open",
    "ac": "AC-5",
@@ -88,46 +101,7 @@
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "AC-5 grouping unevidenced: render_board.py unchanged, test row omits `parent:`; only slice counting shown."
-  },
-  {
-   "id": "F6",
-   "severity": "warn",
-   "status": "open",
-   "ac": null,
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "tickets.py:101 sync never prunes; a retitled issue leaves a stale second mirror per id."
-  },
-  {
-   "id": "F7",
-   "severity": "warn",
-   "status": "open",
-   "ac": null,
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "tickets.py:33 gh failure raises uncaught RuntimeError: traceback, not one line (charter-1)."
-  },
-  {
-   "id": "F8",
-   "severity": "warn",
-   "status": "open",
-   "ac": "AC-4",
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "guard_writes.py:63 symlinked cwd makes relative_to raise; mirror write then allowed silently."
+   "text": "tests/test_render_board.py progress row lacks `parent:`; AC-5 grouping-under-plan clause untested."
   }
  ],
  "ci": {
@@ -139,15 +113,15 @@
   "vendor": "claude",
   "plugin_version": "0.11.1",
   "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
-  "packet_sha": "ae920af327d1b06b3858a86cfdcdad93247aed4904d513d114dc3d67d8c13b5e",
-  "cost_usd": 0.469154,
+  "packet_sha": "b0380c9e372ddffec8f99fa9a6fc362f063a2b1df7c6e3584651b6ebaee5025b",
+  "cost_usd": 0.36284,
   "tokens": {
    "input_tokens": 2,
-   "cache_creation_input_tokens": 18094,
-   "cache_read_input_tokens": 0,
-   "output_tokens": 11126,
+   "cache_creation_input_tokens": 15099,
+   "cache_read_input_tokens": 3054,
+   "output_tokens": 8008,
    "output_tokens_details": {
-    "thinking_tokens": 9911
+    "thinking_tokens": 6970
    },
    "server_tool_use": {
     "web_search_requests": 0,
@@ -155,26 +129,26 @@
    },
    "service_tier": "standard",
    "cache_creation": {
-    "ephemeral_1h_input_tokens": 18094,
+    "ephemeral_1h_input_tokens": 15099,
     "ephemeral_5m_input_tokens": 0
    },
    "inference_geo": "not_available",
    "iterations": [
     {
      "input_tokens": 2,
-     "output_tokens": 11126,
-     "cache_read_input_tokens": 0,
-     "cache_creation_input_tokens": 18094,
+     "output_tokens": 8008,
+     "cache_read_input_tokens": 3054,
+     "cache_creation_input_tokens": 15099,
      "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
-      "ephemeral_1h_input_tokens": 18094
+      "ephemeral_1h_input_tokens": 15099
      },
      "type": "message"
     }
    ],
    "speed": "standard"
   },
-  "seconds": 136.1224064979997,
+  "seconds": 101.3896290850007,
   "opik": "untraced (OPIK_URL_OVERRIDE unset)"
  }
 }

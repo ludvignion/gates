@@ -1,8 +1,8 @@
 {
- "built": "Adds tickets.py for GitHub issue sync with gh seams (marker/sync/ensure_labels/render_mirror, AC-1/2/3/6). Mirror guarded read-only when kanban/.issues exists (AC-4). Schema parsing extended for dotted IDs (AC-5). 254 tests pass.",
- "review": "Reject: open block F3 (charter-1). Issues without status default to ready; --state all includes closed. ACs and attack tests held. Five warns on robustness: .gitignore untouched (attack-1), AC-5 grouping unevidenced, sync lacks pruning, gh error uncaught, symlinked cwd breaks mirror guard. Resubmit when status logic fixed and error handling hardened.",
+ "built": "Adds scripts/tickets.py as GitHub seam with marker/sync/ensure_labels and render_mirror/body_status_problem operations. Updates hooks/guard_writes.py to make mirror read-only when kanban/.issues exists, schemas.py to accept #<number> alongside dotted ids, Makefile to add sync target. 297 insertions, CI passes 251 tests.",
+ "review": "Reject: F3 and F5 open, both block merge. F3: issues lacking status labels default to status:ready (guesses), --state all includes closed. F5: gh failures raise tracebacks not one line, already-written mirrors stay. Eight ACs held: AC-1\u20136, attack-2\u20134. Warns: F4 mirrors committable despite docstring; F6 progress row missing parent: with AC-5 untested.",
  "model": "haiku",
- "inputs_sha": "cf85d729518311030bc82e3728a3da8616e070e55cd4d58c278764dedfa79e9e",
- "cost_usd": 0.04333999999999999,
+ "inputs_sha": "09ea265b93bce44e82fc11179666714d2601a21e5e49167800f758f93c2951b0",
+ "cost_usd": 0.0346482,
  "error": null
 }
