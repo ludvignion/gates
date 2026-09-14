@@ -165,6 +165,27 @@ class SchemaTest(unittest.TestCase):
         self.assertEqual(plan.slices, ("1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"))
         self.assertEqual(len(plan.acs), 10)
 
+    def test_plan_slices_accept_issue_numbers(self):
+        plan = schemas.Plan.parse("## Slices\n1. `#42` — tracer bullet\n2. `4.2` — legacy dotted\n")
+        self.assertEqual(plan.slices, ("42", "4.2"))
+
+
+class MirroredTicketBoardTest(unittest.TestCase):
+    """A mirrored (issue-numbered) ticket, cited by a plan's `#<number>` slice line, groups and
+    counts under its plan exactly as a dotted-id file ticket does (plan 4 AC-11 / ticket AC-5)."""
+
+    def test_progress_counts_a_mirrored_ticket(self):
+        plan_body = (
+            "## Acceptance criteria\n- AC-1 (behavioral): x\n"
+            "## Slices\n1. `#42` — tracer bullet (AC-1)\n"
+        )
+        ticket_body = "## Acceptance criteria\n- AC-1 (behavioral): x (plan 4 AC-1)\n"
+        rows = [(Path("42.tracer-bullet.md"), {"id": "42", "status": "in_review"}, ticket_body)]
+        rec = render_board.progress({"4": ({}, plan_body)}, rows)[0]
+        self.assertEqual(rec["slices_total"], 1)
+        self.assertEqual(rec["slices_built"], 1)
+        self.assertEqual(rec["acs_review"], 1)
+
 
 class StopHookTest(unittest.TestCase):
     def test_hook_registered_after_trace_stop(self):

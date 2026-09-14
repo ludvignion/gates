@@ -1,0 +1,169 @@
+{
+ "ticket": "4.1",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "AC-2",
+  "AC-3",
+  "AC-4",
+  "AC-5",
+  "AC-6",
+  "attack-2",
+  "attack-3",
+  "attack-4",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "resolved",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "git diff --name-only main...HEAD",
+   "waived_by": null,
+   "text": "Write scope clean; no charter.md in diff stat."
+  },
+  {
+   "id": "F2",
+   "severity": "block",
+   "status": "resolved",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_tickets_sync.py::test_no_marker_makes_no_gh_call",
+   "repro": "python -m unittest test_init_project",
+   "waived_by": null,
+   "text": "Marker absent: no gh call, no write; 259 tests OK."
+  },
+  {
+   "id": "F3",
+   "severity": "block",
+   "status": "resolved",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_tickets_sync.py::test_sync_aborts_on_an_issue_without_a_status_label",
+   "repro": null,
+   "waived_by": null,
+   "text": "tickets.py:73 raises on a missing status label; no longer guesses ready."
+  },
+  {
+   "id": "F5",
+   "severity": "block",
+   "status": "resolved",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_tickets_sync.py::test_main_refuses_a_gh_failure_in_one_line_not_a_traceback",
+   "repro": "cd $(mktemp -d) && mkdir kanban && echo no/such > kanban/.issues && python3 $OLDPWD/scripts/tickets.py sync",
+   "waived_by": null,
+   "text": "gh failure: one stderr line, rc 1, staged writes never land."
+  },
+  {
+   "id": "F6",
+   "severity": "block",
+   "status": "resolved",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_tickets_sync.py::test_sync_writes_nothing_when_one_of_several_issues_lacks_a_status_label",
+   "repro": null,
+   "waived_by": null,
+   "text": "tickets.py:105 stages every render before writing; one bad issue aborts all."
+  },
+  {
+   "id": "F7",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "git diff --name-only main...HEAD | grep gitignore",
+   "waived_by": null,
+   "text": "templates/project/.gitignore untouched; mirror is committable though tickets.py:4 calls it never-committed (attack-1)."
+  },
+  {
+   "id": "F8",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "tickets.py:60 checks frontmatter only; a status: line in body prose mirrors unreported."
+  },
+  {
+   "id": "F9",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "tickets.py:113 never prunes stale mirrors; a retitled issue leaves two files, double-counted."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.2",
+  "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
+  "packet_sha": "b4bb8d6539d84df1384a1830fddde38fc3e418500ce94683b1ca5c096c1583ea",
+  "cost_usd": 0.372725,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 16856,
+   "cache_read_input_tokens": 3054,
+   "output_tokens": 7648,
+   "output_tokens_details": {
+    "thinking_tokens": 6398
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 16856,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 7648,
+     "cache_read_input_tokens": 3054,
+     "cache_creation_input_tokens": 16856,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 16856
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 92.75427763900007,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
