@@ -11,9 +11,11 @@ previous verdict's blocks with their repro commands (the existing <id>.json is a
 added on the branch that name ACs; the diff.
 
 The diff rule (E17: a 532-line lock file made the reviewer read hashes): only files under src/,
-docs/, tests/ (*.py only, never tests/fixtures/) and the lint config files (pyproject.toml,
-ruff.toml, .ruff.toml, mypy.ini, .mypy.ini, .importlinter, setup.cfg) enter the Diff and the
-Diff stat. Lock files, fixtures, kanban/ and traces/ are neither in the diff nor in the stat;
+docs/, tests/ (*.py only, never tests/fixtures/), the lint config files (pyproject.toml,
+ruff.toml, .ruff.toml, mypy.ini, .mypy.ini, .importlinter, setup.cfg) and any path the
+ticket's `writes:` names (0.11.1: a project whose code lives outside src/ had its whole feat
+commit excluded, and the verdict judged tests alone) enter the Diff and the Diff stat. Lock
+files, fixtures, kanban/ and traces/ are neither in the diff nor in the stat, whatever writes: says;
 the stat ends with one line "N files excluded (lock, fixture, kanban)". An included file over
 2000 diff lines is a stat line only, and the whole diff is truncated past 4000 lines.
 
@@ -35,6 +37,7 @@ scripts/schemas.py.
 """
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -66,13 +69,19 @@ def is_lock(path: str) -> bool:
     return name.endswith(".lock") or name in LOCK_NAMES
 
 
-def included(path: str) -> bool:
-    """True when the file belongs in the reviewer's diff: source, python tests, docs, lint config."""
-    if is_lock(path):
+def under_writes(path: str, writes=()) -> bool:
+    """True when a ticket's writes: entry names the path: the file itself, or a directory it is under."""
+    return any(path == w or path.startswith(w.rstrip("/") + "/") for w in writes if w)
+
+
+def included(path: str, writes=()) -> bool:
+    """True when the file belongs in the reviewer's diff: source, python tests, docs, lint config,
+    or a path the ticket's writes: names. Lock files, fixtures, kanban/ and traces/ never enter."""
+    if is_lock(path) or path.startswith(("kanban/", "traces/")):
         return False
     if path.startswith(TESTS_PREFIX):
         return path.endswith(".py") and not path.startswith(FIXTURES_PREFIX)
-    return path.startswith(DIFF_INCLUDE) or path in CONFIG_FILES
+    return path.startswith(DIFF_INCLUDE) or path in CONFIG_FILES or under_writes(path, writes)
 
 
 def exclusion_reason(path: str) -> str:
@@ -86,9 +95,15 @@ def exclusion_reason(path: str) -> str:
     return "other"
 
 
-def split_files(files: list[str]) -> tuple[list[str], list[str]]:
+def split_files(files: list[str], writes=()) -> tuple[list[str], list[str]]:
     """(included, excluded) in git order."""
-    return [f for f in files if included(f)], [f for f in files if not included(f)]
+    return [f for f in files if included(f, writes)], [f for f in files if not included(f, writes)]
+
+
+def ticket_writes(root: Path, tid: str) -> list[str]:
+    """The ticket's writes: entries, for the include rule; empty without the ticket."""
+    path = kanban_ops.find_ticket(root, tid)
+    return [str(w) for w in (_fm.read(path)[0].get("writes") or [])] if path else []
 
 
 def default_base(root: Path, plan_n: str | None = None) -> str:
@@ -96,15 +111,15 @@ def default_base(root: Path, plan_n: str | None = None) -> str:
     return kanban_ops.base_branch(root, plan_n)
 
 
-def changed_files(root: Path, base: str) -> list[str]:
+def changed_files(root: Path, base: str, writes=()) -> list[str]:
     """The included files changed on base...HEAD, in git order."""
-    return split_files(vc.git(root, "diff", "--name-only", f"{base}...HEAD").splitlines())[0]
+    return split_files(vc.git(root, "diff", "--name-only", f"{base}...HEAD").splitlines(), writes)[0]
 
 
-def changed_vs_base(root: Path, base: str) -> dict:
+def changed_vs_base(root: Path, base: str, writes=()) -> dict:
     """{"base", "files": [{"path", "added", "removed"}]} from `git diff --numstat base...HEAD`
     over the included files; a binary file's "-" counts as 0 (E27: the result block shows this)."""
-    kept = changed_files(root, base)
+    kept = changed_files(root, base, writes)
     files = []
     for line in (vc.git(root, "diff", "--numstat", f"{base}...HEAD", "--", *kept) if kept else "").splitlines():
         parts = line.split("\t")
@@ -163,7 +178,10 @@ def always_writable(plan_n: str) -> list[str]:
 def run_ci(root: Path) -> tuple[bool | None, str]:
     if not (root / "Makefile").exists() or "ci:" not in (root / "Makefile").read_text(errors="ignore"):
         return None, "no `make ci` target"
-    r = subprocess.run(["make", "-s", "ci"], cwd=root, capture_output=True, text=True, timeout=900)
+    # No -s, and no inherited make flags: `-s` reached a nested make inside a test through MAKEFLAGS,
+    # silenced its command echo and turned a green `make ci` red in the packet (0.11.1).
+    env = {k: v for k, v in os.environ.items() if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL")}
+    r = subprocess.run(["make", "ci"], cwd=root, capture_output=True, text=True, timeout=900, env=env)
     tail = "\n".join((r.stdout + r.stderr).splitlines()[-25:])
     return r.returncode == 0, tail
 
@@ -172,9 +190,9 @@ def _sec(items) -> str:
     return "\n" + ("\n".join(f"- {i}" for i in items) if items else "- none") + "\n\n"
 
 
-def diff_and_stat(root: Path, rng: str) -> tuple[str, str]:
+def diff_and_stat(root: Path, rng: str, writes=()) -> tuple[str, str]:
     """The included files' diff (folded, capped) and their stat plus the excluded-count line."""
-    kept, dropped = split_files(vc.git(root, "diff", "--name-only", rng).splitlines())
+    kept, dropped = split_files(vc.git(root, "diff", "--name-only", rng).splitlines(), writes)
     if kept:
         diff = fold_large(vc.git(root, "diff", rng, "--", *kept))
         stat = vc.git(root, "diff", "--stat", rng, "--", *kept)
@@ -203,7 +221,8 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
         raise SystemExit(f"no charter: {charter_path.relative_to(root)} is missing or has no `## <n>. <title>` items; the verdict cannot judge without it")
     if missing := charter.missing_applies():
         raise SystemExit(f"charter item {missing[0]} has no Applies to: line ({charter_path.relative_to(root)}); every item names the paths it reaches")
-    kept = changed_files(root, base)
+    writes = [str(w) for w in (fm.get("writes") or [])]
+    kept = changed_files(root, base, writes)
     if not kept:  # E20: a verdict ran on an empty included diff and warned on nothing
         raise SystemExit(f"nothing to judge: no included file changed against {base}")
     prev_path = root / "traces" / "verdict" / f"{tid}.prev.json"
@@ -214,7 +233,7 @@ def gather(root: Path, tid: str, base: str, ci: bool) -> schemas.Packet:
     ci_green, ci_tail = run_ci(root) if ci else (None, "skipped (--no-ci)")
     found = vc.checks(root, tid, base, ci_green)
     rng = f"{base}...HEAD"
-    diff, stat = diff_and_stat(root, rng)
+    diff, stat = diff_and_stat(root, rng, writes)
     test_lines = [
         f"{f}: {l[1:].strip()[:120]}"
         for f, l in _added_lines(diff) if "test" in f and schemas.AC_ID_RE.search(l)

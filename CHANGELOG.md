@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.11.1 — 2026-09-14
+
+First self-run: `/gates:runner plan 4` on this repo. Ticket 4.1 built green in 13 minutes and
+was rejected twice on a packet that saw none of its code, then hit the retry cap. Two bugs in
+`verdict_prep.py`, both invisible on a pilot project whose code lives in `src/`.
+
+- `scripts/verdict_prep.py` — the include rule admits any path the ticket's `writes:` names
+  (a file, or a directory it is under) besides `src/`, `docs/`, `tests/*.py` and the lint
+  configs. This repo's code is `scripts/`, `hooks/`, `templates/`: the whole feat commit was
+  excluded, the Diff stat said "10 files excluded", and the verdict answered "cannot verify" on
+  every attack. Lock files, fixtures, `kanban/` and `traces/` stay out whatever `writes:` says.
+  `ticket_writes(root, tid)` reads the list; `changed_vs_base` takes it, and the runner passes it
+  so the result block's `Changed:` line matches the packet.
+- `scripts/verdict_prep.py` — `run_ci` runs `make ci`, not `make -s ci`, and strips
+  `MAKEFLAGS`, `MFLAGS`, `MAKELEVEL` from the child's environment. The `-s` leaked through
+  `MAKEFLAGS` into the nested `make ci` that `test_init_project` runs in a fresh project,
+  silenced its command echo, and the assertion on that echo failed: the runner's own `make ci`
+  was green, the packet said RED, and C1 blocked the ship.
+
+Known, not fixed here: the runner runs CI twice per verdict (its own phase, then the packet's);
+after a REJECT with rework findings, build 2 and 3 are skipped as `in_review with commits`, so
+the retry cap is reached on the same packet with no rework in between. Both are plan 4 material.
+
 ## 0.11.0 — 2026-09-13
 
 The human decides what, the LLM decides how. A pilot user reported the grill as neurotic:

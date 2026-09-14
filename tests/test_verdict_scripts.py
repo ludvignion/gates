@@ -477,6 +477,48 @@ class VerdictScriptsTest(unittest.TestCase):
             self.assertFalse(verdict_prep.included(path), path)
             self.assertEqual(verdict_prep.exclusion_reason(path), why, path)
 
+    def test_included_by_the_tickets_writes(self):
+        """0.11.1: the plugin's own code lives in scripts/ and hooks/, not src/; the verdict on its first
+        self-run saw tests only and answered "cannot verify". A writes: entry admits the file or the directory."""
+        writes = ["scripts/", "hooks/guard.py", "tests/", "uv.lock", "kanban/tickets/"]
+        for path in ("scripts/x.py", "scripts/sub/y.py", "hooks/guard.py"):
+            self.assertTrue(verdict_prep.included(path, writes), path)
+            self.assertFalse(verdict_prep.included(path), path)  # never without the writes: entry
+        self.assertTrue(verdict_prep.included("tests/test_x.py", writes))  # the standing rule still holds
+        for path in ("hooks/other.py", "scriptsx/z.py", "uv.lock", "tests/fixtures/fake.py", "kanban/tickets/1.1.x.md", "traces/x.json"):
+            self.assertFalse(verdict_prep.included(path, writes), path)
+        self.assertTrue(verdict_prep.included("scripts/x.py", ["scripts"]))  # a directory entry without its slash
+
+    def test_prep_diff_includes_the_paths_the_ticket_writes(self):
+        tpath = self.tmp / "kanban/tickets/1.1.tracer-bullet.md"
+        tpath.write_text(tpath.read_text().replace('writes: ["src/app/", "tests/"]', 'writes: ["src/app/", "tests/", "scripts/", "hooks/guard.py"]'))
+        for rel in ("scripts/x.py", "hooks/guard.py", "hooks/other.py"):
+            (self.tmp / rel).parent.mkdir(parents=True, exist_ok=True); (self.tmp / rel).write_text(f"# {rel}\n")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "outside src")
+        self.assertEqual(verdict_prep.ticket_writes(self.tmp, "1.1"), ["src/app/", "tests/", "scripts/", "hooks/guard.py"])
+        packet = schemas.Packet.parse(verdict_prep.build(self.tmp, "1.1", "main", ci=False))
+        diff, stat = packet.section("Diff"), packet.section("Diff stat")
+        self.assertIn("+++ b/scripts/x.py", diff); self.assertIn("+++ b/hooks/guard.py", diff)
+        self.assertNotIn("hooks/other.py", diff); self.assertNotIn("hooks/other.py", stat)
+        self.assertIn(" scripts/x.py ", stat); self.assertIn(" hooks/guard.py ", stat)
+        self.assertIn("scripts/x.py", [f["path"] for f in verdict_prep.changed_vs_base(self.tmp, "main", verdict_prep.ticket_writes(self.tmp, "1.1"))["files"]])
+        self.assertNotIn("scripts/x.py", [f["path"] for f in verdict_prep.changed_vs_base(self.tmp, "main")["files"]])
+
+    def test_run_ci_is_not_silent_and_drops_inherited_make_flags(self):
+        """0.11.1: `make -s ci` put -s into MAKEFLAGS; a nested make inside test_init_project stopped echoing
+        its commands, an assertion on that echo failed, and a green CI came into the packet as RED."""
+        (self.tmp / "Makefile").write_text("ci:\n\techo hi\n")
+        calls = []
+        def fake_run(args, **kw):
+            calls.append((args, kw)); return subprocess.CompletedProcess(args, 0, "hi\n", "")
+        with mock.patch.dict(os.environ, {"MAKEFLAGS": "s", "MFLAGS": "-s", "MAKELEVEL": "1"}), mock.patch.object(verdict_prep.subprocess, "run", fake_run):
+            self.assertEqual(verdict_prep.run_ci(self.tmp), (True, "hi"))
+        (args, kw), = calls
+        self.assertEqual(args, ["make", "ci"])
+        for k in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL"):
+            self.assertNotIn(k, kw["env"], k)
+        self.assertEqual(kw["env"].get("PATH"), os.environ.get("PATH"))
+
     def test_prep_refuses_an_empty_included_diff(self):
         """E20: a verdict ran on an empty included diff ($0.14, 7 warns on nothing). Refuse before any call."""
         git(self.tmp, "checkout", "-q", "main"); git(self.tmp, "checkout", "-q", "-b", "ticket/1.1-lock")

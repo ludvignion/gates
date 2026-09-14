@@ -815,7 +815,7 @@ def write_result(tree: Path, repo: Path, tid: str, v: "schemas.Verdict", cost_us
     ppath = tree / "traces" / "verdict" / f"{tid}.input.md"
     packet = schemas.Packet.load(ppath) if ppath.exists() else None
     charter = verdict_checks.charter_report(v, packet) if packet is not None and hasattr(verdict_checks, "charter_report") else None
-    changed = verdict_prep.changed_vs_base(tree, base) if base and hasattr(verdict_prep, "changed_vs_base") else None
+    changed = verdict_prep.changed_vs_base(tree, base, verdict_prep.ticket_writes(tree, tid)) if base else None
     lines = render_verdict.result_lines(v, render_verdict.tickets_of(tree), cost_usd, seconds, f"traces/verdict/{tid}.html",
                                         summary=summary, changed=changed, charter=charter, human_acs=human_acs_of(tree, tid), costs=costs)
     path = repo / "traces" / "runs" / f"{tid}.result"
