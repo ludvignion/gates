@@ -374,16 +374,23 @@ def head_subject(cwd: Path) -> str:
     return subprocess.run(["git", "log", "-1", "--format=%s"], cwd=cwd, capture_output=True, text=True).stdout.strip()
 
 
-def closed_out(cwd: Path, tid: str) -> bool:
-    """The build reached its close-out: the committed ticket (HEAD) carries the status line.
-    Committed state only: the builder's next command may already be running while the runner
-    reads the previous result, so the working tree is never consulted here."""
+def status_marks(cwd: Path, tid: str) -> int:
+    """How many ``### [build] … — status:`` lines the committed ticket (HEAD) carries."""
     ticket = kanban_ops.find_ticket(cwd, tid)
     if ticket is None:
-        return False
+        return 0
     rel = ticket.relative_to(cwd).as_posix()
     committed = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=cwd, capture_output=True, text=True).stdout
-    return bool(STATUS_RE.search(committed))
+    return len(STATUS_RE.findall(committed))
+
+
+def closed_out(cwd: Path, tid: str, before: int = 0) -> bool:
+    """The build reached its close-out: the committed ticket (HEAD) carries a status line it did
+    not carry when the session started (`before`; a retry's Log already holds the first build's
+    close-out, and 0.11.2 read that as an orbit on the builder's first tool call). Committed
+    state only: the builder's next command may already be running while the runner reads the
+    previous result, so the working tree is never consulted here."""
+    return status_marks(cwd, tid) > before
 
 
 BOARD_TICK = 10.0  # seconds between board renders while the build streams (the page refreshes every 5 s)
@@ -406,6 +413,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
     t0 = time.monotonic()
     last_tick = last_beat = t0
     last_line, last_at = "", time.strftime("%H:%M:%S")
+    before = status_marks(cwd, tid)  # a retry starts with the previous close-out in the Log
     proc = subprocess.Popen(build_cmd(tid, model), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     report: dict = {}
     orbit: list[str] = []
@@ -420,7 +428,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
             if subject.startswith(prefix) and mark not in seen:
                 seen.add(mark)
                 phase(mark)
-        if not done and closed_out(cwd, tid):
+        if not done and closed_out(cwd, tid, before):
             done = True
             phase(f"build {attempt} close-out")
 
@@ -489,7 +497,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
         if pipe:
             pipe.close()
     sys.stderr.write(stderr or "")
-    if not done and closed_out(cwd, tid):
+    if not done and closed_out(cwd, tid, before):
         done = True
         phase(f"build {attempt} close-out")
     denials = tuple(d for d in (report.get("permission_denials") or ()) if isinstance(d, dict))

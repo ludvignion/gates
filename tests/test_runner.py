@@ -557,6 +557,7 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertEqual(len(calls), 4, calls)  # build, verdict, build, verdict
         self.assertEqual(["stream-json" in c for c in calls], [True, False, True, False])
         self.assertNotIn("build 2 skipped", out)
+        self.assertNotIn("orbit after close-out", out)  # the first build's close-out in the Log is not the retry's
         phases = state_phases(self.repo / "traces/runs/1.1.state")
         self.assertEqual([p for p in phases if p.startswith("build ") and "close-out" not in p], ["build 1", "build 2"])
         log = schemas.Log.parse((self.repo / "kanban/tickets/1.1.tracer-bullet.md").read_text())
@@ -722,6 +723,15 @@ class RunnerBuildSeatTest(unittest.TestCase):
             call = runner.build(self.repo, "1.1", "sonnet", phase=marks.append)
         self.assertEqual(marks, ["tests-commit", "feat-commit", "build 1 close-out"])
         self.assertEqual((call.closed_out, call.orbit), (True, ("$ echo probe",)))
+        # 0.11.2: a retry starts with that close-out already in the Log; only a new status line closes it out
+        self.scenario.write_text(json.dumps([{"cmd": "echo again"}, {"cmd": "echo twice"}] + closeout_steps()))
+        marks = []
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            call = runner.build(self.repo, "1.1", "sonnet", phase=marks.append, attempt=2)
+        self.assertEqual(marks, ["build 2 close-out"])
+        self.assertEqual((call.closed_out, call.orbit), (True, ()))
+        self.assertNotIn("orbit", out.getvalue())
+        self.assertEqual(runner.status_marks(self.repo, "1.1"), 2)
 
 
 class ResultLinesTest(unittest.TestCase):

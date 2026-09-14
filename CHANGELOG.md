@@ -17,6 +17,10 @@ never did.
 - `scripts/runner.py` — only attempt 1 skips the build on `in_review` with the commits (the
   rerun case). A retry always builds; the skill's retry check finds the blocks in the Log and
   addresses those alone. The retry cap now means what it says: N builds, N verdicts.
+- `scripts/runner.py` — close-out detection is relative to the session start: `closed_out`
+  counts the committed `### [build] … — status:` lines and closes out only on a new one. A
+  retry's Log already holds the first build's close-out; the runner read it as done on the
+  builder's first tool call and terminated the session as an orbit, six seconds in.
 
 Still known: CI runs twice per verdict (the runner's phase and the packet's `run_ci`).
 
