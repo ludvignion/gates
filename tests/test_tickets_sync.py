@@ -245,6 +245,16 @@ class TicketsWriteTest(unittest.TestCase):
         self.assertIn("AC-2 unmet: no candidate", created["body"]); self.assertIn("from #42 F1", created["body"])
         self.assertIn("everything else in #42", created["body"])
 
+    def test_create_child_refuses_when_parent_closed_and_creates_no_issue(self):
+        closed = {**ISSUE, "state": "CLOSED"}
+        self._write_issues(closed)
+        finding = {"id": "F1", "severity": "block", "ac": "AC-2", "text": "AC-2 unmet: no candidate", "repro": "python3 -c ..."}
+        parent_fm = {"parent": "9", "writes": ["src/pipeline/match/", "tests/"]}
+        with self.assertRaises(RuntimeError) as cm:
+            tickets.create_child("ludvignion/gates", 42, parent_fm, finding)
+        self.assertIn("#42", str(cm.exception)); self.assertIn("closed", str(cm.exception))
+        self.assertEqual([c for c in self._calls() if c.split()[:2] == ["issue", "create"]], [])
+
 
 class MakefileTest(unittest.TestCase):
     def test_sync_target_runs_tickets_sync(self):
