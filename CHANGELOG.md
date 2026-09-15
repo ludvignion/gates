@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.4 — 2026-09-15
+
+A flaky runner self-test. `test_red_ci_after_build_retries_with_a_second_build` made CI red in a
+step of its own, after the close-out step. The runner checks for the close-out after every tool
+result, so under load it could see the close-out commit while still reading the previous result,
+terminate the session one step early, and leave `green` in place: CI green, verdict ship, rc 0
+where the test wants 1. It failed once in four concurrent copies (E32) and took the second retry
+of ticket 4.2's run with it, so a correct build ended in `retry cap`.
+
+- `tests/test_runner.py` — the close-out step removes `green` itself. Same assertions, no step
+  after the close-out for the race to eat. Six concurrent copies pass.
+
 ## 0.11.3 — 2026-09-14
 
 One `make ci` per attempt, not two. The runner ran CI as its gate, then `verdict_prep` ran it

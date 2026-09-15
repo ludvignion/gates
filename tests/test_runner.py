@@ -527,8 +527,13 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertIn("] verdict", out)
 
     def test_red_ci_after_build_retries_with_a_second_build(self):
-        """0.11.2: attempt 2 used to skip the build (in_review with the commits) and rerun CI on the same tree."""
-        self.scenario.write_text(json.dumps(closeout_steps() + [{"cmd": "rm -f green && git " + " ".join(GIT_ID) + " commit -qam 'chore(1.1): drop green'"}]))
+        """0.11.2: attempt 2 used to skip the build (in_review with the commits) and rerun CI on the same tree.
+        0.11.4: `green` goes in the close-out step, not a step after it. As its own step the runner
+        could see the close-out commit while still reading the previous tool result, terminate the
+        session one step early, and leave CI green — a race that failed under load (E32)."""
+        steps = closeout_steps()
+        steps[-1]["cmd"] = steps[-1]["cmd"].replace("git " + " ".join(GIT_ID) + " add -A", "rm -f green && git " + " ".join(GIT_ID) + " add -A")
+        self.scenario.write_text(json.dumps(steps))
         rc, out = self._main()
         self.assertEqual(rc, 1, out)
         self.assertEqual(out.count("[runner] ci red"), 2)
