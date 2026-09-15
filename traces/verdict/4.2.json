@@ -1,0 +1,104 @@
+{
+ "ticket": "4.2",
+ "decision": "ship",
+ "held": [
+  "attack-1",
+  "attack-2",
+  "attack-3",
+  "attack-4",
+  "AC-1",
+  "AC-2",
+  "AC-3",
+  "AC-4",
+  "AC-5",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "resolved",
+   "ac": "AC-3",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_tickets_sync.py::test_create_child_refuses_when_parent_closed_and_creates_no_issue",
+   "repro": null,
+   "waived_by": null,
+   "text": "fixed: create_child calls refuse_if_closed before create_issue, tickets.py:126."
+  },
+  {
+   "id": "F2",
+   "severity": "block",
+   "status": "resolved",
+   "ac": "AC-5",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_issue_write_path.py::test_orbit_logs_the_issue_with_no_ticket_file_commit_even_when_mirror_already_tracked",
+   "repro": null,
+   "waived_by": null,
+   "text": "fixed: log_orbit returns before commit when marker set, runner.py:531."
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-6",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "grep -n tickets hooks/reanchor.sh",
+   "waived_by": null,
+   "text": "AC-6 mirror lookup unverified: packet shows only comment lines, no test, hooks/reanchor.sh:3."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.3",
+  "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
+  "packet_sha": "7a79e0c33c6d0fb703aa76361180c8447e3f9eb30bda831d43269300c9b1846b",
+  "cost_usd": 0.47909199999999996,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 32485,
+   "cache_read_input_tokens": 0,
+   "output_tokens": 5310,
+   "output_tokens_details": {
+    "thinking_tokens": 4705
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 32485,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 5310,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 32485,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 32485
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 69.17694215799565,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}

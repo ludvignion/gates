@@ -1,0 +1,8 @@
+{
+ "built": "Adds refuse_if_closed check to prevent child creation on closed parents (F1). Fixes log_orbit to skip mirror commits when marker set (F2). Two test cases; 9 files, 559 insertions.",
+ "review": "Ship. Blocks resolved: F1 (create_child refuses closed parent, tickets.py), F2 (skip mirror commit when marker set, runner.py). F3 warns AC-6 unverified lookup in reanchor.sh, no test. All held, CI green.",
+ "model": "haiku",
+ "inputs_sha": "0947df0ef0cb7439a64edcf2b797624f9535016ed46bb20fc81cdad7fe9a72db",
+ "cost_usd": 0.036528000000000005,
+ "error": null
+}

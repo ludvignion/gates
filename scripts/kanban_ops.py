@@ -72,6 +72,38 @@ def set_status(path: Path, status: str) -> None:
     path.write_text(new, encoding="utf-8")
 
 
+def log_ticket(root: Path, tid: str, role: str, head: str, lines: tuple[str, ...] = (), when: str | None = None) -> str:
+    """The Log write a build or verdict session names (plan 4 AC-4): an issue comment when
+    `kanban/.issues` opts the project in, a file append otherwise. The mirror is re-synced after
+    an issue write so the caller's next read sees it."""
+    import tickets  # local import, as in override_plan
+
+    if repo := tickets.marker(root):
+        entry = tickets.log(repo, int(tid), role, head, lines, when=when)
+        tickets.sync(root)
+        return entry
+    path = find_ticket(root, tid)
+    if path is None:
+        raise FileNotFoundError(f"no ticket {tid} under kanban/")
+    return append_log(path, role, head, lines, when=when)
+
+
+def status_ticket(root: Path, tid: str, status: str) -> str:
+    """The status write a build or verdict session names (plan 4 AC-5): a label swap when
+    `kanban/.issues` opts the project in, a frontmatter rewrite otherwise."""
+    import tickets  # local import, as in override_plan
+
+    if repo := tickets.marker(root):
+        tickets.set_status(repo, int(tid), status)
+        tickets.sync(root)
+        return f"#{tid} status → {status}"
+    path = find_ticket(root, tid)
+    if path is None:
+        raise FileNotFoundError(f"no ticket {tid} under kanban/")
+    set_status(path, status)
+    return f"{tid} status → {status}"
+
+
 def override_plan(root: Path, n: str, field: str, value: str, who: str = "human") -> tuple[str, str]:
     """A router miss: set the plan's ``scrutiny`` or ``backend`` stamp to ``value``, mark the
     derivation comment as overridden, append the plan Log entry, and record the miss in
@@ -149,25 +181,47 @@ def plan_order(root: Path, n: str) -> list[str]:
 # --- the command line: the Gate 2 words a session executes ------------------------------------
 GATE1 = ("approve", "override")
 GATE2 = ("ship", "reject", "child", "home", "waive")
+TICKET_WRITE = ("log", "status")  # what a build or verdict session names (plan 4 AC-4, AC-5)
 
 
 def main(argv: list[str]) -> int:
-    """`kanban_ops.py <action> ... [--who <name>] [--cwd .]`: the Gate 1 and Gate 2 actions,
-    from a shell. Each call is `board.act` with the form the board used to post, so the Log
-    entries, commits and dataset items are identical; nothing here writes on its own. `order <n>`
-    prints the plan's tickets in depends_on order, one per line.
+    """`kanban_ops.py <action> ... [--who <name>] [--cwd .]`: the Gate 1 and Gate 2 actions, plus
+    the ticket writes a build or verdict session makes directly, from a shell. Each Gate 1/2 call
+    is `board.act` with the form the board used to post, so the Log entries, commits and dataset
+    items are identical; nothing here writes on its own. `order <n>` prints the plan's tickets in
+    depends_on order, one per line.
       approve <n> · override <n> <scrutiny|backend> <value> ·
       ship <id> · reject <id> <reason> · child <id> <F#> · home <id> <F#> <target> ·
-      waive <id> <F#> <reason> · order <n>"""
+      waive <id> <F#> <reason> · order <n> ·
+      log <id> <role> <head> ["- line" ...] · status <id> <status>"""
     import argparse
 
     ap = argparse.ArgumentParser(description=main.__doc__.splitlines()[0])
-    ap.add_argument("action", choices=(*GATE1, *GATE2, "order"))
+    ap.add_argument("action", choices=(*GATE1, *GATE2, "order", *TICKET_WRITE))
     ap.add_argument("args", nargs="*")
     ap.add_argument("--who", default="human")
     ap.add_argument("--cwd", default=".")
     a = ap.parse_args(argv[1:])
     root = Path(a.cwd).resolve()
+    if a.action in TICKET_WRITE:
+        if a.action == "log":
+            if len(a.args) < 3:
+                print('[kanban] log takes <ticket> <role> <head> ["- line" ...]', file=sys.stderr)
+                return 2
+            tid, role, head, *lines = a.args
+            call = lambda: log_ticket(root, tid, role, head, tuple(lines))  # noqa: E731
+        else:
+            if len(a.args) != 2:
+                print("[kanban] status takes <ticket> <status>", file=sys.stderr)
+                return 2
+            tid, value = a.args
+            call = lambda: status_ticket(root, tid, value)  # noqa: E731
+        try:
+            print(call())
+        except (FileNotFoundError, RuntimeError, ValueError) as e:
+            print(f"[kanban] {e}", file=sys.stderr)
+            return 1
+        return 0
     shapes = {"approve": ("plan",), "override": ("plan", "field", "value"), "ship": ("ticket",), "reject": ("ticket", "reason"), "child": ("ticket", "finding"),
               "home": ("ticket", "finding", "target"), "waive": ("ticket", "finding", "reason"), "order": ("plan",)}
     keys = shapes[a.action]
@@ -187,7 +241,7 @@ def main(argv: list[str]) -> int:
 
     try:
         print(board.act(root, {"action": a.action, "who": a.who, **form}))
-    except (board.BoardError, ValueError, FileNotFoundError) as e:  # override_plan raises ValueError / FileNotFoundError
+    except (board.BoardError, ValueError, FileNotFoundError, RuntimeError) as e:  # override_plan: ValueError/FileNotFoundError; tickets.py: RuntimeError (closed issue, plan 4 AC-6)
         print(f"[kanban] {e}", file=sys.stderr)
         return 1
     return 0
