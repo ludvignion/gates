@@ -1,0 +1,114 @@
+{
+ "ticket": "4.3",
+ "decision": "ship",
+ "held": [
+  "AC-3",
+  "AC-4",
+  "attack-1",
+  "attack-2",
+  "attack-3",
+  "attack-4",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "grep -rn 'slices' scripts/schemas.py tests/",
+   "waived_by": null,
+   "text": "AC-1's schemas.Plan.slices '#<number>' clause: no diff, no test; scripts/schemas.py untouched."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "Grill test pins the command only; '## Slices' rewrite and one-commit rule unpinned, skills/grill/SKILL.md."
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-2",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "No test for label 'done'; gate2_status returns waiting unless branch gone, scripts/runner.py."
+  },
+  {
+   "id": "F4",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "new() passes the body unchecked; nothing refuses a slice body carrying 'status:', scripts/kanban_ops.py:162."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.3",
+  "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
+  "packet_sha": "9af7121b9e373872ec14b2a772e0f3de86767f6caa6589bd628e5aacd09e8472",
+  "cost_usd": 0.3069155,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 15461,
+   "cache_read_input_tokens": 3051,
+   "output_tokens": 5619,
+   "output_tokens_details": {
+    "thinking_tokens": 4977
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 15461,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 5619,
+     "cache_read_input_tokens": 3051,
+     "cache_creation_input_tokens": 15461,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 15461
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 73.26258447500004,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
