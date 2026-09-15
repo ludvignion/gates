@@ -65,6 +65,11 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("spec_intake.py $(F)", makefile); self.assertIn("coverage.py .", makefile); self.assertIn("lint_kanban.py $(BASE)", makefile)
         self.assertIn("BASE ?= HEAD", makefile)
         self.assertIn("env: { BASE: ", (init_project.TEMPLATE / ".github/workflows/ci.yml").read_text())
+        ci = (init_project.TEMPLATE / ".github/workflows/ci.yml").read_text()  # 4.4 AC-3: sync (kanban/.issues opt-in) before the lint reads it
+        self.assertIn("issues: read", ci)
+        self.assertLess(ci.index("make sync"), ci.index("make ci"))
+        self.assertIn("GH_TOKEN", (init_project.TEMPLATE / ".env.example").read_text())  # 4.4 AC-3
+        self.assertRegex((REPO / "Dockerfile").read_text(), r"\bgh\b")  # 4.4 AC-3: the runner image has gh
         self.assertIn(Path("docs/spec/.gitkeep"), files); self.assertIn(Path("kanban/briefs/.gitkeep"), files)
         self.assertNotIn(Path("kanban/briefs/0-example.md"), files)  # the lint reads nothing from it; templates/brief.md is the example
         self.assertIn("docs/spec/.gitkeep", init_project.UPDATE_SET)

@@ -3,9 +3,13 @@
 in CI pass the merge base, e.g. origin/main). Exit 1 on any violation.
 
 Rules, each loading through scripts/schemas.py (no parsing of its own):
-1. CLOSED TICKETS ARE IMMUTABLE. A ticket that was done|superseded at <base> differs now
-   outside its append-only sections, or was deleted. Compares <base> with the working tree, so
-   it catches edits made outside a Claude session too. (ClosedTicketDiff)
+1. CLOSED TICKETS ARE IMMUTABLE. Without `kanban/.issues`: a ticket that was done|superseded at
+   <base> differs now outside its append-only sections, or was deleted. Compares <base> with the
+   working tree, so it catches edits made outside a Claude session too. (ClosedTicketDiff)
+   With the marker, GitHub keeps no such guarantee of its own (plan 4 decision 8), so this rule
+   runs on GitHub's history instead, never both: a closed, ticket-labelled issue whose body was
+   edited after it closed, or which carries a `reopened` timeline event, is reported by number.
+   Without GitHub access it reports that the rule was not checked (plan 4 AC-12).
 2. FINDING HOMES. Every ``— finding:`` entry in a ticket ``## Log`` carries an explicit
    ``home: <id>`` / ``homed to <id>`` marker naming a ticket file, or a ``[human]`` waiver or
    build close-out names its title. Ticket ids in the text without a marker do not home it;
@@ -21,6 +25,10 @@ Rules, each loading through scripts/schemas.py (no parsing of its own):
    line, so the verdict can tell which items a diff reaches (E22). (Charter)
 6. SPEC IDS IN ACS. An approved plan whose brief has ``spec_refs`` names every cited id in
    square brackets on an AC line, ``[contacts/call-log]``. (briefs, Plan)
+7. NO STATUS TEXT IN AN ISSUE BODY. With ``kanban/.issues``: a ticket-labelled issue whose source
+   body carries a ``status:`` line. Status is the label; the mirror already ignores the line, so
+   this is the failure that ``make sync``'s own warning does not raise. Without GitHub access it
+   reports that the rule was not checked. (plan 4 AC-2)
 """
 import json
 import subprocess
@@ -30,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import _fm  # noqa: E402
 import schemas  # noqa: E402
+import tickets  # noqa: E402
 
 
 def _git(root: Path, *args: str) -> str:
@@ -41,6 +50,52 @@ def _rel(root: Path, p: Path) -> str:
 
 
 def closed_tickets(root: Path, base: str = "HEAD") -> list[str]:
+    """Rule 1: GitHub's history when the project opted in (plan 4 decision 14: chosen by the
+    marker, never both), the git diff against `base` otherwise."""
+    if tickets.marker(root):
+        return github_history(root)
+    return _closed_tickets_git(root, base)
+
+
+def github_history(root: Path) -> list[str]:
+    """Rule 1 in issues mode (plan 4 AC-12 / this ticket AC-1): a closed, ticket-labelled issue
+    whose body was edited after it closed, or which carries a `reopened` timeline event."""
+    repo = tickets.marker(root)
+    if not repo:
+        return []
+    try:
+        numbers = tickets.list_ticket_numbers(repo, state="closed")
+        out = []
+        for n in numbers:
+            hist = tickets.closed_issue_history(repo, n)
+            if hist["edited_after_close"]:
+                out.append(f"#{n}: closed issue body edited after it closed")
+            if hist["reopened"]:
+                out.append(f"#{n}: closed issue carries a reopened timeline event")
+        return out
+    except RuntimeError:
+        return ["lint_kanban: no GitHub access; rule 1 (GitHub history) not checked"]
+
+
+def body_status_lines(root: Path) -> list[str]:
+    """Rule 7 (plan 4 AC-2 / this ticket AC-2): a mirrored ticket's source issue body carries a
+    `status:` line; status is the label, never body text."""
+    repo = tickets.marker(root)
+    if not repo:
+        return []
+    try:
+        numbers = tickets.list_ticket_numbers(repo)
+        out = []
+        for n in numbers:
+            issue = tickets.get_issue(repo, n)
+            if tickets.body_status_problem(issue.get("body") or ""):
+                out.append(f"#{n}: source body carries a status: line; status is the label")
+        return out
+    except RuntimeError:
+        return ["lint_kanban: no GitHub access; rule 7 (body status line) not checked"]
+
+
+def _closed_tickets_git(root: Path, base: str = "HEAD") -> list[str]:
     out = []
     if subprocess.run(["git", "rev-parse", "--verify", "-q", base + "^{commit}"], cwd=root, capture_output=True).returncode != 0:
         # An unborn HEAD (init runs ci before its first commit) has closed nothing; a named base
@@ -170,7 +225,7 @@ def spec_ids_in_acs(root: Path) -> list[str]:
 
 def lint(root: Path, base: str = "HEAD") -> list[str]:
     return (closed_tickets(root, base) + finding_homes(root) + open_blocks(root) + routing_stamps(root)
-            + charter_reach(root) + spec_ids_in_acs(root))
+            + charter_reach(root) + spec_ids_in_acs(root) + body_status_lines(root))
 
 
 def main(argv: list[str]) -> int:

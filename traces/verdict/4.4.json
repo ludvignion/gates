@@ -1,0 +1,102 @@
+{
+ "ticket": "4.4",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "AC-2",
+  "AC-3",
+  "attack-1",
+  "attack-2",
+  "attack-3",
+  "attack-4",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "resolved",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_tickets_sync.py::ClosedIssueHistoryPaginationTest::test_reopened_event_past_the_first_page_is_found",
+   "repro": "gh api repos/OWNER/REPO/issues/N/timeline | jq length",
+   "waived_by": null,
+   "text": "scripts/tickets.py:89 _timeline now pages per_page=100; reopened past page one found."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "scripts/tickets.py:111 userContentEdits(last:20); edits beyond 20 unread, no test."
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "lint_kanban.py:70 RuntimeError on one issue masks all findings as 'not checked'."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.3",
+  "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
+  "packet_sha": "6cb0302337fc6ec269a7af2c7af0f9c8405b602cb5e36b93efc31e76a17f8b4f",
+  "cost_usd": 0.1866415,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 16064,
+   "cache_read_input_tokens": 3051,
+   "output_tokens": 552,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 16064,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 552,
+     "cache_read_input_tokens": 3051,
+     "cache_creation_input_tokens": 16064,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 16064
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 9.045015834999504,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}

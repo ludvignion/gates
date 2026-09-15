@@ -13,6 +13,10 @@ Every write — `log` (a comment), `set_status` (a label swap), `create_child` (
 through here (plan 4 decision 7); `kanban_ops.py` and `board.py` call these instead of `gh`
 directly. Each refuses on a closed issue before any `gh` call runs (plan 4 AC-6 / this ticket
 AC-3): a closed issue is immutable, and a human reopens it from the Issues tab.
+
+`list_ticket_numbers` and `closed_issue_history` are the reads `lint_kanban.py`'s GitHub-mode
+rules use (plan 4 AC-12; ticket 4.4 AC-1/AC-2): GitHub keeps no closed-issue immutability of its
+own, so the lint checks the edit history and reopen events instead of trusting the label.
 """
 import json
 import re
@@ -74,6 +78,46 @@ def body_status_problem(body: str) -> bool:
 
 def get_issue(repo: str, number: int) -> dict:
     return json.loads(_gh(["issue", "view", str(number), "-R", repo, "--json", "number,title,body,labels,comments,state"]))
+
+
+def list_ticket_numbers(repo: str, state: str = "all") -> list[int]:
+    """Every `ticket`-labelled issue's number, `state` as `gh issue list` takes it (`open`,
+    `closed` or `all`). The one place `sync` and `lint_kanban`'s GitHub-mode rules list issues,
+    so a `gh` failure looks the same (RuntimeError) everywhere it's called."""
+    return [i["number"] for i in json.loads(_gh(["issue", "list", "-R", repo, "--label", TICKET_LABEL, "--state", state, "--json", "number"]))]
+
+
+def _timeline(repo: str, number: int) -> list[dict]:
+    """Every timeline event for an issue, paginated (this ticket's retry F1): the REST endpoint
+    caps a page at 100, so a `reopened` event past page one would go undetected on a single
+    unpaginated read."""
+    events: list[dict] = []
+    page = 1
+    while True:
+        chunk = json.loads(_gh(["api", f"repos/{repo}/issues/{number}/timeline",
+                                 "-f", "per_page=100", "-f", f"page={page}"]))
+        events.extend(chunk)
+        if len(chunk) < 100:
+            return events
+        page += 1
+
+
+def closed_issue_history(repo: str, number: int) -> dict:
+    """Whether a closed issue's body was edited after it closed, and whether it carries a
+    `reopened` timeline event (plan 4 AC-12): `userContentEdits` via GraphQL for the first,
+    the REST timeline for the second — GitHub keeps no closed-issue immutability of its own
+    (plan 4 decision 8). Raises RuntimeError, same as every other call here, when `gh` fails."""
+    owner, name = repo.split("/", 1)
+    query = ("query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name)"
+             "{issue(number:$number){closedAt userContentEdits(last:20){nodes{editedAt}}}}}")
+    data = json.loads(_gh(["api", "graphql", "-f", f"query={query}",
+                            "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={number}"]))
+    issue = data["data"]["repository"]["issue"]
+    closed_at = issue.get("closedAt")
+    edits = [n["editedAt"] for n in (issue.get("userContentEdits") or {}).get("nodes") or []]
+    edited_after_close = bool(closed_at) and any(e > closed_at for e in edits)
+    reopened = any(t.get("event") == "reopened" for t in _timeline(repo, number))
+    return {"edited_after_close": edited_after_close, "reopened": reopened}
 
 
 def refuse_if_closed(repo: str, number: int, issue: dict | None = None) -> dict:
@@ -179,10 +223,7 @@ def sync(root: Path) -> list[Path]:
     if not repo:
         return []
     ensure_labels(repo)
-    numbers = [
-        i["number"]
-        for i in json.loads(_gh(["issue", "list", "-R", repo, "--label", TICKET_LABEL, "--state", "all", "--json", "number"]))
-    ]
+    numbers = list_ticket_numbers(repo)
     tickets_dir = root / "kanban" / "tickets"
     staged = []
     for n in numbers:
