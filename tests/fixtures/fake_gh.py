@@ -111,8 +111,8 @@ def main() -> int:
             "closedAt": issue.get("closedAt"), "userContentEdits": {"nodes": edits}}}}}
         print(json.dumps(out))
         return 0
-    if argv[:2] == ["api"] and argv[2].startswith("repos/") and argv[2].endswith("/timeline"):
-        number = int(argv[2].split("/")[-2])
+    if argv[:1] == ["api"] and len(argv) > 1 and argv[1].startswith("repos/") and argv[1].endswith("/timeline"):
+        number = int(argv[1].split("/")[-2])
         issue = next((i for i in issues if i["number"] == number), None)
         if issue is None:
             print(f"no issue {number}", file=sys.stderr)
