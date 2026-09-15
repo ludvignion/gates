@@ -1,0 +1,8 @@
+{
+ "built": "Adds GitHub API integration (GraphQL + REST timeline) for closed-issue detection in tickets.py. Wires closed-ticket dispatch to lint_kanban.py rules 1, 7 in issues mode. Updates CI/Docker for GH_TOKEN and gh CLI.",
+ "review": "Reject: F1 blocks AC-1. Timeline read at scripts/tickets.py:104 unpaginated; reopened events beyond 30 undetected. AC-2, AC-3, charter-1 held. Warn F2 (AC-3): gh missing from Dockerfile Debian repos, apt install may fail. Warn F3 (AC-1): lint_kanban.py:74 returns no-access as violation when GitHub unreachable, exit 1.",
+ "model": "haiku",
+ "inputs_sha": "1414510571fe9f9ba628d0ecaa2132238cda45ed7509125a417dddaa3398d53a",
+ "cost_usd": 0.0216449,
+ "error": null
+}

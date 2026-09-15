@@ -1,0 +1,101 @@
+{
+ "ticket": "4.4",
+ "decision": "reject",
+ "held": [
+  "attack-1",
+  "attack-2",
+  "attack-3",
+  "attack-4",
+  "AC-2",
+  "AC-3",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "gh api repos/OWNER/REPO/issues/N/timeline | jq length",
+   "waived_by": null,
+   "text": "scripts/tickets.py:104 timeline read unpaginated; reopened event beyond first 30 events goes undetected."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-3",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "docker build -t gates .",
+   "waived_by": null,
+   "text": "Dockerfile:3 gh absent from Debian bookworm repos; apt install may fail, image untested."
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "cd /tmp/proj && touch kanban/.issues && PATH=/nonexistent python3 scripts/lint_kanban.py",
+   "waived_by": null,
+   "text": "lint_kanban.py:74 no-access message returned as violation; lint exits 1 whenever GitHub unreachable."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.3",
+  "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
+  "packet_sha": "1ecf15f3ee280d0daa0bb7517877561d7a944b00ddc7bed9b361b83525a67041",
+  "cost_usd": 0.2646845,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 14764,
+   "cache_read_input_tokens": 3051,
+   "output_tokens": 4236,
+   "output_tokens_details": {
+    "thinking_tokens": 3673
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 14764,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 4236,
+     "cache_read_input_tokens": 3051,
+     "cache_creation_input_tokens": 14764,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 14764
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 59.44233605900081,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
