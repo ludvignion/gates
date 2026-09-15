@@ -171,6 +171,48 @@ class InitTest(unittest.TestCase):
         self.assertIn(f"up to date with gates v{VERSION}", proc.stdout)
 
 
+class IssuesOptInUpdateTest(unittest.TestCase):
+    """`init --update` on an opted-in project (ticket 4.6 AC-3): the template-owned files still
+    land, and kanban/.issues — project-owned, never in UPDATE_SET — is kept byte-for-byte."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_update_keeps_the_marker_and_still_lands_the_template_changes(self):
+        root = empty_repo(self.tmp, "opted-in")
+        init_project.copy_template(root, "opted_in", "v0.0.1")
+        (root / "kanban").mkdir(exist_ok=True)
+        (root / "kanban" / ".issues").write_text("ludvignion/gates\n", encoding="utf-8")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "old, opted in")
+
+        proc = run(root, "--update", "--yes")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(".claude/settings.json", proc.stdout)
+        settings = json.loads((root / ".claude/settings.json").read_text())
+        self.assertEqual(settings["extraKnownMarketplaces"]["ludvignion"]["source"]["ref"], f"v{VERSION}")
+        self.assertEqual((root / "kanban" / ".issues").read_text(), "ludvignion/gates\n")
+
+
+class IssuesDocsTest(unittest.TestCase):
+    """README.md and CHANGELOG.md describe opting in, the marker, `make sync`, and the migration
+    (ticket 4.6 AC-4)."""
+
+    def test_readme_describes_the_issues_opt_in(self):
+        text = (REPO / "README.md").read_text(encoding="utf-8")
+        self.assertIn("init --issues", text)
+        self.assertIn("kanban/.issues", text)
+        self.assertIn("make sync", text)
+        self.assertIn("migrat", text.lower())
+
+    def test_changelog_describes_the_issues_opt_in(self):
+        text = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn("init --issues", text)
+        self.assertIn("kanban/.issues", text)
+        self.assertIn("migrat", text.lower())
+
+
 class RenameMigrationTest(unittest.TestCase):
     """0.10.1: --update on a project pinned to harness-plugin moves the repo and the enabled key to gates."""
 
