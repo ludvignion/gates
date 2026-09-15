@@ -2,12 +2,16 @@
 """A stand-in `gh` for the tickets.py tests, as fake_claude.py is for the runner tests.
 
 Answers the subset of `gh` scripts/tickets.py calls: `label create`, `issue list --label ticket
---json number`, `issue view <n> --json ...`, `issue comment`, `issue edit --add-label/--remove-
-label`, `issue close`, `issue create`. Issue data comes from $FAKE_GH_DATA (a JSON file:
-{"issues": [...], "fail_view": [<number>, ...]}); a number in `fail_view` makes that issue's
-`issue view` call fail, as `gh` does on a network or auth error. A write (comment, edit, close,
-create) rewrites $FAKE_GH_DATA so a later call in the same test sees it, as a real repo would.
-Every call is appended to $FAKE_GH_LOG, one argv per line.
+--state <s> --json number`, `issue view <n> --json ...`, `issue comment`, `issue edit --add-label/
+--remove-label`, `issue close`, `issue create`, `api graphql` (closed-issue edit history) and
+`api repos/<repo>/issues/<n>/timeline` (reopen events). Issue data comes from $FAKE_GH_DATA (a
+JSON file: {"issues": [...], "fail_view": [<number>, ...], "fail_list": true}); a number in
+`fail_view` makes that issue's `issue view` call fail, `fail_list` makes every `issue list` call
+fail, as `gh` does on a network or auth error. An issue may carry
+`"closedAt"`, `"body_edits"` (a list of ISO timestamps, becoming `userContentEdits` nodes) and
+`"timeline"` (a list of `{"event": ...}` dicts) for the GitHub-history rule's tests. A write
+(comment, edit, close, create) rewrites $FAKE_GH_DATA so a later call in the same test sees it,
+as a real repo would. Every call is appended to $FAKE_GH_LOG, one argv per line.
 """
 import json
 import os
@@ -39,8 +43,13 @@ def main() -> int:
     if argv[:2] == ["label", "create"]:
         return 0
     if argv[:2] == ["issue", "list"]:
+        if data.get("fail_list"):
+            print("gh: issue list failed (simulated)", file=sys.stderr)
+            return 1
         label = _flag(argv, "--label")
-        out = [{"number": i["number"]} for i in issues if label in _label_names(i)]
+        state = _flag(argv, "--state") or "open"
+        out = [{"number": i["number"]} for i in issues if label in _label_names(i)
+               and (state == "all" or i.get("state", "OPEN").lower() == state.lower())]
         print(json.dumps(out))
         return 0
     if argv[:2] == ["issue", "view"]:
@@ -85,6 +94,30 @@ def main() -> int:
             return 1
         issue["state"] = "CLOSED"
         _save(data_path, data)
+        return 0
+    if argv[:2] == ["api", "graphql"]:
+        fields = {}
+        for i, a in enumerate(argv):
+            if a in ("-f", "-F") and i + 1 < len(argv):
+                k, _, v = argv[i + 1].partition("=")
+                fields[k] = v
+        number = int(fields.get("number", 0))
+        issue = next((i for i in issues if i["number"] == number), None)
+        if issue is None:
+            print(f"no issue {number}", file=sys.stderr)
+            return 1
+        edits = [{"editedAt": t} for t in issue.get("body_edits", [])]
+        out = {"data": {"repository": {"issue": {
+            "closedAt": issue.get("closedAt"), "userContentEdits": {"nodes": edits}}}}}
+        print(json.dumps(out))
+        return 0
+    if argv[:2] == ["api"] and argv[2].startswith("repos/") and argv[2].endswith("/timeline"):
+        number = int(argv[2].split("/")[-2])
+        issue = next((i for i in issues if i["number"] == number), None)
+        if issue is None:
+            print(f"no issue {number}", file=sys.stderr)
+            return 1
+        print(json.dumps(issue.get("timeline", [])))
         return 0
     if argv[:2] == ["issue", "create"]:
         number = max((i["number"] for i in issues), default=0) + 1
