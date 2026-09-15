@@ -128,6 +128,9 @@ class IssueModeBoardTest(unittest.TestCase):
         self.assertEqual(before, after)  # nothing tracked changed: no commit at all
 
     def test_home_logs_the_issue_with_no_ticket_file_commit(self):
+        (self.root / "kanban" / "tickets" / "9.other.md").write_text(
+            "---\nid: 9\nparent: 9\nstatus: ready\ndepends_on: []\nwrites: []\n---\n\n## Log (append-only)\n### [grill] 2026-09-14 08:00 — created\n"
+        )
         line = board.home(self.root, "42", "C1", "9", who="reviewer")
         self.assertIn("42 C1 homed to 9", line)
         v = schemas.Verdict.load(self.root / "traces/verdict/42.json")
