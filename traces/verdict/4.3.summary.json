@@ -1,0 +1,8 @@
+{
+ "built": "Slice creation via kanban_ops.new() with CLI action, gate2_status reads issue labels instead of git mirror, verdict scripts resolve plans from parent field. 216 insertions across 8 files. Tests for grill skill, issue writes, verdict scripts added.",
+ "review": "Ship. AC-3, AC-4, four attack items, charter-1 held. Four findings: F1\u2013F2 block AC-1 (schemas untouched, grill unpinned); F3 blocks AC-2 ('done' label test missing); F4 blocks AC-1 (new() accepts 'status:' key unchecked).",
+ "model": "haiku",
+ "inputs_sha": "67341d3610e5b17c6360fd74c3735fd79de7d8e9b2b91a1ed0ee46c9732f5237",
+ "cost_usd": 0.0344629,
+ "error": null
+}

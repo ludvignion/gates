@@ -159,6 +159,22 @@ def commit(root: Path, paths: list[str], message: str, force: bool = False) -> s
     return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
 
 
+def new(root: Path, n: str, slug: str, body_file: str) -> str:
+    """`kanban_ops.py new <plan> <slug> --body-file <path>`: one new `ticket`+`ready` issue for
+    plan `n`'s slice, opted-in projects only (grill rule 9, plan 4 AC-1). The body file is the
+    ticket's frontmatter (`parent:`, `depends_on:`, `writes:`) and sections, as the grill wrote
+    them; `slug` is the issue title. Returns `#<number>`."""
+    import tickets  # local import, as in log_ticket
+
+    repo = tickets.marker(root)
+    if not repo:
+        raise ValueError("kanban_ops.py new needs kanban/.issues; write the ticket file directly otherwise")
+    body = Path(body_file).read_text(encoding="utf-8")
+    number = tickets.create_issue(repo, slug, body)
+    tickets.sync(root)
+    return f"#{number}"
+
+
 def plan_order(root: Path, n: str) -> list[str]:
     """Tickets of plan n in depends_on order (a dependency before its dependants), done and
     superseded ones out. Raises ValueError on a depends_on cycle."""
@@ -182,6 +198,7 @@ def plan_order(root: Path, n: str) -> list[str]:
 GATE1 = ("approve", "override")
 GATE2 = ("ship", "reject", "child", "home", "waive")
 TICKET_WRITE = ("log", "status")  # what a build or verdict session names (plan 4 AC-4, AC-5)
+NEW = ("new",)  # the grill's slice-to-issue write (plan 4 AC-1)
 
 
 def main(argv: list[str]) -> int:
@@ -193,16 +210,29 @@ def main(argv: list[str]) -> int:
       approve <n> · override <n> <scrutiny|backend> <value> ·
       ship <id> · reject <id> <reason> · child <id> <F#> · home <id> <F#> <target> ·
       waive <id> <F#> <reason> · order <n> ·
-      log <id> <role> <head> ["- line" ...] · status <id> <status>"""
+      log <id> <role> <head> ["- line" ...] · status <id> <status> ·
+      new <plan> <slug> --body-file <path>"""
     import argparse
 
     ap = argparse.ArgumentParser(description=main.__doc__.splitlines()[0])
-    ap.add_argument("action", choices=(*GATE1, *GATE2, "order", *TICKET_WRITE))
+    ap.add_argument("action", choices=(*GATE1, *GATE2, "order", *TICKET_WRITE, *NEW))
     ap.add_argument("args", nargs="*")
     ap.add_argument("--who", default="human")
     ap.add_argument("--cwd", default=".")
+    ap.add_argument("--body-file", default=None, metavar="PATH", help="new: the ticket body file (frontmatter + sections)")
     a = ap.parse_args(argv[1:])
     root = Path(a.cwd).resolve()
+    if a.action in NEW:
+        if len(a.args) != 2 or not a.body_file:
+            print("[kanban] new takes <plan> <slug> --body-file <path>", file=sys.stderr)
+            return 2
+        plan_n, slug = a.args
+        try:
+            print(new(root, plan_n, slug, a.body_file))
+        except (ValueError, FileNotFoundError) as e:
+            print(f"[kanban] {e}", file=sys.stderr)
+            return 1
+        return 0
     if a.action in TICKET_WRITE:
         if a.action == "log":
             if len(a.args) < 3:

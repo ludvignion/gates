@@ -993,13 +993,23 @@ def ticket_status(root: Path, tid: str) -> str:
 
 
 def gate2_status(repo: Path, tid: str) -> str:
-    """What Gate 2 did, read from git, never from the working tree (ship writes the file, commits,
-    checks base out and merges in steps; the walk must not wake in between): "shipped" when the
-    ticket branch is gone (ship deletes it last), "rejected" when the branch's committed ticket
-    says in_progress, "missing" without a ticket file, else "waiting"."""
+    """What Gate 2 did: "shipped" when the ticket branch is gone (ship deletes it last, in both
+    modes), "missing" without a ticket, else "rejected" or "waiting" from the status. In issue
+    mode (plan 4 AC-2) the mirror is never committed (AC-5), so status comes from the label,
+    re-synced here to see a status set from another process; otherwise it is read from git, never
+    the working tree (ship writes the file, commits, checks base out and merges in steps; the
+    walk must not wake in between), from the branch's committed ticket."""
+    import tickets  # local import, as in kanban_ops.log_ticket
+
     branch = f"ticket/{tid}"
     if subprocess.run(["git", "rev-parse", "--verify", "-q", branch], cwd=repo, capture_output=True).returncode != 0:
         return "shipped"
+    if tickets.marker(repo):
+        tickets.sync(repo)
+        path = kanban_ops.find_ticket(repo, tid)
+        if path is None:
+            return "missing"
+        return "rejected" if _fm.read(path)[0].get("status") == "in_progress" else "waiting"
     path = kanban_ops.find_ticket(repo, tid)
     if path is None:
         return "missing"

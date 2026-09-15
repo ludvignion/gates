@@ -634,6 +634,37 @@ class VerdictScriptsTest(unittest.TestCase):
         self.assertTrue((self.tmp / "traces/verdict/1.1.input.md").exists())
 
 
+class PlanLookupByParentTest(unittest.TestCase):
+    """AC-3 (plan 4): verdict_prep.py and verdict_checks.py find the plan through the ticket's
+    `parent:` field, not by splitting the id — an issue-number id (mirror mode) has no dot, so
+    `tid.split(".")[0]` names the ticket itself, not its plan."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        ticket = self.tmp / "kanban" / "tickets" / "42.some-slice.md"
+        ticket.parent.mkdir(parents=True)
+        ticket.write_text("---\nid: 42\nparent: 9\nstatus: in_review\ndepends_on: []\nwrites: []\n---\n# 42 some slice\n\n## Log (append-only)\n")
+        git(self.tmp, "init", "-q", "-b", "main")
+        git(self.tmp, "add", "-A"); git(self.tmp, "commit", "-q", "-m", "base")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_verdict_prep_main_resolves_the_plan_by_parent(self):
+        with mock.patch.object(verdict_prep.kanban_ops, "base_branch", return_value="main") as m, \
+                mock.patch.object(verdict_prep, "build", return_value="") as build, \
+                contextlib.chdir(self.tmp), contextlib.redirect_stdout(io.StringIO()):
+            verdict_prep.main(["verdict_prep.py", "42", "--no-ci"])
+        m.assert_called_once_with(self.tmp.resolve(), "9")
+        build.assert_called_once_with(self.tmp.resolve(), "42", "main", ci=False, arm="packet", ci_from=None)
+
+    def test_verdict_checks_main_resolves_the_plan_by_parent(self):
+        with mock.patch.object(verdict_checks.kanban_ops, "base_branch", return_value="main") as m, \
+                contextlib.chdir(self.tmp), contextlib.redirect_stdout(io.StringIO()):
+            verdict_checks.main(["verdict_checks.py", "42"])
+        m.assert_called_once_with(self.tmp.resolve(), "9")
+
+
 class VerdictSchemaTest(unittest.TestCase):
     def test_attacks_charter_ticket(self):
         self.assertEqual(schemas.Attacks.parse(PLAN).items, ("The run is too expensive to repeat monthly", "A rename counted as a move"))

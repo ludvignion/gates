@@ -2,6 +2,8 @@
 `log`/`status` verbs, board.py's ship/reject/waive/home/child routed through tickets.py instead
 of a ticket file, and the build/verdict skills naming those verbs. `gh` is stubbed by
 tests/fixtures/fake_gh.py, as it is for tests/test_tickets_sync.py."""
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -148,6 +150,117 @@ class IssueModeBoardTest(unittest.TestCase):
         self.assertTrue(any("orbit after close-out: $ echo probe" in c["body"] for c in self._issue(42)["comments"]))
         after = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout
         self.assertEqual(before, after)  # AC-5: no ticket file commit, even for a mirror already tracked
+
+
+class KanbanOpsNewTest(unittest.TestCase):
+    """kanban_ops.py new <plan> <slug> --body-file <path>: one ticket+ready issue per slice
+    (plan 4 AC-1), the runner's walk order computed from the mirror's parent/depends_on (AC-2)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.root = self.tmp / "proj"
+        (self.root / "kanban" / "tickets").mkdir(parents=True)
+        (self.root / "kanban" / ".issues").write_text("ludvignion/gates\n")
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text(f"#!/bin/sh\nexec {sys.executable} {FAKE_GH} \"$@\"\n")
+        gh.chmod(0o755)
+        self.gh_data = self.tmp / "gh_data.json"
+        self.gh_data.write_text(json.dumps({"issues": []}))
+        self.env = mock.patch.dict(os.environ, {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_GH_DATA": str(self.gh_data)})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _issues(self) -> list[dict]:
+        return json.loads(self.gh_data.read_text())["issues"]
+
+    def test_new_creates_ticket_and_ready_issues_the_walk_orders_by_parent_and_depends_on(self):
+        body1 = self.tmp / "slice1.md"
+        body1.write_text(
+            "---\nparent: 9\ndepends_on: []\nwrites: [\"src/\"]\n---\n\n"
+            "## Outcome\ntracer bullet\n\n## Acceptance criteria\n- AC-1 (behavioral): x\n\n## Out of scope\n- nothing\n"
+        )
+        out1 = kanban_ops.new(self.root, "9", "tracer-bullet", str(body1))
+        self.assertEqual(out1, "#1")
+        issue1 = self._issues()[0]
+        self.assertEqual(sorted(issue1["labels"]), ["ready", "ticket"])
+        self.assertIn("parent: 9", issue1["body"])
+        self.assertIn("depends_on: []", issue1["body"])
+
+        body2 = self.tmp / "slice2.md"
+        body2.write_text(
+            "---\nparent: 9\ndepends_on: [1]\nwrites: [\"src/\"]\n---\n\n"
+            "## Outcome\nsecond slice\n\n## Acceptance criteria\n- AC-1 (behavioral): y\n\n## Out of scope\n- nothing\n"
+        )
+        out2 = kanban_ops.new(self.root, "9", "second-slice", str(body2))
+        self.assertEqual(out2, "#2")
+        self.assertIn("depends_on: [1]", self._issues()[1]["body"])
+
+        self.assertEqual(kanban_ops.plan_order(self.root, "9"), ["1", "2"])
+
+    def test_new_refuses_without_the_marker(self):
+        plain = self.tmp / "plain"
+        (plain / "kanban" / "tickets").mkdir(parents=True)
+        body = self.tmp / "slice.md"
+        body.write_text("---\nparent: 3\ndepends_on: []\nwrites: []\n---\n\n## Outcome\nx\n")
+        with self.assertRaises(ValueError):
+            kanban_ops.new(plain, "3", "slug", str(body))
+
+    def test_new_cli_prints_the_issue_number(self):
+        body = self.tmp / "slice.md"
+        body.write_text("---\nparent: 9\ndepends_on: []\nwrites: []\n---\n\n## Outcome\nx\n\n## Acceptance criteria\n- AC-1 (behavioral): x\n")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            rc = kanban_ops.main(["kanban_ops.py", "new", "9", "tracer-bullet", "--body-file", str(body), "--cwd", str(self.root)])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.getvalue().strip(), "#1")
+        self.assertEqual(self._issues()[0]["title"], "tracer-bullet")
+
+
+class Gate2StatusIssueModeTest(unittest.TestCase):
+    """AC-2 (plan 4): the runner's Gate 2 poll reads the issue's status label (re-synced), not a
+    git-committed mirror — the mirror is never committed in issue mode (AC-5)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.root = self.tmp / "proj"
+        (self.root / "kanban" / "tickets").mkdir(parents=True)
+        (self.root / "kanban" / ".issues").write_text("ludvignion/gates\n")
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text(f"#!/bin/sh\nexec {sys.executable} {FAKE_GH} \"$@\"\n")
+        gh.chmod(0o755)
+        self.gh_data = self.tmp / "gh_data.json"
+        self.gh_data.write_text(json.dumps({"issues": [dict(ISSUE_42)]}))
+        self.env = mock.patch.dict(os.environ, {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_GH_DATA": str(self.gh_data)})
+        self.env.start()
+        git(self.root, "init", "-q", "-b", "main")
+        (self.root / "README.md").write_text("x\n")
+        git(self.root, "add", "-A"); git(self.root, "commit", "-q", "-m", "base")
+        git(self.root, "checkout", "-q", "-b", "ticket/42")
+
+    def tearDown(self):
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _relabel(self, status: str) -> None:
+        data = json.loads(self.gh_data.read_text())
+        data["issues"][0]["labels"] = ["ticket", status]
+        self.gh_data.write_text(json.dumps(data))
+
+    def test_waiting_then_rejected_come_from_the_label_not_git_show(self):
+        self.assertEqual(runner.gate2_status(self.root, "42"), "waiting")
+        self._relabel("in_progress")
+        self.assertEqual(runner.gate2_status(self.root, "42"), "rejected")
+
+    def test_shipped_when_the_branch_is_gone(self):
+        git(self.root, "checkout", "-q", "main")
+        git(self.root, "branch", "-D", "ticket/42")
+        self.assertEqual(runner.gate2_status(self.root, "42"), "shipped")
 
 
 class KanbanOpsTicketWriteTest(unittest.TestCase):

@@ -95,8 +95,15 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    written into the plan under "## Verdict must attack" so the verdict's adversarial pass
    targets it. If either section is missing, do not ask for it — proceed.
 9. **Then slice.** Vertical slices only — each ticket crosses every layer it touches and is
-   demonstrable alone. Use `templates/ticket.md`. Declare `depends_on` and `writes`.
-   The first ticket is the tracer bullet.
+   demonstrable alone. Declare `depends_on` and `writes`. The first ticket is the tracer bullet.
+   Without `kanban/.issues`: write `kanban/tickets/<n>.<m>.<slug>.md` from `templates/ticket.md`
+   directly, in dependency order, `depends_on` naming the dotted ids.
+   With `kanban/.issues` (opted in): for each slice, in dependency order, write its body
+   (frontmatter `parent: <n>`, `depends_on` naming the prior slices' issue numbers, `writes:`;
+   `## Outcome`, `## Acceptance criteria`, `## Out of scope`) to a scratch file and run
+   `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py new <n> <slug> --body-file <path>`;
+   it creates the issue (`ticket`, `ready` labels) and prints `#<number>`. Once every slice has a
+   number, rewrite the plan's `## Slices` entries to `#<number>` and commit the plan, one commit.
 10. **Trace.** Append one record per node to `traces/grill/<n>.jsonl`:
    `{"brief": n, "node": "...", "type": "fact|capability|decision|assumption",
 "kind": "functional|technical|null", "resolved_by": "evidence|human|assumption|open",
