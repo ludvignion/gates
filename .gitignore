@@ -24,6 +24,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Session traces belong to projects; only golden replay fixtures live here.
+# Session traces belong to projects; only golden replay fixtures and harness findings live here.
 /traces/*
 !/traces/golden/
+!/traces/harness-findings.md
