@@ -121,6 +121,61 @@ def run_update(root: Path, ref: str, yes: bool) -> int:
     return 0
 
 
+def preflight_issues(repo: str) -> list[str]:
+    """What's missing before `init --issues <repo>` may write anything (plan 4 AC-13): `gh auth
+    status`, and the repo has Issues enabled. Empty list means clear to proceed."""
+    missing = []
+    if subprocess.run(["gh", "auth", "status"], capture_output=True).returncode != 0:
+        missing.append("gh auth status")
+        return missing
+    api = subprocess.run(["gh", "api", f"repos/{repo}"], capture_output=True, text=True)
+    if api.returncode != 0:
+        missing.append(f"repo {repo} (gh api repos/{repo} failed)")
+        return missing
+    if not json.loads(api.stdout).get("has_issues"):
+        missing.append(f"issues enabled on {repo}")
+    return missing
+
+
+def run_issues(root: Path, repo: str) -> int:
+    """`init --issues <owner/repo>` (plan 4 AC-13/AC-14, this ticket AC-1/AC-2): on a clean
+    preflight, write the marker, create the labels, git-ignore `kanban/tickets/`, migrate every
+    file ticket to an issue and run the first sync — one commit, named after what's missing when
+    the preflight refuses, and nothing written in that case."""
+    if (root / "kanban" / ".issues").exists():
+        print("refused: kanban/.issues already exists; this project already opted in", file=sys.stderr)
+        return 1
+    if missing := preflight_issues(repo):
+        print(f"refused: missing {', '.join(missing)}; nothing written", file=sys.stderr)
+        return 1
+    import _fm  # local import, as in override_plan: keeps this importable from a bare python3
+    import kanban_ops
+    import migrate_tickets
+    import tickets
+
+    ticket_paths = [p for p, _, _ in _fm.tickets(root / "kanban")]
+    (root / "kanban").mkdir(parents=True, exist_ok=True)
+    (root / "kanban" / ".issues").write_text(repo + "\n", encoding="utf-8")
+    tickets.ensure_labels(repo)
+    gitignore = root / ".gitignore"
+    lines = gitignore.read_text(encoding="utf-8").splitlines() if gitignore.exists() else []
+    if "kanban/tickets/" not in lines:
+        lines.append("kanban/tickets/")
+        gitignore.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    mapping, changed_plans = migrate_tickets.migrate(root, repo)
+    tickets.sync(root)
+    message = f"chore: opt in to kanban/.issues ({repo})"
+    if mapping:
+        listing = ", ".join(f"{old} → #{new}" for old, new in sorted(mapping, key=lambda t: [int(x) for x in t[0].split(".")]))
+        message += f"\n\nmigrate {len(mapping)} ticket(s): {listing}"
+    paths = ["kanban/.issues", ".gitignore"]
+    paths += [str(p.relative_to(root)) for p in changed_plans]
+    paths += [str(p.relative_to(root)) for p in ticket_paths]
+    kanban_ops.commit(root, paths, message)
+    print(f"opted in to {repo}; migrated {len(mapping)} ticket(s); make sync: OK")
+    return 0
+
+
 def run_init(root: Path, name: str | None) -> int:
     version = plugin_version()
     ref = f"v{version}"
@@ -158,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--name", help="package and project name (default: the directory name)")
     p.add_argument("--update", action="store_true", help="diff template-owned files against the repo")
     p.add_argument("--yes", action="store_true", help="with --update: write the differing files")
+    p.add_argument("--issues", metavar="OWNER/REPO", help="opt in to kanban/.issues: preflight, marker, labels, migrate file tickets, first sync")
     p.add_argument("--cwd", default=".", help="the project root (default: .)")
     args = ap.parse_args(argv)
     top = git(Path(args.cwd).resolve(), "rev-parse", "--show-toplevel")
@@ -166,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     root = Path(top.stdout.strip())
     try:
+        if args.issues:
+            return run_issues(root, args.issues)
         return run_update(root, f"v{plugin_version()}", args.yes) if args.update else run_init(root, args.name)
     except (ValueError, FileExistsError) as e:
         print(f"refused: {e}", file=sys.stderr)

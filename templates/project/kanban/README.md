@@ -9,6 +9,10 @@
   append-only, role-tagged.
 - `tickets/<n>.<m>.<p>.<slug>.md` — children spawned by a rejected verdict. No plan gate.
 - `.active` — current ticket id; the write-guard hook reads it. Git-ignored.
+- `.issues` — opts this project into GitHub Issues for tickets: `owner/repo`, written by
+  `init --issues owner/repo`. Present: `tickets/` above is a read-only mirror `make sync` writes
+  from the repo's `ticket`-labelled Issues, git-ignored, never edited by hand. Absent (the
+  default): tickets are the files above, as today.
 
 Subfolders, not a flat directory: the scripts search `kanban/` recursively, so nesting is free
 and `ls kanban/` stays readable as briefs accumulate.

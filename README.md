@@ -60,6 +60,28 @@ gates v<old>`, run the new version's script by path, then restart `claude`:
 python3 ~/.claude/plugins/cache/ludvignion/gates/<version>/scripts/init_project.py init --update --yes
 ```
 
+## GitHub Issues (optional)
+
+By default tickets are files under `kanban/tickets/`. A project can opt in to keep them as
+GitHub Issues instead, so a collaborator can read, comment on and pick up work from the Issues
+tab, while the plan gate, briefs and traces stay files:
+
+```
+python3 ~/.claude/plugins/cache/ludvignion/gates/<version>/scripts/init_project.py init --cwd . --issues owner/repo
+```
+
+Preflight: `gh auth status` must succeed and the repo must have Issues enabled; otherwise it
+refuses, naming what's missing, and writes nothing. On success, one commit: `kanban/.issues`
+names the repo, the `ticket` and five status labels exist, `kanban/tickets/` is added to
+`.gitignore` (the mirror below is derived, never committed), every file ticket under
+`kanban/tickets/` is migrated to one issue each — `done` and `superseded` ones created closed,
+every Log entry one comment in order — the commit message lists old id → new number, and
+`make sync` runs once. `init --update` keeps the marker untouched; only the template-owned files
+(Makefile, CI workflow, `.env.example`, `.gitignore`) are diffed and written.
+
+`make sync` (`scripts/tickets.py sync`) mirrors `kanban/.issues`' repo's `ticket`-labelled Issues
+into `kanban/tickets/<number>.<slug>.md`; a no-op without the marker.
+
 ## What's here
 
 | Path | Role |
@@ -91,7 +113,9 @@ python3 ~/.claude/plugins/cache/ludvignion/gates/<version>/scripts/init_project.
 | `scripts/board.py` | the Gate 1 and Gate 2 action functions — approve, override, ship, reject, child from finding, home, waive; no server. `kanban_ops.py` is the command line. |
 | `scripts/kanban_ops.py` | the writes a human made by hand: Log entry, status, routing override, commit. The one Log writer. `kanban_ops.py ship\|reject\|child\|home\|waive\|order` is the board's Gate 2 from a shell. |
 | `scripts/vendor.py` | one shell model call and how its JSON envelope is read; runner and render_verdict share it. |
-| `scripts/init_project.py` | `init` and `init --update`: what the init skill runs. |
+| `scripts/init_project.py` | `init` and `init --update`: what the init skill runs. `init --issues owner/repo` opts a project in: preflight, marker, labels, `.gitignore`, migration, first sync, one commit. |
+| `scripts/tickets.py` | The one `gh` seam: `kanban/.issues`' marker, `make sync`'s mirror, the Log comment, the status label swap, the closed-issue refusal, a child issue. |
+| `scripts/migrate_tickets.py` | The one-off migration `init --issues` runs: every file ticket becomes one issue, in `depends_on` order, `## Slices` rewritten to the new numbers, the files removed in one commit. |
 | `templates/` | brief (`spec_refs`, `after`), plan, ticket, ADR skeletons; `templates/project/` is the whole project skeleton `init` copies (`{{project_name}}`, `{{plugin_ref}}` are its only placeholders). |
 
 `scripts/` is the runtime the skills and project Makefiles call; `tests/` tests it. Neither is

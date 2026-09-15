@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Tickets can live in GitHub Issues instead of files (plan 4). A project opts in with one command:
+`init --issues owner/repo` checks `gh auth status` and that the repo has Issues enabled, writes
+the `kanban/.issues` marker, creates the `ticket` and five status labels, git-ignores
+`kanban/tickets/`, migrates every file ticket to one issue each (`done`/`superseded` created
+closed, every Log entry one comment in order, `## Slices` rewritten to the new numbers) in one
+commit listing old id → new number, and runs `make sync` once — or refuses, naming what's
+missing, and writes nothing. `init --update` on an opted-in project keeps the marker and still
+lands the template's Makefile, CI and `.env.example` changes.
+
+- `scripts/migrate_tickets.py` — the migration: dependency order, body shape, Log-to-comments,
+  closed-on-creation, `## Slices` rewrite, one commit.
+- `scripts/init_project.py` — `--issues owner/repo`: the preflight and the opt-in write path.
+- `tests/fixtures/fake_gh.py` — `auth status` and `api repos/<owner>/<repo>` for the preflight.
+
 ## 0.11.4 — 2026-09-15
 
 A flaky runner self-test. `test_red_ci_after_build_retries_with_a_second_build` made CI red in a
