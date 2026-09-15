@@ -4,7 +4,8 @@
 Answers the subset of `gh` scripts/tickets.py calls: `label create`, `issue list --label ticket
 --state <s> --json number`, `issue view <n> --json ...`, `issue comment`, `issue edit --add-label/
 --remove-label`, `issue close`, `issue create`, `api graphql` (closed-issue edit history) and
-`api repos/<repo>/issues/<n>/timeline` (reopen events). Issue data comes from $FAKE_GH_DATA (a
+`api repos/<repo>/issues/<n>/timeline` (reopen events, paginated by `per_page`/`page` fields,
+default page size 30 as real GitHub). Issue data comes from $FAKE_GH_DATA (a
 JSON file: {"issues": [...], "fail_view": [<number>, ...], "fail_list": true}); a number in
 `fail_view` makes that issue's `issue view` call fail, `fail_list` makes every `issue list` call
 fail, as `gh` does on a network or auth error. An issue may carry
@@ -24,6 +25,15 @@ def _label_names(issue: dict) -> list[str]:
 
 def _flag(argv: list[str], name: str) -> str | None:
     return argv[argv.index(name) + 1] if name in argv else None
+
+
+def _fields(argv: list[str]) -> dict[str, str]:
+    fields = {}
+    for i, a in enumerate(argv):
+        if a in ("-f", "-F") and i + 1 < len(argv):
+            k, _, v = argv[i + 1].partition("=")
+            fields[k] = v
+    return fields
 
 
 def _save(data_path: str, data: dict) -> None:
@@ -96,11 +106,7 @@ def main() -> int:
         _save(data_path, data)
         return 0
     if argv[:2] == ["api", "graphql"]:
-        fields = {}
-        for i, a in enumerate(argv):
-            if a in ("-f", "-F") and i + 1 < len(argv):
-                k, _, v = argv[i + 1].partition("=")
-                fields[k] = v
+        fields = _fields(argv)
         number = int(fields.get("number", 0))
         issue = next((i for i in issues if i["number"] == number), None)
         if issue is None:
@@ -117,7 +123,12 @@ def main() -> int:
         if issue is None:
             print(f"no issue {number}", file=sys.stderr)
             return 1
-        print(json.dumps(issue.get("timeline", [])))
+        fields = _fields(argv)
+        per_page = int(fields.get("per_page", 30))
+        page = int(fields.get("page", 1))
+        timeline = issue.get("timeline", [])
+        start = (page - 1) * per_page
+        print(json.dumps(timeline[start:start + per_page]))
         return 0
     if argv[:2] == ["issue", "create"]:
         number = max((i["number"] for i in issues), default=0) + 1
