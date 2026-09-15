@@ -126,7 +126,9 @@ def create_issue(repo: str, title: str, body: str, labels: tuple[str, ...] = (TI
 def create_child(repo: str, parent_number: int, parent_fm: dict, finding: dict) -> int:
     """A new issue for a rejected verdict finding: `ticket` and `ready` labels, `parent` and
     `writes` copied from the parent ticket's body, `depends_on: [#<parent_number>]` (plan 4
-    AC-8). Content comes from the finding's fields only, as board.child's file-mode shape does."""
+    AC-8). Content comes from the finding's fields only, as board.child's file-mode shape does.
+    Refuses, before creating anything, when the parent is closed (AC-3)."""
+    refuse_if_closed(repo, parent_number)
     plan = parent_fm.get("parent", "")
     writes = json.dumps(list(parent_fm.get("writes") or []))
     text = finding.get("text", "")
