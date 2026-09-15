@@ -27,14 +27,14 @@ the runner, in place or in a worktree), plus ticket `## Log` entries.
    continue from step 6.
 4. **Scope.** Write the ticket id to `kanban/.active` (the write-guard and re-anchor hooks read it).
    Set `status: in_progress`. Append `### [build] <timestamp> — start` to `## Log`.
-5. **Plan.** Lay out steps with the todo tool: one line per AC, then integration, then close-out.
+5. **Plan.** One line per AC, then integration, then close-out.
 6. **Tests first.** Translate every AC into pytest. Property ACs → hypothesis or parametrised
    cases. Critical ACs → mark for mutation. Commit: `test(<id>): ACs as tests`. Nothing else in
    that commit. Run them; they must fail. On a retry, add or fix tests only for the findings.
 7. **Implement.** The most boring code that turns the tests green. Then, and only then, run
    `make ci`. CI output is the authority — never claim green from memory.
 8. **Iterate headlessly when the artefact can't be exercised directly** (TUIs, jobs, external
-   systems): factor pure logic into functions, test those; `python -m py_compile` after each edit.
+   systems): factor pure logic into functions, test those.
 9. **Close-out.** Every new file, function ≥10 lines, class, or dependency must trace to an AC.
    List them in `## Log` under `### [build] — close-out` with the AC each serves. Anything that
    traces to nothing: revert it, or log it as a finding. Set `status: in_review`. Clear `kanban/.active`.
