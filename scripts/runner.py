@@ -517,12 +517,14 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
 
 
 def log_orbit(cwd: Path, tid: str, orbit: tuple[str, ...]) -> None:
-    """The runner's finding on the ticket: what the builder did after its close-out."""
+    """The runner's finding on the ticket: what the builder did after its close-out. Through
+    kanban_ops.log_ticket (plan 4 AC-4) so a mirrored project logs to the issue, not the
+    (git-ignored, never-committed) mirror file."""
     path = kanban_ops.find_ticket(cwd, tid)
     if path is None:
         return
     for call in orbit:
-        kanban_ops.append_log(path, "runner", f"orbit after close-out: {call}", ("- ignored; session terminated by runner",))
+        kanban_ops.log_ticket(cwd, tid, "runner", f"orbit after close-out: {call}", ("- ignored; session terminated by runner",))
     kanban_ops.commit(cwd, [str(path.relative_to(cwd))], f"docs({tid}): runner — orbit after close-out")
 
 
@@ -632,13 +634,14 @@ def log_verdict(cwd: Path, tid: str, v: "schemas.Verdict") -> str | None:
     ``- <severity> <id> <ac|charter|->: <text>`` line per open block or warn, `` → child`` when it
     spawns one: the same entry the verdict skill writes by hand. The build skill's retry check
     reads it (0.11.2: the runner never wrote it, so a retry had no brief), and so do
-    verdict_eval and lint_kanban. Returns the entry, or None without the ticket."""
-    path = kanban_ops.find_ticket(cwd, tid)
-    if path is None:
+    verdict_eval and lint_kanban. Through kanban_ops.log_ticket (plan 4 AC-4) so a mirrored
+    project logs to the issue, not the mirror file. Returns the entry, or None without the
+    ticket."""
+    if kanban_ops.find_ticket(cwd, tid) is None:
         return None
     lines = tuple(f"- {f.get('severity')} {f.get('id')} {f.get('ac') or f.get('charter') or '-'}: {f.get('text', '')}" + (" → child" if f.get("spawn_child") else "")
                   for f in v.findings if f.get("severity") in ("block", "warn") and v.is_open(f))
-    return kanban_ops.append_log(path, "verdict", v.decision, lines)
+    return kanban_ops.log_ticket(cwd, tid, "verdict", v.decision, lines)
 
 
 def verdict(cwd: Path, tid: str, model: str, arm: str = schemas.DEFAULT_ARM,

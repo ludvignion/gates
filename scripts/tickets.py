@@ -8,16 +8,27 @@
 Status lives in the issue's label, never in its body (plan 4 AC-2): the sync writes `status:`
 into the mirror from the label and reports a body that carries its own `status:` line instead of
 trusting it.
+
+Every write — `log` (a comment), `set_status` (a label swap), `create_child` (a new issue) — goes
+through here (plan 4 decision 7); `kanban_ops.py` and `board.py` call these instead of `gh`
+directly. Each refuses on a closed issue before any `gh` call runs (plan 4 AC-6 / this ticket
+AC-3): a closed issue is immutable, and a human reopens it from the Issues tab.
 """
 import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 MARKER = "kanban/.issues"
 TICKET_LABEL = "ticket"
 STATUS_LABELS = ("ready", "in_progress", "in_review", "done", "superseded")
+CLOSED_STATUSES = ("done", "superseded")
+
+
+def now() -> str:
+    return time.strftime("%Y-%m-%d %H:%M")
 _STATUS_LINE_RE = re.compile(r"^status:\s*\S", re.MULTILINE)
 
 
@@ -59,6 +70,77 @@ def body_status_problem(body: str) -> bool:
     ticket AC-3): status is the label, never body text a writer or a human can edit."""
     head = body.split("---", 2)[1] if body.startswith("---") else body
     return bool(_STATUS_LINE_RE.search(head))
+
+
+def get_issue(repo: str, number: int) -> dict:
+    return json.loads(_gh(["issue", "view", str(number), "-R", repo, "--json", "number,title,body,labels,comments,state"]))
+
+
+def refuse_if_closed(repo: str, number: int, issue: dict | None = None) -> dict:
+    """The read that gates every write (plan 4 AC-6 / this ticket AC-3): a closed issue's status,
+    body and comments are immutable here; a human reopens it from the Issues tab. Raises
+    RuntimeError before any write call when the issue is closed."""
+    issue = issue if issue is not None else get_issue(repo, number)
+    if issue.get("state") == "CLOSED":
+        raise RuntimeError(f"#{number} is closed; a human reopens it from the Issues tab")
+    return issue
+
+
+def log(repo: str, number: int, role: str, head: str, lines: tuple[str, ...] = (), when: str | None = None) -> str:
+    """One issue comment `### [role] <timestamp> — <head>` plus lines (plan 4 AC-4). Returns the
+    comment text; the caller re-syncs the mirror."""
+    refuse_if_closed(repo, number)
+    entry = f"### [{role}] {when or now()} — {head}" + "".join(f"\n{l}" for l in lines)
+    _gh(["issue", "comment", str(number), "-R", repo, "--body", entry])
+    return entry
+
+
+def set_status(repo: str, number: int, status: str) -> None:
+    """Exactly the new status label remains; `done` and `superseded` also close the issue (plan 4
+    AC-5)."""
+    if status not in STATUS_LABELS:
+        raise ValueError(f"status must be one of {STATUS_LABELS}, not {status!r}")
+    issue = refuse_if_closed(repo, number)
+    current = _label_names(issue.get("labels") or [])
+    for s in STATUS_LABELS:
+        if s in current and s != status:
+            _gh(["issue", "edit", str(number), "-R", repo, "--remove-label", s])
+    if status not in current:
+        _gh(["issue", "edit", str(number), "-R", repo, "--add-label", status])
+    if status in CLOSED_STATUSES:
+        _gh(["issue", "close", str(number), "-R", repo])
+
+
+def create_issue(repo: str, title: str, body: str, labels: tuple[str, ...] = (TICKET_LABEL, "ready")) -> int:
+    """A new issue; returns its number, parsed from `gh issue create`'s printed URL."""
+    args = ["issue", "create", "-R", repo, "--title", title, "--body", body]
+    for l in labels:
+        args += ["--label", l]
+    out = _gh(args)
+    m = re.search(r"/issues/(\d+)", out)
+    if not m:
+        raise RuntimeError(f"gh issue create: no issue number in output: {out.strip()!r}")
+    return int(m.group(1))
+
+
+def create_child(repo: str, parent_number: int, parent_fm: dict, finding: dict) -> int:
+    """A new issue for a rejected verdict finding: `ticket` and `ready` labels, `parent` and
+    `writes` copied from the parent ticket's body, `depends_on: [#<parent_number>]` (plan 4
+    AC-8). Content comes from the finding's fields only, as board.child's file-mode shape does."""
+    plan = parent_fm.get("parent", "")
+    writes = json.dumps(list(parent_fm.get("writes") or []))
+    text = finding.get("text", "")
+    fid = finding.get("id", "")
+    kind = "critical" if finding.get("severity") == "block" else "behavioral"
+    cite = finding.get("ac") or finding.get("charter") or "-"
+    body = (
+        f"---\nparent: {plan}\ndepends_on: [#{parent_number}]\nwrites: {writes}\n---\n\n"
+        f"## Outcome\nResolve {fid} from #{parent_number}: {text}\n\n"
+        f"## Acceptance criteria\n- AC-1 ({kind}): {text} — from #{parent_number} {fid} ({cite}); "
+        f"repro: `{finding.get('repro') or 'n/a'}`\n\n"
+        f"## Out of scope\n- everything else in #{parent_number}\n"
+    )
+    return create_issue(repo, text[:60] or f"child of #{parent_number}", body)
 
 
 def render_mirror(issue: dict) -> str:
