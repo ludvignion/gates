@@ -237,7 +237,12 @@ def live_calls(root: Path) -> list[str]:
 def main(argv: list[str]) -> int:
     tid = argv[1]
     root = Path(".").resolve()
-    base = argv[argv.index("--base") + 1] if "--base" in argv else default_base(root, tid.split(".")[0])
+    if "--base" in argv:
+        base = argv[argv.index("--base") + 1]
+    else:
+        tpath = kanban_ops.find_ticket(root, tid)
+        plan_n = str(_fm.read(tpath)[0].get("parent", tid.split(".")[0])) if tpath else tid.split(".")[0]
+        base = default_base(root, plan_n)
     print(json.dumps(checks(root, tid, base), indent=1))
     return 0
 

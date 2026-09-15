@@ -334,7 +334,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--ci-from", default=None, help="a recorded `make ci` (first line `exit <code>`, then the output) to carry instead of running CI again; the runner passes its own run")
     a = ap.parse_args(argv[1:])
     root = Path(".").resolve()
-    base = a.base or default_base(root, a.ticket.split(".")[0])
+    tpath = kanban_ops.find_ticket(root, a.ticket)
+    plan_n = str(_fm.read(tpath)[0].get("parent", a.ticket.split(".")[0])) if tpath else a.ticket.split(".")[0]
+    base = a.base or default_base(root, plan_n)
     text = build(root, a.ticket, base, ci=not a.no_ci, arm=a.arm, ci_from=Path(a.ci_from) if a.ci_from else None)
     out = packet_path(root, a.ticket)
     out.parent.mkdir(parents=True, exist_ok=True)
