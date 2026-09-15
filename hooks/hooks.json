@@ -35,6 +35,15 @@
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/reanchor.sh"
           }
         ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/tickets.py sync || true"
+          }
+        ]
       }
     ]
   }

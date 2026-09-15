@@ -1,0 +1,100 @@
+{
+ "ticket": "4.5",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "AC-2",
+  "attack-1",
+  "attack-2",
+  "attack-3",
+  "attack-4"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "hooks/hooks.json:44 `|| true` swallows sync exit code; refusal line reaches stderr but status is hidden."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "make -n sync",
+   "waived_by": null,
+   "text": "skills/build/SKILL.md:17 names `make sync`; packet shows no Makefile target, build path unverified."
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "python3 -m pytest tests/test_session_sync.py",
+   "waived_by": null,
+   "text": "tests/test_session_sync.py:97 asserts comment anywhere in mirror, not under `## Log` as AC-1 states."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.3",
+  "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
+  "packet_sha": "2272eef738c2c5b54ed4e3612a6e3db279589247afb917afa91c8a4d146f778d",
+  "cost_usd": 0.23583299999999996,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 13725,
+   "cache_read_input_tokens": 0,
+   "output_tokens": 3682,
+   "output_tokens_details": {
+    "thinking_tokens": 3171
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 13725,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 3682,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 13725,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 13725
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 51.053380244004074,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
