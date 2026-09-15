@@ -24,14 +24,22 @@ Never rely on a sentence in a skill file alone. Never let two scripts read the s
 
 **Bad:** "Remember to check dependencies" in SKILL.md — or `render_board.py` splitting frontmatter with string operations.
 
-## Principle: Skill changes replay on golden traces
+## Principle: Skill changes replay on golden traces — pending, not yet in force
 
-Every skill change is replayed on `traces/golden/` before tagging. If a change breaks a golden trace, either:
+The intent: every skill change is replayed on `traces/golden/` before tagging, and a change that
+breaks a golden trace is either wrong, or the trace needs updating with a documented reason.
 
-1. The change is wrong, or
-2. The golden trace needs updating (document why)
+**This is not in force today.** `traces/golden/` does not exist, so `scripts/replay.py` prints
+`no golden set` and exits clean — a skill change can be tagged with nothing replayed. Two things
+block it, and both are open:
 
-This prevents regressions and ensures backward compatibility.
+1. `replay.py` prompts `/grill --replay`, but grill has no `--replay` mode. A replay today runs
+   the live grill, which asks the human functional decisions and writes a plan.
+2. The golden set is empty. Seeding it before (1) would record a trace from a grill that asks
+   questions, which is not replayable.
+
+Until both close, skill changes are verified by `make ci` and by reading the diff. Do not cite
+this principle as though it ran.
 
 ## Principle: No client/system/dataset names
 
