@@ -262,7 +262,7 @@ def child(root: Path, tid: str, fid: str, who: str = "human") -> str:
         fm, _ = _fm.read(parent)
         if repo := tickets.marker(tree):
             cid = f"#{tickets.create_child(repo, int(tid), fm, f)}"
-            commit_paths = [str(vp.relative_to(tree)), page(tree, tid)]
+            file_paths = [str(vp.relative_to(tree))]
             log_call = lambda: kanban_ops.log_ticket(tree, tid, "human", f"child {cid} from {fid} by {who}", (f"- {f.get('text', '')} → home: {cid}",))  # noqa: E731
         else:
             existing = render_verdict.tickets_of(tree)
@@ -285,12 +285,12 @@ def child(root: Path, tid: str, fid: str, who: str = "human") -> str:
             if cpath.exists():
                 raise BoardError(f"{cpath.name} already exists")
             cpath.write_text(body, encoding="utf-8")
-            commit_paths = [str(cpath.relative_to(tree)), str(parent.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)]
+            file_paths = [str(cpath.relative_to(tree)), str(parent.relative_to(tree)), str(vp.relative_to(tree))]
             log_call = lambda: kanban_ops.append_log(parent, "human", f"child {cid} from {fid} by {who}", (f"- {f.get('text', '')} → home: {cid}",))  # noqa: E731
         v = v.with_findings(tuple({**x, "spawn_child": True, "home": cid} if x.get("id") == fid else x for x in v.findings))
-        v.dump(vp)
+        v.dump(vp)  # before page(): the rendered page must show the child (E20)
         log_call()
-        sha = kanban_ops.commit(tree, commit_paths, f"docs({tid}): child {cid} from {fid}", force=True)
+        sha = kanban_ops.commit(tree, [*file_paths, page(tree, tid)], f"docs({tid}): child {cid} from {fid}", force=True)
     finally:
         restore()
     return f"child {cid} created from {tid} {fid} ({sha})"
@@ -329,6 +329,8 @@ def waive(root: Path, tid: str, fid: str, reason: str, who: str = "human") -> st
         vp, v = _verdict(tree, tid)
         _finding(v, fid)
         when = kanban_ops.now()
+        v = v.with_findings(tuple({**x, "waived_by": f"{who} {when}"} if x.get("id") == fid else x for x in v.findings))
+        v.dump(vp)  # before page(): the rendered page must show this waiver (E20)
         head = f"waive {fid} by {who}: {reason.strip()}"
         if tickets.marker(tree):  # AC-5: the issue, no ticket file commit
             kanban_ops.log_ticket(tree, tid, "human", head, when=when)
@@ -336,8 +338,6 @@ def waive(root: Path, tid: str, fid: str, reason: str, who: str = "human") -> st
         else:
             kanban_ops.append_log(path, "human", head, when=when)
             commit_paths = [str(path.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)]
-        v = v.with_findings(tuple({**x, "waived_by": f"{who} {when}"} if x.get("id") == fid else x for x in v.findings))
-        v.dump(vp)
         sha = kanban_ops.commit(tree, commit_paths, f"docs({tid}): {fid} waived by {who}", force=True)
     finally:
         restore()
