@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # SessionStart(matcher: compact) — re-anchor the agent after context compaction.
 # stdout is injected into the model's context. Reads kanban/.active, written by /build step 4.
+# In a project synced from GitHub Issues (kanban/.issues), .active holds the issue number and
+# kanban/tickets/<number>.<slug>.md is the read-only mirror `make sync` writes (plan 4 AC-6):
+# the glob below finds it exactly as it finds a file ticket, no branch needed.
 set -uo pipefail
 cd "${CLAUDE_PROJECT_DIR:-.}"
 

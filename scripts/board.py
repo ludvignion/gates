@@ -38,6 +38,7 @@ import _fm  # noqa: E402
 import kanban_ops  # noqa: E402
 import render_verdict  # noqa: E402
 import schemas  # noqa: E402
+import tickets  # noqa: E402
 import verdict_eval  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -84,9 +85,13 @@ def current_branch(root: Path) -> str:
 
 def _base(root: Path, tid: str) -> str:
     """The branch a ship merges into, through kanban_ops.base_branch (contract A) for the
-    ticket's plan (E16: the ship ends here, checked out)."""
+    ticket's plan (E16: the ship ends here, checked out). The plan number is the ticket's own
+    `parent:` field when the ticket (or its mirror) is found, else the id's leading component —
+    an issue number has no dot, so a project without the marker keeps the old shape exactly."""
+    p = kanban_ops.find_ticket(root, tid)
+    plan_n = (_fm.read(p)[0].get("parent") if p else None) or tid.split(".")[0]
     try:
-        return kanban_ops.base_branch(root, tid.split(".")[0])
+        return kanban_ops.base_branch(root, plan_n)
     except ValueError as e:
         raise BoardError(str(e)) from None
 
@@ -180,11 +185,17 @@ def ship(root: Path, tid: str, who: str = "human") -> str:
             raise BoardError("open block(s) without a waiver or a child: " + ", ".join(f["id"] for f in open_blocks) + " — waive, create the child, or rework")
         if tree == root and not _clean(root):  # in place on the ticket branch: whatever is dirty is the human's, and the checkout to base would refuse it
             raise BoardError(f"the tree is dirty; commit or stash before shipping from {branch}")
-        kanban_ops.set_status(path, "done")
-        kanban_ops.append_log(path, "human", f"ship by {who} (gate 2, from the board)",
-                              tuple(f"- {f['severity']} {f['id']} {f.get('ac') or f.get('charter') or '-'}: {f['text']}" for f in v.findings if v.is_open(f))
-                              + tuple(f"- human {render_verdict.human_ac(ac)[0]} confirmed by {who}" for ac in human_acs(path)))
-        kanban_ops.commit(tree, [str(path.relative_to(tree)), page(tree, tid)], f"docs({tid}): ship — gate 2 by {who}", force=True)
+        lines = (tuple(f"- {f['severity']} {f['id']} {f.get('ac') or f.get('charter') or '-'}: {f['text']}" for f in v.findings if v.is_open(f))
+                 + tuple(f"- human {render_verdict.human_ac(ac)[0]} confirmed by {who}" for ac in human_acs(path)))
+        if repo := tickets.marker(tree):  # AC-5: the issue, no ticket file commit; log before status closes the issue
+            kanban_ops.log_ticket(tree, tid, "human", f"ship by {who} (gate 2, from the board)", lines)
+            kanban_ops.status_ticket(tree, tid, "done")
+            commit_paths = [page(tree, tid)]
+        else:
+            kanban_ops.set_status(path, "done")
+            kanban_ops.append_log(path, "human", f"ship by {who} (gate 2, from the board)", lines)
+            commit_paths = [str(path.relative_to(tree)), page(tree, tid)]
+        kanban_ops.commit(tree, commit_paths, f"docs({tid}): ship — gate 2 by {who}", force=True)
         record = verdict_eval.record_decision(tree, tid, "ship")
     finally:
         restore()
@@ -224,51 +235,65 @@ def reject(root: Path, tid: str, reason: str, who: str = "human") -> str:
     try:
         path = _ticket(tree, tid)
         _verdict(tree, tid)
-        kanban_ops.set_status(path, "in_progress")
-        kanban_ops.append_log(path, "human", f"reject by {who} (gate 2, from the board): {reason.strip()}")
-        sha = kanban_ops.commit(tree, [str(path.relative_to(tree))], f"docs({tid}): reject — gate 2 by {who}")
+        head = f"reject by {who} (gate 2, from the board): {reason.strip()}"
+        if repo := tickets.marker(tree):  # AC-5: the issue, no ticket file commit
+            kanban_ops.log_ticket(tree, tid, "human", head)
+            kanban_ops.status_ticket(tree, tid, "in_progress")
+            sha = None
+        else:
+            kanban_ops.set_status(path, "in_progress")
+            kanban_ops.append_log(path, "human", head)
+            sha = kanban_ops.commit(tree, [str(path.relative_to(tree))], f"docs({tid}): reject — gate 2 by {who}")
         record = verdict_eval.record_decision(tree, tid, "reject")
     finally:
         restore()
-    return f"{tid} rejected ({sha}); {record}"
+    return f"{tid} rejected; {record}" if sha is None else f"{tid} rejected ({sha}); {record}"
 
 
 def child(root: Path, tid: str, fid: str, who: str = "human") -> str:
-    """A child ticket from a finding. Its content comes from verdict.json fields only."""
+    """A child ticket from a finding. Its content comes from verdict.json fields only. AC-4/AC-8:
+    with the marker this is a new issue (`depends_on: [#<id>]`, `home: #<new>`) and no ticket
+    file is committed; without it, the file-mode shape below is unchanged."""
     tree, restore = branch_tree(root, tid)
     try:
         parent = _ticket(tree, tid)
         vp, v = _verdict(tree, tid)
         f = _finding(v, fid)
         fm, _ = _fm.read(parent)
-        tickets = render_verdict.tickets_of(tree)
-        cid = render_verdict.next_child(tid, tickets)
-        slug = "-".join(w for w in "".join(c if c.isalnum() else " " for c in f.get("text", "")).lower().split()[:4]) or "child"
-        cite = f.get("ac") or f.get("charter") or "-"
-        kind = "critical" if f.get("severity") == "block" else "behavioral"
-        body = TICKET_TEMPLATE.read_text(encoding="utf-8")
-        body = (body.replace("id: <n>.<m>", f"id: {cid}").replace("parent: <n>", f"parent: {fm.get('parent', tid.split('.')[0])}")
-                .replace("status: ready            # ready | in_progress | in_review | done", "status: ready")
-                .replace("depends_on: []", f"depends_on: [{tid}]")
-                .replace("writes: []               # paths the build may touch; enforced by hook if set", f"writes: {json.dumps(list(fm.get('writes') or []))}")
-                .replace("# <n>.<m> <title>", f"# {cid} {f.get('text', '')[:60]}")
-                .replace("<one sentence>", f"Resolve {fid} from {tid}: {f.get('text', '')}")
-                .replace("- AC-1 (behavioral): Given / When / Then\n- AC-2 (critical): ...",
-                         f"- AC-1 ({kind}): {f.get('text', '')} — from {tid} {fid} ({cite}); repro: `{f.get('repro') or 'n/a'}`")
-                .replace("## Out of scope\n- ...", f"## Out of scope\n- everything else in {tid}")
-                .replace("### [grill] <YYYY-MM-DD HH:MM> — created", f"### [human] {kanban_ops.now()} — created by {who} from {tid} {fid} (gate 2, from the board)"))
-        cpath = parent.parent / f"{cid}.{slug}.md"
-        if cpath.exists():
-            raise BoardError(f"{cpath.name} already exists")
-        cpath.write_text(body, encoding="utf-8")
+        if repo := tickets.marker(tree):
+            cid = f"#{tickets.create_child(repo, int(tid), fm, f)}"
+            commit_paths = [str(vp.relative_to(tree)), page(tree, tid)]
+            log_call = lambda: kanban_ops.log_ticket(tree, tid, "human", f"child {cid} from {fid} by {who}", (f"- {f.get('text', '')} → home: {cid}",))  # noqa: E731
+        else:
+            existing = render_verdict.tickets_of(tree)
+            cid = render_verdict.next_child(tid, existing)
+            slug = "-".join(w for w in "".join(c if c.isalnum() else " " for c in f.get("text", "")).lower().split()[:4]) or "child"
+            cite = f.get("ac") or f.get("charter") or "-"
+            kind = "critical" if f.get("severity") == "block" else "behavioral"
+            body = TICKET_TEMPLATE.read_text(encoding="utf-8")
+            body = (body.replace("id: <n>.<m>", f"id: {cid}").replace("parent: <n>", f"parent: {fm.get('parent', tid.split('.')[0])}")
+                    .replace("status: ready            # ready | in_progress | in_review | done", "status: ready")
+                    .replace("depends_on: []", f"depends_on: [{tid}]")
+                    .replace("writes: []               # paths the build may touch; enforced by hook if set", f"writes: {json.dumps(list(fm.get('writes') or []))}")
+                    .replace("# <n>.<m> <title>", f"# {cid} {f.get('text', '')[:60]}")
+                    .replace("<one sentence>", f"Resolve {fid} from {tid}: {f.get('text', '')}")
+                    .replace("- AC-1 (behavioral): Given / When / Then\n- AC-2 (critical): ...",
+                             f"- AC-1 ({kind}): {f.get('text', '')} — from {tid} {fid} ({cite}); repro: `{f.get('repro') or 'n/a'}`")
+                    .replace("## Out of scope\n- ...", f"## Out of scope\n- everything else in {tid}")
+                    .replace("### [grill] <YYYY-MM-DD HH:MM> — created", f"### [human] {kanban_ops.now()} — created by {who} from {tid} {fid} (gate 2, from the board)"))
+            cpath = parent.parent / f"{cid}.{slug}.md"
+            if cpath.exists():
+                raise BoardError(f"{cpath.name} already exists")
+            cpath.write_text(body, encoding="utf-8")
+            commit_paths = [str(cpath.relative_to(tree)), str(parent.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)]
+            log_call = lambda: kanban_ops.append_log(parent, "human", f"child {cid} from {fid} by {who}", (f"- {f.get('text', '')} → home: {cid}",))  # noqa: E731
         v = v.with_findings(tuple({**x, "spawn_child": True, "home": cid} if x.get("id") == fid else x for x in v.findings))
         v.dump(vp)
-        kanban_ops.append_log(parent, "human", f"child {cid} from {fid} by {who}", (f"- {f.get('text', '')} → home: {cid}",))
-        sha = kanban_ops.commit(tree, [str(cpath.relative_to(tree)), str(parent.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)],
-                                f"docs({tid}): child {cid} from {fid}", force=True)
+        log_call()
+        sha = kanban_ops.commit(tree, commit_paths, f"docs({tid}): child {cid} from {fid}", force=True)
     finally:
         restore()
-    return f"child {cid} created from {tid} {fid} ({sha}): {cpath.name}"
+    return f"child {cid} created from {tid} {fid} ({sha})"
 
 
 def home(root: Path, tid: str, fid: str, target: str, who: str = "human") -> str:
@@ -281,8 +306,14 @@ def home(root: Path, tid: str, fid: str, target: str, who: str = "human") -> str
         if kanban_ops.find_ticket(tree, target) is None:
             raise BoardError(f"no ticket {target} to home {fid} to")
         v = v.with_findings(tuple({**x, "home": target} if x.get("id") == fid else x for x in v.findings)).dump(vp) or schemas.Verdict.load(vp)
-        kanban_ops.append_log(path, "human", f"finding: {f.get('text', '')}", (f"- {fid} home: {target} (by {who})",))
-        sha = kanban_ops.commit(tree, [str(path.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)], f"docs({tid}): {fid} homed to {target}", force=True)
+        head, lines = f"finding: {f.get('text', '')}", (f"- {fid} home: {target} (by {who})",)
+        if tickets.marker(tree):  # AC-5: the issue, no ticket file commit
+            kanban_ops.log_ticket(tree, tid, "human", head, lines)
+            commit_paths = [str(vp.relative_to(tree)), page(tree, tid)]
+        else:
+            kanban_ops.append_log(path, "human", head, lines)
+            commit_paths = [str(path.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)]
+        sha = kanban_ops.commit(tree, commit_paths, f"docs({tid}): {fid} homed to {target}", force=True)
     finally:
         restore()
     return f"{tid} {fid} homed to {target} ({sha})"
@@ -298,10 +329,16 @@ def waive(root: Path, tid: str, fid: str, reason: str, who: str = "human") -> st
         vp, v = _verdict(tree, tid)
         _finding(v, fid)
         when = kanban_ops.now()
-        kanban_ops.append_log(path, "human", f"waive {fid} by {who}: {reason.strip()}", when=when)
+        head = f"waive {fid} by {who}: {reason.strip()}"
+        if tickets.marker(tree):  # AC-5: the issue, no ticket file commit
+            kanban_ops.log_ticket(tree, tid, "human", head, when=when)
+            commit_paths = [str(vp.relative_to(tree)), page(tree, tid)]
+        else:
+            kanban_ops.append_log(path, "human", head, when=when)
+            commit_paths = [str(path.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)]
         v = v.with_findings(tuple({**x, "waived_by": f"{who} {when}"} if x.get("id") == fid else x for x in v.findings))
         v.dump(vp)
-        sha = kanban_ops.commit(tree, [str(path.relative_to(tree)), str(vp.relative_to(tree)), page(tree, tid)], f"docs({tid}): {fid} waived by {who}", force=True)
+        sha = kanban_ops.commit(tree, commit_paths, f"docs({tid}): {fid} waived by {who}", force=True)
     finally:
         restore()
     return f"{tid} {fid} waived ({sha})"

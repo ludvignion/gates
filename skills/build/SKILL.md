@@ -25,8 +25,11 @@ the runner, in place or in a worktree), plus ticket `## Log` entries.
 3. **Retry check.** If the last `[verdict]` entry in `## Log` has `- block` lines without
    `→ child`, this is a retry. Those lines are your brief: address them and nothing else, then
    continue from step 6.
-4. **Scope.** Write the ticket id to `kanban/.active` (the write-guard and re-anchor hooks read it).
-   Set `status: in_progress`. Append `### [build] <timestamp> — start` to `## Log`.
+4. **Scope.** Write the ticket id to `kanban/.active` (the write-guard and re-anchor hooks read it;
+   in a project synced from GitHub Issues this is the issue number, and `reanchor.sh` finds the
+   mirror the same way it finds a file ticket). Set status and log the start through
+   `kanban_ops.py`, never a direct edit — it writes the file or the issue, whichever the project
+   uses: `kanban_ops.py status <id> in_progress` then `kanban_ops.py log <id> build start`.
 5. **Plan.** Lay out steps with the todo tool: one line per AC, then integration, then close-out.
 6. **Tests first.** Translate every AC into pytest. Property ACs → hypothesis or parametrised
    cases. Critical ACs → mark for mutation. Commit: `test(<id>): ACs as tests`. Nothing else in
@@ -36,11 +39,11 @@ the runner, in place or in a worktree), plus ticket `## Log` entries.
 8. **Iterate headlessly when the artefact can't be exercised directly** (TUIs, jobs, external
    systems): factor pure logic into functions, test those; `python -m py_compile` after each edit.
 9. **Close-out.** Every new file, function ≥10 lines, class, or dependency must trace to an AC.
-   List them in `## Log` under `### [build] — close-out` with the AC each serves. Anything that
-   traces to nothing: revert it, or log it as a finding. Set `status: in_review`. Clear `kanban/.active`.
-10. **Report.** Append the final Log entry:
-    `### [build] <timestamp> — status: DONE | NEEDS_CONTEXT | BLOCKED`
-    followed by one line of reason. NEEDS_CONTEXT = an AC is ambiguous in what the reader
+   List them with `kanban_ops.py log <id> build close-out "- <item>: <AC>" ...`. Anything that
+   traces to nothing: revert it, or log it as a finding. Set status:
+   `kanban_ops.py status <id> in_review`. Clear `kanban/.active`.
+10. **Report.** Log the final status through `kanban_ops.py log <id> build "status: DONE |
+    NEEDS_CONTEXT | BLOCKED" "- <reason>"`. NEEDS_CONTEXT = an AC is ambiguous in what the reader
     would notice, and the ticket + domain pack don't resolve it; the reason line must name
     the AC and the question — it feeds grill tuning. A technical ambiguity (how to build it)
     is never NEEDS_CONTEXT: decide it by `AGENTS.md`, name the choice in the close-out. BLOCKED = cannot finish for a reason outside the ticket (dependency, access, baseline).

@@ -40,10 +40,12 @@ The argument is a ticket id: a human runs the verdict by hand. Three tool calls.
    checks the JSON against the seat (blind downgrades uncited blocks to warns; other arms
    report them; unaccounted ACs and charter items become C-warns), sets `ticket` from the
    packet, stamps `meta` with vendor `claude-session` and cost null (a session has no cost
-   report), and renders the page. Then set ticket `status` from the
-   decision (`ship` → `done`, `reject` → `in_progress`; no other value) and append to `## Log`
-   `### [verdict] <timestamp> — <decision>`, one line per open block or warn:
-   `- <severity> <id> <ac|charter|->: <text>`, suffixed ` → child` when `spawn_child`.
+   report), and renders the page. Then, through `kanban_ops.py` — never a direct edit, so a
+   mirrored project writes the issue and a file project writes the file the same as today — set
+   status from the decision (`kanban_ops.py status <id> done` on ship, `in_progress` on reject;
+   no other value) and log the decision: `kanban_ops.py log <id> verdict <decision> "- <severity>
+   <id> <ac|charter|->: <text>" ...`, one line per open block or warn, suffixed ` → child` when
+   `spawn_child`.
 
 ## Never
 - Fix code. Findings only.
