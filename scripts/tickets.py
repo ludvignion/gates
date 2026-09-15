@@ -87,6 +87,21 @@ def list_ticket_numbers(repo: str, state: str = "all") -> list[int]:
     return [i["number"] for i in json.loads(_gh(["issue", "list", "-R", repo, "--label", TICKET_LABEL, "--state", state, "--json", "number"]))]
 
 
+def _timeline(repo: str, number: int) -> list[dict]:
+    """Every timeline event for an issue, paginated (this ticket's retry F1): the REST endpoint
+    caps a page at 100, so a `reopened` event past page one would go undetected on a single
+    unpaginated read."""
+    events: list[dict] = []
+    page = 1
+    while True:
+        chunk = json.loads(_gh(["api", f"repos/{repo}/issues/{number}/timeline",
+                                 "-f", "per_page=100", "-f", f"page={page}"]))
+        events.extend(chunk)
+        if len(chunk) < 100:
+            return events
+        page += 1
+
+
 def closed_issue_history(repo: str, number: int) -> dict:
     """Whether a closed issue's body was edited after it closed, and whether it carries a
     `reopened` timeline event (plan 4 AC-12): `userContentEdits` via GraphQL for the first,
@@ -101,8 +116,7 @@ def closed_issue_history(repo: str, number: int) -> dict:
     closed_at = issue.get("closedAt")
     edits = [n["editedAt"] for n in (issue.get("userContentEdits") or {}).get("nodes") or []]
     edited_after_close = bool(closed_at) and any(e > closed_at for e in edits)
-    timeline = json.loads(_gh(["api", f"repos/{repo}/issues/{number}/timeline"]))
-    reopened = any(t.get("event") == "reopened" for t in timeline)
+    reopened = any(t.get("event") == "reopened" for t in _timeline(repo, number))
     return {"edited_after_close": edited_after_close, "reopened": reopened}
 
 
