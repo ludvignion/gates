@@ -17,6 +17,7 @@ FAKE_GH = REPO / "tests" / "fixtures" / "fake_gh.py"
 sys.path.insert(0, str(REPO / "scripts"))
 import board  # noqa: E402
 import kanban_ops  # noqa: E402
+import runner  # noqa: E402
 import schemas  # noqa: E402
 import tickets  # noqa: E402
 from test_verdict_scripts import git  # noqa: E402
@@ -137,6 +138,16 @@ class IssueModeBoardTest(unittest.TestCase):
         self.assertEqual(next(f for f in v.findings if f["id"] == "C1")["home"], "9")
         self.assertTrue(any("C1 home: 9 (by reviewer)" in c["body"] for c in self._issue(42)["comments"]))
         self.assertNotIn("kanban/tickets", self._tracked())
+
+    def test_orbit_logs_the_issue_with_no_ticket_file_commit_even_when_mirror_already_tracked(self):
+        mirror = "kanban/tickets/42.child-fixture.md"
+        git(self.root, "add", "-f", mirror)
+        git(self.root, "commit", "-q", "-m", "legacy: mirror tracked before issue-mode opt-in")
+        before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout
+        runner.log_orbit(self.root, "42", ("$ echo probe",))
+        self.assertTrue(any("orbit after close-out: $ echo probe" in c["body"] for c in self._issue(42)["comments"]))
+        after = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout
+        self.assertEqual(before, after)  # AC-5: no ticket file commit, even for a mirror already tracked
 
 
 class KanbanOpsTicketWriteTest(unittest.TestCase):
