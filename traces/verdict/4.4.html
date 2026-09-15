@@ -1,20 +1,20 @@
 <!doctype html><meta charset=utf-8><title>Verdict 4.4</title>
 <style>body{font-family:system-ui;max-width:1000px;margin:2rem auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.3rem .6rem;text-align:left}
-.hero{font-size:2rem;padding:1rem;color:#fff;background:#c0392b}
+.hero{font-size:2rem;padding:1rem;color:#fff;background:#3cb371}
 li.block{background:#fdd}li.warn{background:#ffe9c7}
 li{margin:.3rem 0;padding:.2rem .4rem;list-style:none}ul{padding-left:0}
 .meta{color:#666;font-size:.85rem}.invalid{color:#c0392b;font-weight:bold}td.no{background:#fdd}details{margin:.4rem 0}
 section.top{background:#f6f6f6;padding:.6rem 1rem;border-radius:8px;margin:.6rem 0}pre{white-space:pre-wrap;font-size:.85rem}</style>
-<div class=hero>REJECT — 4.4</div>
-<p class=meta>Seat: claude · packet seat · cost $0.2647 · tokens in/out 2/4236 · 59 s · untraced (OPIK_URL_OVERRIDE unset)</p>
+<div class=hero>SHIP — 4.4</div>
+<p class=meta>Seat: claude · packet seat · cost $0.1866 · tokens in/out 2/552 · 9 s · untraced (OPIK_URL_OVERRIDE unset)</p>
 <p>CI: green · mutation: None</p>
 
-<section class=top><h2>What was built</h2><p>Adds GitHub API integration (GraphQL + REST timeline) for closed-issue detection in tickets.py. Wires closed-ticket dispatch to lint_kanban.py rules 1, 7 in issues mode. Updates CI/Docker for GH_TOKEN and gh CLI.</p></section>
-<section class=top><h2>What the reviewer said</h2><p>Reject: F1 blocks AC-1. Timeline read at scripts/tickets.py:104 unpaginated; reopened events beyond 30 undetected. AC-2, AC-3, charter-1 held. Warn F2 (AC-3): gh missing from Dockerfile Debian repos, apt install may fail. Warn F3 (AC-1): lint_kanban.py:74 returns no-access as violation when GitHub unreachable, exit 1.</p><p><b>Reject.</b> Held: attack-1, attack-2, attack-3, attack-4, AC-2, AC-3, charter-1. 1 open block: F1 (this ticket) scripts/tickets.py:104 timeline read unpaginated; reopened event beyond first 30 events goes undetected.. 2 warns: F2 Dockerfile:3 gh absent from Debian bookworm repos; apt install may fail, image untested.; F3 lint_kanban.py:74 no-access message returned as violation; lint exits 1 whenever GitHub unreachable..</p></section>
-<section class=top><h2>Recommended action</h2><ul><li><b>F1</b> rework in place</li><li><b>F2</b> waive</li><li><b>F3</b> waive</li></ul></section>
+<section class=top><h2>What was built</h2><p>Adds pagination to timeline reads in scripts/tickets.py (100 per page) to catch reopened issues past first batch. Updates test infrastructure. 241 insertions across 8 files, mainly lint_kanban.py and tests.</p></section>
+<section class=top><h2>What the reviewer said</h2><p>Ship with 8 held items (3 ACs, 4 attacks, 1 charter). F1 (block, resolved) paginates _timeline, reopened events past page one now found and tested. F2 (warn) userContentEdits hard-coded to 20, overages unread. F3 (warn) RuntimeError masks findings. CI green.</p><p><b>Ship.</b> Held: AC-1, AC-2, AC-3, attack-1, attack-2, attack-3, attack-4, charter-1. No open block. 2 warns: F2 scripts/tickets.py:111 userContentEdits(last:20); edits beyond 20 unread, no test.; F3 lint_kanban.py:70 RuntimeError on one issue masks all findings as &#x27;not checked&#x27;..</p></section>
+<section class=top><h2>Recommended action</h2><ul><li><b>F2</b> home to 4.5</li><li><b>F3</b> waive</li></ul></section>
 
-<p class=meta>Held: attack-1, attack-2, attack-3, attack-4, AC-2, AC-3, charter-1</p>
-<h2>Blocks (1)</h2><ul><li class=block><b>F1</b> <code>AC-1</code> scripts/tickets.py:104 timeline read unpaginated; reopened event beyond first 30 events goes undetected.<div class=meta>repro <code>gh api repos/OWNER/REPO/issues/N/timeline | jq length</code></div></li></ul>
-<h2>Warnings (2)</h2><ul><li class=warn><b>F2</b> <code>AC-3</code> Dockerfile:3 gh absent from Debian bookworm repos; apt install may fail, image untested.<div class=meta>repro <code>docker build -t gates .</code></div></li><li class=warn><b>F3</b> <code>AC-1</code> lint_kanban.py:74 no-access message returned as violation; lint exits 1 whenever GitHub unreachable.<div class=meta>repro <code>cd /tmp/proj &amp;&amp; touch kanban/.issues &amp;&amp; PATH=/nonexistent python3 scripts/lint_kanban.py</code></div></li></ul>
-
+<p class=meta>Held: AC-1, AC-2, AC-3, attack-1, attack-2, attack-3, attack-4, charter-1</p>
+<h2>Blocks (0)</h2><ul><li>none</li></ul>
+<h2>Warnings (2)</h2><ul><li class=warn><b>F2</b> <code>AC-1</code> scripts/tickets.py:111 userContentEdits(last:20); edits beyond 20 unread, no test.</li><li class=warn><b>F3</b> <code>AC-1</code> lint_kanban.py:70 RuntimeError on one issue masks all findings as &#x27;not checked&#x27;.</li></ul>
+<details><summary>Resolved (1)</summary><ul><li class=block><b>F1</b> <code>AC-1</code> scripts/tickets.py:89 _timeline now pages per_page=100; reopened past page one found.<div class=meta>repro <code>gh api repos/OWNER/REPO/issues/N/timeline | jq length</code> · covered by <code>tests/test_tickets_sync.py::ClosedIssueHistoryPaginationTest::test_reopened_event_past_the_first_page_is_found</code></div></li></ul></details>
 <h2>Quality</h2><table><tr><th>File</th><th>1 SRP</th><th>2 AC-trace</th><th>3 YAGNI</th><th>4 rule-of-3</th><th>5 ISP</th><th>6 DIP</th></tr></table>
