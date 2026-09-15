@@ -518,13 +518,18 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
 
 def log_orbit(cwd: Path, tid: str, orbit: tuple[str, ...]) -> None:
     """The runner's finding on the ticket: what the builder did after its close-out. Through
-    kanban_ops.log_ticket (plan 4 AC-4) so a mirrored project logs to the issue, not the
-    (git-ignored, never-committed) mirror file."""
+    kanban_ops.log_ticket (plan 4 AC-4) so a mirrored project logs to the issue, not the mirror
+    file. In issue mode the mirror is never committed (AC-5), whether or not it happens to be
+    gitignored — a project that opted in after tracking it would otherwise pick up the change."""
+    import tickets  # local import, as in kanban_ops.log_ticket
+
     path = kanban_ops.find_ticket(cwd, tid)
     if path is None:
         return
     for call in orbit:
         kanban_ops.log_ticket(cwd, tid, "runner", f"orbit after close-out: {call}", ("- ignored; session terminated by runner",))
+    if tickets.marker(cwd):
+        return
     kanban_ops.commit(cwd, [str(path.relative_to(cwd))], f"docs({tid}): runner — orbit after close-out")
 
 
