@@ -97,6 +97,14 @@ class GrillSkillTextTest(unittest.TestCase):
         self.assertIn("A technical ambiguity (how to build it)", " ".join(build.split()))
         self.assertIn("is never NEEDS_CONTEXT", " ".join(build.split()))
 
+    def test_rule_9_names_kanban_ops_new_for_opted_in_projects(self):
+        """AC-4 (plan 4 AC-0): opted-in projects create slices through kanban_ops.py new; a
+        project without the marker still writes the ticket file directly."""
+        rules = schemas.section(SKILL.read_text(encoding="utf-8"), "Rules")
+        self.assertIn("kanban_ops.py new <n> <slug> --body-file <path>", rules)
+        self.assertIn("kanban/.issues", rules)
+        self.assertIn("kanban/tickets/<n>.<m>.<slug>.md", rules)
+
     def test_routing_default_is_runner(self):
         routing = schemas.section(SKILL.read_text(encoding="utf-8"), "Routing")
         self.assertIn("backend: runner | workflow | session", routing)
