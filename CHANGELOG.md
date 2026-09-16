@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.11.7 — 2026-09-16
+
+0.11.6 added the board script to the build seat's allowlist as one exact path, the plugin-root
+copy. The seat addressed it as `scripts/kanban_ops.py` instead, which is a real file when the
+project is gates itself, and the rule matched neither spelling but the one it named. Ticket 4.6.2
+died at `done error permission denied` a second time, 1:58 in.
+
+- `scripts/runner.py` — the rule is now `Bash(python3 *kanban_ops.py *)`, path-agnostic, so the
+  plugin-root spelling and the relative one a self-hosted checkout offers both match. A wildcard
+  mid-pattern was verified against the live matcher before this shipped, not assumed.
+- `skills/build/SKILL.md` — step 5 now says to write `kanban/.active` with the Write tool rather
+  than a shell redirect, and to issue the board calls as separate Bash calls. The seat had chained
+  three commands with `&&`, one of them `echo -n "<id>" > kanban/.active`; a single unapproved
+  segment has the whole line refused. The redirect was worth removing on its own account:
+  `hooks/guard_writes.py` matches Write and Edit, so `>` places the write outside the scope check.
+- `tests/` — the allowlist test asserts the path-agnostic rule and fails on any `Bash(python3 /…)`
+  entry, so the exact-path form cannot come back.
+
+Consuming projects (project-template): no action. Pin `v0.11.7`.
+
 ## 0.11.6 — 2026-09-16
 
 The headless build seat can drive the board. Build SKILL.md steps 5, 10 and 11 tell the seat to

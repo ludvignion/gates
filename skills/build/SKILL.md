@@ -29,11 +29,15 @@ the runner, in place or in a worktree), plus ticket `## Log` entries.
 4. **Retry check.** If the last `[verdict]` entry in `## Log` has `- block` lines without
    `→ child`, this is a retry. Those lines are your brief: address them and nothing else, then
    continue from step 7.
-5. **Scope.** Write the ticket id to `kanban/.active` (the write-guard and re-anchor hooks read it;
-   in a project synced from GitHub Issues this is the issue number, and `reanchor.sh` finds the
-   mirror the same way it finds a file ticket). Set status and log the start through
+5. **Scope.** Write the ticket id to `kanban/.active` with the Write tool, never a shell redirect:
+   a redirect is a Bash call, and the write-guard hook watches Write and Edit only, so `>` puts the
+   file outside the scope check the hook exists to make. (The write-guard and re-anchor hooks read
+   the file; in a project synced from GitHub Issues this is the issue number, and `reanchor.sh`
+   finds the mirror the same way it finds a file ticket.) Set status and log the start through
    `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py`, never a direct edit — it writes the file or the issue, whichever the project
    uses: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py status <id> in_progress` then `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py log <id> build start`.
+   Run each of these as its own Bash call. Chaining them with `&&` makes one call of the lot, and
+   a single unapproved segment has the whole line refused; the runner stops at the first refusal.
 6. **Plan.** One line per AC, then integration, then close-out.
 7. **Tests first.** Translate every AC into pytest. Property ACs → hypothesis or parametrised
    cases. Critical ACs → mark for mutation. Commit: `test(<id>): ACs as tests`. Nothing else in

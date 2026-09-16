@@ -428,8 +428,11 @@ class RunnerBuildSeatTest(unittest.TestCase):
         for tool in ("Bash(make *)", "Bash(uv *)", "Bash(git *)", "Bash(pytest *)"):
             self.assertIn(tool, allowed)
         # the build seat sets status and logs through kanban_ops.py; without it the board calls
-        # are denied and the run dies at "permission denied" before any commit
-        self.assertIn(f"Bash(python3 {runner.SCRIPTS / 'kanban_ops.py'} *)", allowed)
+        # are denied and the run dies at "permission denied" before any commit. The rule is
+        # path-agnostic: an exact prefix matches the plugin-root spelling or the relative one a
+        # self-hosted gates checkout offers, never both.
+        self.assertIn("Bash(python3 *kanban_ops.py *)", allowed)
+        self.assertFalse([t for t in allowed if t.startswith("Bash(python3 /")])
         self.assertNotIn("--dangerously-skip-permissions", cmd)
 
     def test_full_run_in_place_orbit_logged_and_build_skipped_on_rerun(self):
