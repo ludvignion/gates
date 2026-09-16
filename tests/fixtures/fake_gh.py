@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """A stand-in `gh` for the tickets.py tests, as fake_claude.py is for the runner tests.
 
-Answers the subset of `gh` scripts/tickets.py calls: `label create`, `issue list --label ticket
---state <s> --json number`, `issue view <n> --json ...`, `issue comment`, `issue edit --add-label/
---remove-label`, `issue close`, `issue create`, `api graphql` (closed-issue edit history) and
-`api repos/<repo>/issues/<n>/timeline` (reopen events, paginated by `per_page`/`page` fields,
-default page size 30 as real GitHub). Issue data comes from $FAKE_GH_DATA (a
-JSON file: {"issues": [...], "fail_view": [<number>, ...], "fail_list": true}); a number in
-`fail_view` makes that issue's `issue view` call fail, `fail_list` makes every `issue list` call
-fail, as `gh` does on a network or auth error. An issue may carry
+Answers the subset of `gh` scripts/tickets.py and scripts/init_project.py's `--issues` preflight
+call: `label create`, `issue list --label ticket --state <s> --json number`, `issue view <n>
+--json ...`, `issue comment`, `issue edit --add-label/--remove-label`, `issue close`,
+`issue create`, `auth status`, `api repos/<owner>/<repo>` (`has_issues`), `api graphql`
+(closed-issue edit history) and `api repos/<repo>/issues/<n>/timeline` (reopen events, paginated
+by `per_page`/`page` fields, default page size 30 as real GitHub). Issue data comes from
+$FAKE_GH_DATA (a JSON file: {"issues": [...], "fail_view": [<number>, ...], "fail_list": true,
+"auth_fail": true, "repo_fail": true, "has_issues": false}); a number in `fail_view` makes that
+issue's `issue view` call fail, `fail_list` makes every `issue list` call fail, `auth_fail` makes
+`auth status` fail, `repo_fail` makes the repo lookup fail, `has_issues: false` reports Issues
+disabled, as `gh` does on a network or auth error or a repo setting. An issue may carry
 `"closedAt"`, `"body_edits"` (a list of ISO timestamps, becoming `userContentEdits` nodes) and
 `"timeline"` (a list of `{"event": ...}` dicts) for the GitHub-history rule's tests. A write
 (comment, edit, close, create) rewrites $FAKE_GH_DATA so a later call in the same test sees it,
