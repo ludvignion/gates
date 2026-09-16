@@ -1,16 +1,20 @@
 """lint_kanban.py: closed tickets only grow their append-only sections; findings have homes;
 no ship past an open block; approved plans carry a routing stamp; charter items say what they reach;
-approved plans name every spec id their brief cites."""
+approved plans name every spec id their brief cites; opted-in projects check GitHub's own history
+instead, and a mirrored ticket's source body never carries a status: line."""
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURE = REPO / "tests" / "fixtures" / "kanban"
+FAKE_GH = REPO / "tests" / "fixtures" / "fake_gh.py"
 sys.path.insert(0, str(REPO / "scripts"))
 import lint_kanban  # noqa: E402
 import schemas  # noqa: E402
@@ -261,6 +265,90 @@ class ClosedTicketDiffTest(unittest.TestCase):
     def test_identical_is_legal(self):
         t = "---\nid: 1.1\nstatus: done\n---\n# x\n## Log (append-only)\na\n"
         self.assertEqual(schemas.ClosedTicketDiff.compare(t, t).violations, ())
+
+
+class GithubModeLintTest(unittest.TestCase):
+    """Rule 1 in issues mode (plan 4 AC-12) and rule 7 (plan 4 AC-2): with `kanban/.issues`,
+    closed-ticket immutability and the body status-line check run against GitHub itself, through
+    the same `gh` stub `test_tickets_sync.py` uses."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / "kanban").mkdir()
+        (self.tmp / "kanban" / ".issues").write_text("ludvignion/gates\n")
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text(f"#!/bin/sh\nexec {sys.executable} {FAKE_GH} \"$@\"\n")
+        gh.chmod(0o755)
+        self.gh_data = self.tmp / "gh_data.json"
+        self.env = mock.patch.dict(
+            os.environ, {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_GH_DATA": str(self.gh_data)})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write_issues(self, *issues: dict) -> None:
+        self.gh_data.write_text(json.dumps({"issues": list(issues)}))
+
+    def test_no_marker_makes_both_rules_a_noop(self):
+        (self.tmp / "kanban" / ".issues").unlink()
+        self._write_issues({"number": 1, "labels": ["ticket", "done"], "state": "CLOSED",
+                             "closedAt": "2026-09-10T00:00:00Z", "timeline": [{"event": "reopened"}]})
+        self.assertEqual(lint_kanban.github_history(self.tmp), [])
+        self.assertEqual(lint_kanban.body_status_lines(self.tmp), [])
+
+    def test_clean_closed_issue_passes(self):
+        self._write_issues({"number": 1, "labels": ["ticket", "done"], "state": "CLOSED",
+                             "closedAt": "2026-09-10T00:00:00Z"})
+        self.assertEqual(lint_kanban.github_history(self.tmp), [])
+
+    def test_body_edited_after_close_fails(self):
+        self._write_issues({"number": 1, "labels": ["ticket", "done"], "state": "CLOSED",
+                             "closedAt": "2026-09-10T00:00:00Z", "body_edits": ["2026-09-11T00:00:00Z"]})
+        self.assertEqual(lint_kanban.github_history(self.tmp), ["#1: closed issue body edited after it closed"])
+
+    def test_edit_before_close_passes(self):
+        self._write_issues({"number": 1, "labels": ["ticket", "done"], "state": "CLOSED",
+                             "closedAt": "2026-09-10T00:00:00Z", "body_edits": ["2026-09-09T00:00:00Z"]})
+        self.assertEqual(lint_kanban.github_history(self.tmp), [])
+
+    def test_reopened_timeline_event_fails(self):
+        self._write_issues({"number": 1, "labels": ["ticket", "done"], "state": "CLOSED",
+                             "closedAt": "2026-09-10T00:00:00Z", "timeline": [{"event": "reopened"}]})
+        self.assertEqual(lint_kanban.github_history(self.tmp), ["#1: closed issue carries a reopened timeline event"])
+
+    def test_open_ticket_is_not_checked(self):
+        self._write_issues({"number": 1, "labels": ["ticket", "ready"], "state": "OPEN"})
+        self.assertEqual(lint_kanban.github_history(self.tmp), [])
+
+    def test_github_history_no_access_reports_not_checked(self):
+        self.gh_data.write_text(json.dumps({"issues": [], "fail_list": True}))
+        self.assertEqual(lint_kanban.github_history(self.tmp),
+                          ["lint_kanban: no GitHub access; rule 1 (GitHub history) not checked"])
+
+    def test_clean_body_passes(self):
+        self._write_issues({"number": 1, "labels": ["ticket", "ready"],
+                             "body": "---\nparent: 4\n---\n\n## Outcome\nx\n"})
+        self.assertEqual(lint_kanban.body_status_lines(self.tmp), [])
+
+    def test_status_line_in_source_body_fails(self):
+        self._write_issues({"number": 1, "labels": ["ticket", "ready"],
+                             "body": "---\nparent: 4\nstatus: ready\n---\n\n## Outcome\nx\n"})
+        self.assertEqual(lint_kanban.body_status_lines(self.tmp),
+                          ["#1: source body carries a status: line; status is the label"])
+
+    def test_body_status_lines_no_access_reports_not_checked(self):
+        self.gh_data.write_text(json.dumps({"issues": [], "fail_list": True}))
+        self.assertEqual(lint_kanban.body_status_lines(self.tmp),
+                          ["lint_kanban: no GitHub access; rule 7 (body status line) not checked"])
+
+    def test_closed_tickets_dispatches_to_github_history_with_the_marker(self):
+        self._write_issues({"number": 1, "labels": ["ticket", "done"], "state": "CLOSED",
+                             "closedAt": "2026-09-10T00:00:00Z", "timeline": [{"event": "reopened"}]})
+        self.assertEqual(lint_kanban.closed_tickets(self.tmp), lint_kanban.github_history(self.tmp))
 
 
 if __name__ == "__main__":

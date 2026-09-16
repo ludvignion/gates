@@ -1,0 +1,8 @@
+{
+ "built": "Startup hook syncs collaborator comments before sessions. Build skill adds sync step before ticket read. Tests verify hook wiring and sync behavior (142 insertions, 14 deletions, 3 files).",
+ "review": "Ship. Holds AC-1, AC-2, 4 attacks. F1 hooks/hooks.json:44 || true hides sync exit; F2 skills/build/SKILL.md:17 make sync unverified; F3 tests/test_session_sync.py:97 misses Log check. CI green.",
+ "model": "haiku",
+ "inputs_sha": "fb9347b1382dfb052738fcb7f40212974ad1b12150305c48b64554301fea5a19",
+ "cost_usd": 0.042209,
+ "error": null
+}

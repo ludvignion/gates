@@ -1,0 +1,8 @@
+{
+ "built": "Adds pagination to timeline reads in scripts/tickets.py (100 per page) to catch reopened issues past first batch. Updates test infrastructure. 241 insertions across 8 files, mainly lint_kanban.py and tests.",
+ "review": "Ship with 8 held items (3 ACs, 4 attacks, 1 charter). F1 (block, resolved) paginates _timeline, reopened events past page one now found and tested. F2 (warn) userContentEdits hard-coded to 20, overages unread. F3 (warn) RuntimeError masks findings. CI green.",
+ "model": "haiku",
+ "inputs_sha": "36cf64fd78e89bf30ef455064d3e3d2392cc84d128e3fc949fd588e219944550",
+ "cost_usd": 0.0356629,
+ "error": null
+}

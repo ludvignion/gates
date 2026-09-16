@@ -256,6 +256,40 @@ class TicketsWriteTest(unittest.TestCase):
         self.assertEqual([c for c in self._calls() if c.split()[:2] == ["issue", "create"]], [])
 
 
+class ClosedIssueHistoryPaginationTest(unittest.TestCase):
+    """closed_issue_history's timeline read pages through every event (this ticket's retry F1):
+    a `reopened` event past the first page must still be found."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text(f"#!/bin/sh\nexec {sys.executable} {FAKE_GH} \"$@\"\n")
+        gh.chmod(0o755)
+        self.gh_data = self.tmp / "gh_data.json"
+        self.env = mock.patch.dict(
+            os.environ, {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_GH_DATA": str(self.gh_data)})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write_issues(self, *issues: dict) -> None:
+        self.gh_data.write_text(json.dumps({"issues": list(issues)}))
+
+    def test_reopened_event_past_the_first_page_is_found(self):
+        timeline = [{"event": "labeled"}] * 130 + [{"event": "reopened"}]
+        self._write_issues({"number": 1, "closedAt": "2026-09-10T00:00:00Z", "timeline": timeline})
+        self.assertTrue(tickets.closed_issue_history("ludvignion/gates", 1)["reopened"])
+
+    def test_no_reopened_event_across_many_pages_passes(self):
+        timeline = [{"event": "labeled"}] * 130
+        self._write_issues({"number": 1, "closedAt": "2026-09-10T00:00:00Z", "timeline": timeline})
+        self.assertFalse(tickets.closed_issue_history("ludvignion/gates", 1)["reopened"])
+
+
 class MakefileTest(unittest.TestCase):
     def test_sync_target_runs_tickets_sync(self):
         text = (REPO / "templates" / "project" / "Makefile").read_text()
