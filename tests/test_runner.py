@@ -427,6 +427,9 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertEqual(tuple(allowed), runner.BUILD_ALLOWED_TOOLS)
         for tool in ("Bash(make *)", "Bash(uv *)", "Bash(git *)", "Bash(pytest *)"):
             self.assertIn(tool, allowed)
+        # the build seat sets status and logs through kanban_ops.py; without it the board calls
+        # are denied and the run dies at "permission denied" before any commit
+        self.assertIn(f"Bash(python3 {runner.SCRIPTS / 'kanban_ops.py'} *)", allowed)
         self.assertNotIn("--dangerously-skip-permissions", cmd)
 
     def test_full_run_in_place_orbit_logged_and_build_skipped_on_rerun(self):

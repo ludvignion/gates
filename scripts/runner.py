@@ -325,9 +325,12 @@ def call_error(returncode: int, output: Path, report: dict | None = None) -> str
 # the phase lines, marks the tests/feat commits as phases, and once the close-out is reached
 # (status line committed) treats any further tool call as orbit: logged on the ticket,
 # session terminated, runner proceeds.
+# The build seat drives the board through kanban_ops.py (build SKILL.md steps 5, 10, 11), so the
+# list carries it too; the path is this script's own directory, an exact prefix rather than a glob.
 BUILD_ALLOWED_TOOLS = (
     "Bash(make *)", "Bash(make)", "Bash(uv *)", "Bash(git *)", "Bash(pytest *)",
     "Bash(python3 -m pytest *)", "Bash(python -m pytest *)",
+    f"Bash(python3 {SCRIPTS / 'kanban_ops.py'} *)",
 )
 BUILD_SYSTEM_PROMPT = (
     "The session ends at the build close-out: after the status line is written and committed, "

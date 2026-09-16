@@ -32,8 +32,8 @@ the runner, in place or in a worktree), plus ticket `## Log` entries.
 5. **Scope.** Write the ticket id to `kanban/.active` (the write-guard and re-anchor hooks read it;
    in a project synced from GitHub Issues this is the issue number, and `reanchor.sh` finds the
    mirror the same way it finds a file ticket). Set status and log the start through
-   `kanban_ops.py`, never a direct edit — it writes the file or the issue, whichever the project
-   uses: `kanban_ops.py status <id> in_progress` then `kanban_ops.py log <id> build start`.
+   `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py`, never a direct edit — it writes the file or the issue, whichever the project
+   uses: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py status <id> in_progress` then `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py log <id> build start`.
 6. **Plan.** One line per AC, then integration, then close-out.
 7. **Tests first.** Translate every AC into pytest. Property ACs → hypothesis or parametrised
    cases. Critical ACs → mark for mutation. Commit: `test(<id>): ACs as tests`. Nothing else in
@@ -43,10 +43,10 @@ the runner, in place or in a worktree), plus ticket `## Log` entries.
 9. **Iterate headlessly when the artefact can't be exercised directly** (TUIs, jobs, external
    systems): factor pure logic into functions, test those.
 10. **Close-out.** Every new file, function ≥10 lines, class, or dependency must trace to an AC.
-    List them with `kanban_ops.py log <id> build close-out "- <item>: <AC>" ...`. Anything that
+    List them with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py log <id> build close-out "- <item>: <AC>" ...`. Anything that
     traces to nothing: revert it, or log it as a finding. Set status:
-    `kanban_ops.py status <id> in_review`. Clear `kanban/.active`.
-11. **Report.** Log the final status through `kanban_ops.py log <id> build "status: DONE |
+    `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py status <id> in_review`. Clear `kanban/.active`.
+11. **Report.** Log the final status through `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py log <id> build "status: DONE |
     NEEDS_CONTEXT | BLOCKED" "- <reason>"`. NEEDS_CONTEXT = an AC is ambiguous in what the reader
     would notice, and the ticket + domain pack don't resolve it; the reason line must name
     the AC and the question — it feeds grill tuning. A technical ambiguity (how to build it)
