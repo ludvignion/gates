@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.11.6 — 2026-09-16
+
+The headless build seat can drive the board. Build SKILL.md steps 5, 10 and 11 tell the seat to
+set status and log progress through `kanban_ops.py`, but `BUILD_ALLOWED_TOOLS` never carried that
+script, and the build runs with `--permission-prompts none`, which turns an unruled command into a
+recorded denial rather than a prompt. The runner exits at the first denial by design, so every
+ticket died at `done error permission denied` on its first board call, before the tests commit and
+with no verdict. Ticket 4.6.2 hit it on four calls, `kanban_ops.py --help` among them.
+
+- `scripts/runner.py` — `BUILD_ALLOWED_TOOLS` gains the board script at its absolute path, built
+  from the existing `SCRIPTS` constant. An exact prefix, so the rule does not rest on how the
+  permission matcher treats a wildcard in the middle of a pattern.
+- `skills/build/SKILL.md` — the five call sites named the script bare, leaving the seat to guess a
+  path; it guessed `scripts/kanban_ops.py`, which resolves only because gates is its own repo. They
+  now read `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py`, as every other skill does, and
+  that is the path the new rule matches. Required for the rule to match, not a cleanup.
+- `tests/` — the allowlist test asserts the board rule is present.
+
+Known and unfixed: `templates/project/.claude/settings.json` still carries the original seven
+rules, so a human `/build` in a consuming project prompts rather than failing; the template cannot
+know the plugin cache path at render time. `hooks/guard_writes.py` matches `Write|Edit|MultiEdit`
+only, so a write arriving through `Bash(make *)` or `Bash(git *)` never meets the scope guard. The
+allowlist covers `make`, `uv`, `git` and `pytest`, so a project built with `node`, `npm`, `cargo`
+or `go` has no rule for its own toolchain.
+
+Consuming projects (project-template): no action. Pin `v0.11.6`.
+
 ## 0.11.5 — 2026-09-16
 
 Tickets can live in GitHub Issues instead of files (plan 4). A project opts in with one command:
