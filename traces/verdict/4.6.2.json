@@ -1,0 +1,91 @@
+{
+ "ticket": "4.6.2",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "attack-1",
+  "attack-2",
+  "attack-3",
+  "attack-4",
+  "retry-safety"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "python3 -m unittest tests.test_init_issues.InitIssuesTest.test_refuses_when_make_sync_fails",
+   "waived_by": null,
+   "text": "refusal embeds whole make stderr, many lines, not one. init_project.py:173",
+   "impact": "low",
+   "consequence": "Someone whose first sync fails gets a wall of make and Python output instead of a single sentence, so the reason to re-run is buried and easy to miss."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "make absent raises FileNotFoundError, uncaught: traceback, not refusal. init_project.py:171",
+   "impact": "low",
+   "consequence": "Someone on a machine without make installed sees a Python crash during project setup and cannot tell that the missing tool is the cause."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.7",
+  "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
+  "packet_sha": "83ce6a0bff8c1dff7ddc51d231569fa4b0999c8ef016fea085a0094a06c4478b",
+  "cost_usd": 0.17748100000000003,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 11561,
+   "cache_read_input_tokens": 0,
+   "output_tokens": 2282,
+   "output_tokens_details": {
+    "thinking_tokens": 1776
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 11561,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 2282,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 11561,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 11561
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 33.03649902399047,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
