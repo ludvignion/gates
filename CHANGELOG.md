@@ -16,26 +16,6 @@ lands the template's Makefile, CI and `.env.example` changes.
 - `scripts/init_project.py` — `--issues owner/repo`: the preflight and the opt-in write path.
 - `tests/fixtures/fake_gh.py` — `auth status` and `api repos/<owner>/<repo>` for the preflight.
 
-Gate 2 reads as a decision, not a defect list. Every finding now carries what it costs a person
-— `impact` (high/medium/low, the blast radius, never `severity`, which is only the gate's own
-question) and `consequence`, at most three sentences naming who is blocked and what they cannot
-do. The result block prints the consequence instead of the finding text (the page keeps both),
-worst blast radius first, under a heading that says up front whether anything blocks the ship.
-It ends in the ways to answer rather than one comma-separated `Next:` line: A the recommended
-sequence, B the blunt alternative, C the human's own words, each a list of Gate 2 lines typed
-in order.
-
-- `skills/verdict/verdict-prompt.md` — the two fields, with the test the judge applies: a
-  finding whose consequence it cannot name is a `held` label or nothing.
-- `scripts/render_verdict.py` — `impact_of`, `open_findings`, `finding_block`,
-  `findings_heading`, `answer_options`, `next_block`; `gate2_words` and `next_line` are gone
-  with the single-line form. A warn no other ticket can home, and that no earlier verdict has
-  already named, is still a waiver by default — a high-impact one, or one on its second
-  sighting, gets a child instead. `seen_before` reads the earlier verdicts in
-  `traces/verdict/`; the judge cannot, its packet is its whole world. Cap 12 → 40 lines.
-- `scripts/runner.py` — hands `result_lines` the tree, for that second sighting.
-- Verdicts written without the fields keep the old one-line form; nothing needs re-running.
-
 ## 0.11.4 — 2026-09-15
 
 A flaky runner self-test. `test_red_ci_after_build_retries_with_a_second_build` made CI red in a
