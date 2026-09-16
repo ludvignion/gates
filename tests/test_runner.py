@@ -766,6 +766,20 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertNotIn("orbit", out.getvalue())
         self.assertEqual(runner.status_marks(self.repo, "1.1"), 2)
 
+    def test_a_commit_after_the_close_out_is_still_an_orbit(self):
+        """E33: the build's own calls are spared the orbit by the commit subjects they write, so
+        that a call read late is not mistaken for one. The range ends at the close-out commit —
+        a builder that keeps committing after it is doing what the orbit exists to catch."""
+        git(self.repo, "checkout", "-q", "-b", "ticket/1.1")
+        after = "printf 'more\n' >> src/app/run.py && git %s add -A && git %s commit -q -m 'feat(1.1): one more thing'" % (
+            " ".join(GIT_ID), " ".join(GIT_ID))
+        self.scenario.write_text(json.dumps(closeout_steps() + [{"cmd": after}]))
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            call = runner.build(self.repo, "1.1", "sonnet")
+        self.assertEqual(call.closed_out, True)
+        self.assertEqual(call.orbit, (f"$ {after}",))
+        self.assertIn("! orbit after close-out:", out.getvalue())
+
 
 class ResultLinesTest(unittest.TestCase):
     """render_verdict.result_lines: the end-of-run block (E19), pure code from verdict.json."""
