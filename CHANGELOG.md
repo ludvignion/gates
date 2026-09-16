@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.11.8 — 2026-09-16
+
+`init --issues` printed `make sync: OK` but never ran make: `run_issues` called
+`tickets.sync(root)` in-process instead. The line a person reads and the work the code does had
+drifted apart, and a project whose Makefile wires `sync` differently would have been synced by
+the plugin's own code path rather than its own target.
+
+- `scripts/init_project.py` — the first sync now runs as `make sync` in a subprocess, with
+  `PLUGIN` passed through the environment as `init` already does elsewhere. A non-zero exit is
+  raised as a `RuntimeError`, so it lands in the existing refusal that leaves the marker and
+  `.gitignore` written and nothing committed; re-running retries.
+- `tests/test_init_issues.py` — a fixture Makefile plus two tests: one proving the target is
+  really invoked, one proving its failure refuses rather than reporting OK.
+
+Known, logged, not fixed in this release: a `make sync` failure that happens after the migration
+has unlinked a ticket file leaves that deletion uncommitted on the retry, because `run_issues`
+recomputes its path list from the current tree. Tracked on ticket 4.6.2.
+
+Consuming projects (project-template): no action. Pin `v0.11.8`.
+
 ## 0.11.7 — 2026-09-16
 
 0.11.6 added the board script to the build seat's allowlist as one exact path, the plugin-root
