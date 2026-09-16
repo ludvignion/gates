@@ -86,6 +86,23 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(t.route, "light")
         self.assertFalse(t.checks[3].fired)
 
+    def test_missing_charter_fires_check_1_instead_of_silently_passing(self):
+        t = triage.route(brief("Edit `src/widgets.py`."), schemas.Charter.missing(), EMPTY)
+        self.assertEqual(t.route, "full")
+        self.assertTrue(t.checks[0].fired)
+        self.assertIn("charter.md missing", t.checks[0].detail)
+
+    def test_missing_interfaces_fires_check_2_instead_of_silently_passing(self):
+        t = triage.route(brief("Edit `src/widgets.py`."), EMPTY, schemas.Charter.missing())
+        self.assertEqual(t.route, "full")
+        self.assertTrue(t.checks[1].fired)
+        self.assertIn("interfaces.md missing", t.checks[1].detail)
+
+    def test_missing_charter_with_no_named_path_still_routes_full_for_the_no_path_reason(self):
+        t = triage.route(brief("Nothing named here."), schemas.Charter.missing(), schemas.Charter.missing())
+        self.assertEqual(t.route, "full")
+        self.assertFalse(any(c.fired for c in t.checks))
+
 
 class RenderTest(unittest.TestCase):
     def test_light_prints_the_word_and_all_four_checks(self):
@@ -165,14 +182,16 @@ class CliTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(out.getvalue().splitlines()[0], "light")
 
-    def test_main_missing_domain_pack_still_runs(self):
+    def test_main_missing_domain_pack_routes_full_not_silently_light(self):
         empty_root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, empty_root, ignore_errors=True)
         (empty_root / "brief.md").write_text(brief("Edit `src/widgets.py`."))
         with contextlib.redirect_stdout(io.StringIO()) as out:
             rc = triage.main(["triage.py", "brief.md", "--cwd", str(empty_root)])
         self.assertEqual(rc, 0)
-        self.assertEqual(out.getvalue().splitlines()[0], "light")
+        out_lines = out.getvalue().splitlines()
+        self.assertEqual(out_lines[0], "full")
+        self.assertIn("charter.md missing", out.getvalue())
 
 
 if __name__ == "__main__":
