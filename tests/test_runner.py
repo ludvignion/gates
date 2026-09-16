@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -461,10 +462,16 @@ class RunnerBuildSeatTest(unittest.TestCase):
         result = (self.repo / "traces/runs/1.1.result").read_text()
         lines = result.splitlines()
         self.assertRegex(lines[0], r"^1\.1 · SHIP · build \d+:\d\d · verdict \d+:\d\d · 0K in / 0K out$")  # E28: build and verdict named apart, no dollars
-        self.assertEqual(lines[1:], ["Built: no summary", "Findings (0)",
+        self.assertEqual(lines[1:], ["", "Built: no summary", "", "FINDINGS (0) — nothing open", "",
                                      "Charter: Unknown over guess, Evidence is openable held",  # E22, E34: only what the diff reaches, by name
                                      "Changed: 2 files +4/−1 — src/app/run.py, tests/test_1_1.py",  # E27
-                                     "Page: traces/verdict/1.1.html", "", "Next: type → ship"])
+                                     "Page: traces/verdict/1.1.html", "",
+                                     "NEXT — two ways to answer:", "",
+                                     "  A (recommended)    ship", "                     1.1 merges.", "",
+                                     "  C                  <your own words>",
+                                     "                     A question, a change to one of these, or `reject: <reason>` to send all of 1.1",
+                                     "                     back to build. Nothing merges until you say so.", "",
+                                     "Type one option's lines, in order, one line at a time."])
         self.assertTrue(out.endswith(result), out[-300:])
         self.assertTrue((self.repo / "traces/verdict/1.1.html").exists())  # the page sits in the folder the human looks at
         # second run: already on ticket/1.1, clean; in_review with the commits → no build session
@@ -770,66 +777,147 @@ class ResultLinesTest(unittest.TestCase):
         return schemas.Verdict.from_dict({"ticket": "2.1", "decision": decision, "held": ["AC-1"], "ci": {"green": True}, "findings": findings})
 
     NAMES = {"charter-3": "docs say what is", "charter-4": "reports are reproducible", "charter-5": "infra is declared"}
+    CONSEQUENCES = {  # the judge's own words for who is blocked and from what
+        "F1": ("high", "A person exporting gets ids that no longer match the source system, and nothing in the file says so."),
+        "F2": ("medium", "Nobody finds out when an empty report renders wrong: the page ships blank and the run still reports success."),
+        "F3": ("low", "Reading the log, you cannot tell which stage a line came from."),
+    }
 
     def test_block_shape_from_the_fixture_verdict(self):
-        """0.6.5.7: header, Built (one sentence, no path), Findings (file:line stripped from a text that
-        repeats it), Charter by name, Human, Changed, Page, and exactly one code-built Next line
-        with nothing after it (E31–E34)."""
+        """header, Built, the FINDINGS heading saying what blocks the ship, one block per
+        finding worst blast radius first, Charter, Human, Changed, Page, and the NEXT options —
+        A recommended, B blunt, C the human's own words (E31–E34)."""
         v = schemas.Verdict.load(REPO / "tests/fixtures/project/traces/verdict/2.1.json")  # F1 block spawn_child, F2/F3 warns, F4 resolved, N1 note
         v = v.with_meta(schemas.VerdictMeta(arm="packet", vendor="claude", plugin_version="x", prompt_sha="p", packet_sha="q",
                                             tokens={"input_tokens": 2, "cache_creation_input_tokens": 21187, "cache_read_input_tokens": 0, "output_tokens": 8237}))
-        v = v.with_findings(tuple({**f, "text": "src/pipeline/export/run.py:36 — src/pipeline/export/run.py:36 slugifies ids on export"} if f["id"] == "F1" else f for f in v.findings))  # E33
+        v = v.with_findings(tuple({**f, **dict(zip(("impact", "consequence"), self.CONSEQUENCES[f["id"]])),
+                                   **({"text": "src/pipeline/export/run.py:36 — src/pipeline/export/run.py:36 slugifies ids on export"} if f["id"] == "F1" else {})}
+                                  if f["id"] in self.CONSEQUENCES else f for f in v.findings))
         summary = {"built": "Export writes ids verbatim. A second sentence is dropped.", "review": "unused", "error": None}
         charter = {"reachable": ["charter-3", "charter-4", "charter-5"], "held": ["charter-3"], "findings": {"charter-4": ["F2"]}, "unjudged": ["charter-5"], "names": self.NAMES}
         changed = {"base": "main", "files": [{"path": "src/pipeline/export/run.py", "added": 12, "removed": 3}, {"path": "tests/test_export.py", "added": 20, "removed": 0}]}
         human = (schemas.HumanAc("AC-7", "Given the export, a person confirms the file opens in the client tool"),)
         lines = render_verdict.result_lines(v, self.TICKETS, 2.91, 889.4, "traces/verdict/2.1.html", summary=summary, changed=changed, charter=charter,
                                             human_acs=human, costs={"verdict_usd": 0.42, "verdict_s": 106.8, "build_usd": 2.49, "build_s": 782.0})
+        rule = render_verdict.RULE
         self.assertEqual(lines, [
             "2.1 · REJECT · build 13:02 · verdict 1:46 · 21K in / 8K out",
+            "",
             "Built: Export writes ids verbatim.",
-            "Findings (3)",
-            "F1 src/pipeline/export/run.py:36 — slugifies ids on export",
-            "F2 src/pipeline/report/page.py — no test for the empty report path in src/pipeline/report/page.py",
-            "F3 — the stage log line lacks the stage name",
+            "",
+            "FINDINGS (3) — none block the ship; one is high impact",  # F1 has a child: it never holds the gate shut
+            rule,
+            "F1  high  src/pipeline/export/run.py:36",
+            "    A person exporting gets ids that no longer match the source system, and nothing in the file says",
+            "    so.",
+            "",
+            "F2  medium  src/pipeline/report/page.py",
+            "    Nobody finds out when an empty report renders wrong: the page ships blank and the run still",
+            "    reports success.",
+            "",
+            "F3  low",
+            "    Reading the log, you cannot tell which stage a line came from.",
+            rule,
+            "",
             "Charter: docs say what is held · infra is declared — touched, not judged",
             "Human: AC-7 — Given the export, a person confirms the file opens in the client tool",
             "Changed: 2 files +32/−3 — src/pipeline/export/run.py, tests/test_export.py",
             "Page: traces/verdict/2.1.html",
             "",
-            "Next: check AC-7 on the phone, then type → ship, child from F1, home F2 to 2.2, waive F3",
-        ])
-        self.assertRegex(lines[-1], r"^Next: ")
-        self.assertLessEqual(len([l for l in lines if l]), render_verdict.RESULT_MAX_LINES)
-        self.assertEqual(lines[-2], "")  # the blank before Next:
-        self.assertNotIn("/", lines[1])  # Built: no path
-        for l in lines[3:6]:
-            fid, _, rest = l.partition(" ")
-            where, _, text = rest.partition(" — ")
-            self.assertFalse(text.startswith(where.strip()), l)  # E33
-        self.assertNotIn("charter-", lines[6])  # E34
-        joined = "\n".join(lines)
-        self.assertNotIn("$", joined); self.assertNotIn("Recommended", joined); self.assertNotIn("→ confirm", joined)
-
-    def test_rework_no_findings_and_missing_inputs(self):
-        v = self._verdict([{"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "spawn_child": False, "text": "export drops the last row"}])
-        lines = render_verdict.result_lines(v, self.TICKETS, None, 5, "traces/verdict/2.1.html")
-        self.assertEqual(lines, [
-            "2.1 · REJECT · build n/a · verdict n/a · tokens n/a",
-            "Built: no summary",
-            "Findings (1)",
-            "F1 — export drops the last row",
-            "Charter: none touched",
-            "Changed: 0 files +0/−0",
-            "Page: traces/verdict/2.1.html",
+            "First check AC-7 on the phone — a ship confirms it.",
             "",
-            "Next: type → reject: rework F1",
+            "NEXT — three ways to answer:",
+            "",
+            "  A (recommended)    child from F1",
+            "                     home F2 to 2.2",
+            "                     ship",
+            "                     F1 → 2.1.1, F2 → 2.2. F3 is logged open and unfixed. 2.1 merges.",
+            "",
+            "  B                  ship",
+            "                     Merges now. All three are logged open and unfixed, including F1, the",
+            "                     high-impact one.",
+            "",
+            "  C                  <your own words>",
+            "                     A question, a change to one of these, or `reject: <reason>` to send all of 2.1",
+            "                     back to build. Nothing merges until you say so.",
+            "",
+            "Type one option's lines, in order, one line at a time.",
         ])
-        lines = render_verdict.result_lines(self._verdict([], "ship"), self.TICKETS, 0.03, 12, "p", summary={"built": "x", "error": "summary skipped"}, costs={"build_s": 0.4, "verdict_s": 11.2})
-        self.assertEqual(lines[:3], ["2.1 · SHIP · build 0:00 · verdict 0:11 · tokens n/a", "Built: no summary", "Findings (0)"])
-        self.assertEqual(lines[-1], "Next: type → ship")
+        self.assertLessEqual(len([line for line in lines if line]), render_verdict.RESULT_MAX_LINES)
+        self.assertNotIn("/", lines[2])  # Built: no path
+        self.assertNotIn("charter-", lines[18])  # E34
+        joined = "\n".join(lines)
+        self.assertNotIn("$", joined); self.assertNotIn("Recommended:", joined); self.assertNotIn("waive F", joined)  # no waiver is ever the recommendation here
+
+    def test_impact_orders_the_findings_and_a_high_warn_is_never_waived(self):
+        """Worst blast radius first whatever the verdict order, and a high-impact warn no
+        other ticket can home gets a child of its own — waiving it is not the default."""
+        findings = [{"id": "F1", "severity": "warn", "status": "open", "impact": "low", "text": "a nit", "consequence": "Nothing today."},
+                    {"id": "F2", "severity": "warn", "status": "open", "impact": "high", "text": "setup wedges", "consequence": "A first-time user cannot retry and needs help to clear it."},
+                    {"id": "F3", "severity": "warn", "status": "open", "text": "no impact given", "consequence": "Somebody reads a wrong number."}]
+        v = self._verdict(findings, "ship")
+        lines = render_verdict.result_lines(v, self.TICKETS, None, 1, "p")
+        self.assertEqual([line for line in lines if re.match(r"^F\d", line)], ["F2  high", "F3  medium", "F1  low"])  # no impact = medium
+        self.assertIn("FINDINGS (3) — none block the ship; one is high impact", lines)
+        self.assertEqual(render_verdict.impact_of({}), "medium")
+        self.assertEqual(dict(render_verdict.recommendations(v, self.TICKETS)),
+                         {"F1": "waive", "F2": "ship, create child 2.1.1 from F2", "F3": "waive"})
+        a, b, c = render_verdict.answer_options(v, self.TICKETS, render_verdict.open_findings(v))
+        self.assertEqual(a, (["child from F2", "ship"], "F2 → 2.1.1. F3 and F1 are logged open and unfixed. 2.1 merges."))
+        self.assertEqual(b[0], ["ship"])
+        self.assertIn("including F2, the high-impact one", b[1])
+        self.assertEqual(c[0], ["<your own words>"])
+
+    def test_a_block_with_no_child_makes_a_the_reject_and_b_the_override(self):
+        """When a block holds the gate shut, A sends the ticket back and B is the waiver that
+        merges anyway — the two are never the same line."""
+        v = self._verdict([{"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "spawn_child": False, "impact": "high",
+                            "text": "export drops the last row", "consequence": "Anyone exporting loses the final row with no warning; the file looks complete."}])
+        lines = render_verdict.result_lines(v, self.TICKETS, None, 5, "traces/verdict/2.1.html")
+        self.assertIn("FINDINGS (1) — F1 blocks the ship; one is high impact", lines)
+        a, b, _ = render_verdict.answer_options(v, self.TICKETS, render_verdict.open_findings(v))
+        self.assertEqual(a, (["reject: rework F1"], "2.1 goes back to build with F1 named. Nothing merges."))
+        self.assertEqual(b, (["waive F1: <reason>", "ship"], "Merges with F1 unfixed. Your reason goes in the ticket log."))
+        self.assertEqual(lines[-1], "Type one option's lines, in order, one line at a time.")
+
+    def test_nothing_open_has_one_option_and_no_rules(self):
+        lines = render_verdict.result_lines(self._verdict([], "ship"), self.TICKETS, 0.03, 12, "p",
+                                            summary={"built": "x", "error": "summary skipped"}, costs={"build_s": 0.4, "verdict_s": 11.2})
+        self.assertEqual(lines[:5], ["2.1 · SHIP · build 0:00 · verdict 0:11 · tokens n/a", "", "Built: no summary", "", "FINDINGS (0) — nothing open"])
+        self.assertNotIn(render_verdict.RULE, lines)
+        self.assertIn("NEXT — two ways to answer:", lines)  # A is the ship, then C; no blunt B to offer
+        self.assertIn("  A (recommended)    ship", lines)
         for action, word in (("ship, create child 2.1.1 from F1", "child 2.1.1"), ("rework in place", "rework"), ("home to 2.3", "home 2.3"), ("waive", "waive")):
             self.assertEqual(render_verdict.action_word(action), word)
+
+    def test_a_verdict_without_consequences_keeps_the_one_line_form(self):
+        """A verdict written without consequences still renders: the id, the file:line and the text."""
+        v = self._verdict([{"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "spawn_child": False, "text": "export drops the last row"}])
+        lines = render_verdict.result_lines(v, self.TICKETS, None, 5, "traces/verdict/2.1.html")
+        self.assertIn("F1 — export drops the last row", lines)
+        self.assertEqual(render_verdict.finding_line("F1", "src/x.py:79 — src/x.py:79 drops ids", "src/x.py:79"), "F1 src/x.py:79 — drops ids")
+        self.assertEqual(render_verdict.finding_line("F1", "src/x.py:79: drops ids", "src/x.py:79"), "F1 src/x.py:79 — drops ids")
+        self.assertEqual(render_verdict.finding_line("F1", "drops ids at src/x.py:79", "src/x.py:79"), "F1 src/x.py:79 — drops ids at src/x.py:79")
+
+    def test_a_finding_seen_on_an_earlier_ticket_is_named_and_gets_a_child(self):
+        """The recap's own line — the judge only ever sees its own packet, so a finding that
+        came back can only be spotted here, and a repeat is not waived by default."""
+        root = Path(tempfile.mkdtemp())
+        try:
+            (root / "traces/verdict").mkdir(parents=True)
+            (root / "traces/verdict/1.9.json").write_text(json.dumps(
+                {"ticket": "1.9", "decision": "ship", "findings": [{"id": "F2", "severity": "warn", "status": "open", "text": "src/pipeline/log/run.py:4 names a target that is not there"}]}), encoding="utf-8")
+            (root / "traces/verdict/2.1.summary.json").write_text('{"built": "not a verdict"}', encoding="utf-8")
+            f = {"id": "F1", "severity": "warn", "status": "open", "impact": "low", "text": "the OK line is not proof, src/pipeline/log/run.py:9",
+                 "consequence": "You cannot trust the OK: it comes from code that never ran the thing."}
+            v = self._verdict([f], "ship")
+            self.assertEqual(render_verdict.seen_before(root, "2.1", f), "1.9 F2")
+            self.assertEqual(render_verdict.seen_before(None, "2.1", f), "")
+            lines = render_verdict.result_lines(v, [("2.1", "in_review", ["src/pipeline/export/"])], None, 1, "p", root=root)
+            self.assertIn("    Second sighting: 1.9 F2 flagged the same file.", lines)
+            self.assertIn("  A (recommended)    child from F1", lines)  # twice is a pattern, not a nit
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
     def test_charter_changed_and_folding(self):
         self.assertEqual(render_verdict.charter_line({"reachable": ["charter-2", "charter-7"], "held": ["charter-7", "charter-2"], "findings": {}, "names": {"charter-2": "no external resources", "charter-7": "fail loud"}}),
@@ -837,19 +925,17 @@ class ResultLinesTest(unittest.TestCase):
         self.assertEqual(render_verdict.charter_line({"reachable": ["charter-4"], "held": [], "findings": {"charter-4": ["F3"]}, "names": {"charter-4": "structure kept"}}), "Charter: structure kept — in findings")
         self.assertEqual(render_verdict.charter_line({"reachable": ["charter-4"], "held": [], "findings": {}}), "Charter: 4 — touched, not judged")  # no names: the number, never the id
         self.assertEqual(render_verdict.charter_line(None), "Charter: none touched")
-        self.assertEqual(render_verdict.finding_line("F1", "src/x.py:79 — src/x.py:79 drops ids", "src/x.py:79"), "F1 src/x.py:79 — drops ids")
-        self.assertEqual(render_verdict.finding_line("F1", "src/x.py:79: drops ids", "src/x.py:79"), "F1 src/x.py:79 — drops ids")
-        self.assertEqual(render_verdict.finding_line("F1", "drops ids at src/x.py:79", "src/x.py:79"), "F1 src/x.py:79 — drops ids at src/x.py:79")
-        self.assertEqual(render_verdict.next_line("ship", ()), "Next: type → ship")
-        self.assertEqual(render_verdict.next_line("ship, waive C1", (("AC-4", "x"), ("AC-5", "y"))), "Next: check AC-4, AC-5 on the phone, then type → ship, waive C1")
         files = [{"path": f"src/f{i}.py", "added": 1, "removed": 0} for i in range(8)]
         self.assertEqual(render_verdict.changed_line({"base": "main", "files": files}), "Changed: 8 files +8/−0 — src/f0.py, src/f1.py, src/f2.py, src/f3.py, src/f4.py, src/f5.py, +2 more")
         self.assertEqual(render_verdict.token_words({"input_tokens": 2, "cache_creation_input_tokens": 10008, "cache_read_input_tokens": 3052, "output_tokens": 3566}), "13K in / 4K out")
         self.assertEqual(render_verdict.mmss(106.8), "1:46"); self.assertEqual(render_verdict.mmss(None), "n/a")
-        many = self._verdict([{"id": f"F{i}", "severity": "warn", "status": "open", "text": f"warn {i}"} for i in range(1, 9)])
+        many = self._verdict([{"id": f"F{i}", "severity": "warn", "status": "open", "impact": "low", "text": f"warn {i}",
+                               "consequence": f"A person cannot do thing {i}."} for i in range(1, 21)])
         lines = render_verdict.result_lines(many, self.TICKETS, None, 1, "p")
-        self.assertEqual(len(lines), render_verdict.RESULT_MAX_LINES + 1)  # the blank line
-        self.assertEqual(lines[2], "Findings (8)"); self.assertEqual(lines[7], "… 4 more on the page"); self.assertRegex(lines[-1], r"^Next: ")
+        self.assertLessEqual(len([line for line in lines if line]), render_verdict.RESULT_MAX_LINES)
+        self.assertEqual(lines[4], "FINDINGS (20) — none block the ship")
+        self.assertTrue(any(line.startswith("… ") and line.endswith("more on the page") for line in lines), lines)
+        self.assertEqual(lines[-1], "Type one option's lines, in order, one line at a time.")
 
 
 class RunnerPlanWalkTest(unittest.TestCase):

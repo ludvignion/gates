@@ -19,7 +19,7 @@ traces/board.html in the main checkout. While the build session streams, a heart
 state file every HEARTBEAT_SECONDS (E25: a 15-minute build looked dead); it is not a phase
 change. The runner's pid goes to traces/runs/<id>.pid right after the state file is truncated
 (the board and tests read it); nothing is removed at exit. After the verdict,
-traces/runs/<id>.result holds the end-of-run block (render_verdict.result_lines, at most 12
+traces/runs/<id>.result holds the end-of-run block (render_verdict.result_lines, at most 40
 lines: build and verdict time with tokens, what was built, one line per open finding with
 file:line and its Gate 2 words, the charter line, the human ACs, what changed against the base
 branch, the page path, the recommended words), also printed last on stdout.
@@ -859,7 +859,8 @@ def write_result(tree: Path, repo: Path, tid: str, v: "schemas.Verdict", cost_us
     charter = verdict_checks.charter_report(v, packet) if packet is not None and hasattr(verdict_checks, "charter_report") else None
     changed = verdict_prep.changed_vs_base(tree, base, verdict_prep.ticket_writes(tree, tid)) if base else None
     lines = render_verdict.result_lines(v, render_verdict.tickets_of(tree), cost_usd, seconds, f"traces/verdict/{tid}.html",
-                                        summary=summary, changed=changed, charter=charter, human_acs=human_acs_of(tree, tid), costs=costs)
+                                        summary=summary, changed=changed, charter=charter, human_acs=human_acs_of(tree, tid), costs=costs,
+                                        root=tree)  # the tree carries the earlier verdicts a second sighting is read from
     path = repo / "traces" / "runs" / f"{tid}.result"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

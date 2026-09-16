@@ -18,7 +18,7 @@ The page opens with three sections a human reads first:
 - Recommended action: computed from the findings, never by a model. An open block with
   spawn_child → "ship, create child <id>.<n> from F#"; an open block without → "rework in
   place"; each open warn → "home to <id>" when another open ticket's writes: cover the file the
-  warn names, else "waive".
+  warn names, else "waive" — or a child of its own when the warn is high impact.
 - Human checks (when the ticket has `(human)` ACs, E30): one ☐ line per AC only a person can
   verify; the ship's Log entry records who confirmed them.
 The model text is cached in traces/verdict/<id>.summary.json keyed on the inputs' sha; the
@@ -29,6 +29,7 @@ import html
 import json
 import re
 import sys
+import textwrap
 from dataclasses import replace
 from pathlib import Path
 
@@ -73,9 +74,12 @@ def li(f: dict) -> str:
             f"waived {esc(f['waived_by'])}" if f.get("waived_by") else "",
         ) if m
     )
+    consequence = " ".join(str(f.get("consequence") or "").split())
     return (
         f"<li class={f['severity']}><b>{esc(f.get('id'))}</b> <code>{esc(cite)}</code> "
+        f"<code>{esc(impact_of(f))} impact</code> "
         f"{esc(f['text'])}{' → child ticket' if f.get('spawn_child') else ''}"
+        f"{f'<p>{esc(consequence)}</p>' if consequence else ''}"  # the recap prints this and drops the text; the page keeps both
         f"{f'<div class=meta>{meta}</div>' if meta else ''}</li>"
     )
 
@@ -178,7 +182,9 @@ def home_for(text: str, tid: str, tickets: list[tuple[str, str, list[str]]]) -> 
 
 
 def recommendations(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]]) -> list[tuple[str, str]]:
-    """[(finding id, action)] for every open block and warn; [] means ship as is."""
+    """[(finding id, action)] for every open block and warn; [] means ship as is. A warn no other
+    ticket can home lands on `waive` — unless its impact is high, which nobody waives by default:
+    it gets a child of its own."""
     out = []
     child = next_child(v.ticket, tickets)
     for f in v.findings:
@@ -188,7 +194,10 @@ def recommendations(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]
             out.append((f["id"], f"ship, create child {child} from {f['id']}" if f.get("spawn_child") else "rework in place"))
         elif f.get("severity") == "warn":
             home = f.get("home") or home_for(str(f.get("text", "")), v.ticket, tickets)
-            out.append((f["id"], f"home to {home}" if home else "waive"))
+            if home:
+                out.append((f["id"], f"home to {home}"))
+            else:  # a high-impact warn is never waived by default: somebody holds it
+                out.append((f["id"], f"ship, create child {child} from {f['id']}" if impact_of(f) == "high" else "waive"))
     return out
 
 
@@ -232,21 +241,6 @@ def token_words(tokens: "dict | None") -> str:
     return f"{round(inp / 1000)}K in / {round(int(t.get('output_tokens') or 0) / 1000)}K out"
 
 
-def gate2_words(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]]) -> tuple[dict[str, str], str]:
-    """({finding id: the Gate 2 words for it}, the whole recommendation, ship first): "child from
-    F1", "home F2 to 2.3", "waive F3", "rework F1"; the recommendation is "ship, waive C1, home F1
-    to 5.2, ..." or "reject: rework F1, ..." when a block has no child (E31)."""
-    per: dict[str, str] = {}
-    for fid, action in recommendations(v, tickets):
-        word = action_word(action)
-        verb, _, target = word.partition(" ")
-        per[fid] = {"child": f"child from {fid}", "home": f"home {fid} to {target}", "waive": f"waive {fid}", "rework": f"rework {fid}"}.get(verb, word)
-    reworks = [w for w in per.values() if w.startswith("rework ")]
-    if reworks:
-        return per, "reject: " + ", ".join(reworks)
-    return per, ", ".join(["ship", *per.values()])
-
-
 def charter_line(charter: "dict | None") -> str:
     """"Charter: <names> held · <names> — touched, not judged" with the items' names from the
     charter headings (E34), never ids. Items the diff cannot reach are never mentioned; reachable
@@ -265,19 +259,156 @@ def charter_line(charter: "dict | None") -> str:
     return "Charter: " + (" · ".join(parts) or ", ".join(map(name, reachable)) + " — in findings")
 
 
+RESULT_MAX_LINES = 40
+IMPACTS = ("high", "medium", "low")
+BODY_WIDTH = 100
+COLUMN = 21
+INDENT = " " * 4
+RULE = "─" * 54
+COUNT_WORD = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+
+
 def finding_line(fid: str, text: str, where: str) -> str:
-    """"F# <file:line> — <text>", the file:line stripped from the text when it repeats the prefix (E33)."""
+    """"F# <file:line> — <text>", the file:line stripped from the text when it repeats the prefix (E33).
+    The one-line form: what a verdict written without a `consequence` carries."""
     body = text.strip()
     while where != "—" and body.startswith(where) and body != where:
         body = body[len(where):].lstrip(" —:-,;") or where
     return f"{fid} {where} — {body}" if where != "—" else f"{fid} — {body}"
 
 
-def next_line(words: str, human_acs) -> str:
-    """The block's last line, built by code (E31): "Next: type → <words>", or with a human AC
-    "Next: check <ids> on the phone, then type → <words>". Nothing follows it."""
-    ids = [aid for aid, _ in map(human_ac, human_acs)]
-    return f"Next: check {', '.join(ids)} on the phone, then type → {words}" if ids else f"Next: type → {words}"
+def impact_of(f: dict) -> str:
+    """A finding's blast radius for a person: `high`, `medium`, `low`; `medium` when the verdict
+    does not say. Never `severity` — that is the gate's question (does this stop the ship), this
+    is the human's (who is blocked, and from what)."""
+    word = str(f.get("impact") or "").strip().lower()
+    return word if word in IMPACTS else "medium"
+
+
+def open_findings(v: schemas.Verdict) -> list[dict]:
+    """The open blocks and warns, worst blast radius first, verdict order within an impact:
+    the one that costs a person the most is read first, not last."""
+    open_ = [f for f in v.findings if v.is_open(f) and f.get("severity") in ("block", "warn")]
+    return sorted(open_, key=lambda f: IMPACTS.index(impact_of(f)))  # stable: verdict order inside an impact
+
+
+def seen_before(root: "Path | None", tid: str, f: dict) -> str:
+    """"4.5 F2" when an earlier ticket's verdict already carried a finding naming the same file,
+    "" when none. The recap's own line, never the judge's: the packet is the judge's whole world,
+    so a finding that keeps coming back can only be spotted here."""
+    if root is None:
+        return ""
+    files = set(_FILE_RE.findall(str(f.get("text", "")))) | set(_FILE_RE.findall(str(f.get("consequence", ""))))
+    if not files:
+        return ""
+    for path in sorted((root / "traces" / "verdict").glob("*.json")):
+        if path.name.endswith(".summary.json") or path.stem == tid:
+            continue
+        try:
+            other = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for g in other.get("findings") or ():
+            if not isinstance(g, dict) or g.get("severity") not in ("block", "warn"):
+                continue
+            if files & set(_FILE_RE.findall(str(g.get("text", "")))):
+                return f"{path.stem} {g.get('id')}"
+    return ""
+
+
+def finding_block(f: dict, where: str, back: str = "") -> list[str]:
+    """One finding as the recap prints it: `F1  high  scripts/init_project.py:158-165`, then
+    `consequence` — who is blocked and what they cannot do — wrapped under it. A verdict without a
+    `consequence` keeps the one-line form."""
+    fid, text = str(f.get("id")), str(f.get("text", ""))
+    consequence = " ".join(str(f.get("consequence") or "").split())
+    back_line = [f"{INDENT}Second sighting: {back} flagged the same file."] if back else []
+    if not consequence:
+        return [finding_line(fid, text, where), *back_line]
+    head = f"{fid}  {impact_of(f)}  {where}" if where != "—" else f"{fid}  {impact_of(f)}"
+    wrapped = textwrap.wrap(consequence, BODY_WIDTH, initial_indent=INDENT, subsequent_indent=INDENT, break_on_hyphens=False)
+    return [head, *wrapped, *back_line]
+
+
+def findings_heading(open_: list[dict]) -> str:
+    """"FINDINGS (4) — none block the ship; one is high impact": the count, then the two things a
+    human needs before reading one: whether anything stands between them and a ship, and whether
+    any of it is high impact."""
+    if not open_:
+        return "FINDINGS (0) — nothing open"
+    blockers = [str(f.get("id")) for f in open_ if f.get("severity") == "block" and not f.get("spawn_child")]
+    highs = [f for f in open_ if impact_of(f) == "high"]
+    parts = [f"{and_list(blockers)} block{'s' if len(blockers) == 1 else ''} the ship" if blockers else "none block the ship"]
+    if highs:
+        parts.append(f"{COUNT_WORD.get(len(highs), len(highs))} {'is' if len(highs) == 1 else 'are'} high impact")
+    return f"FINDINGS ({len(open_)}) — " + "; ".join(parts)
+
+
+def and_list(names) -> str:
+    names = [str(n) for n in names]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}" if names else ""
+
+
+def answer_options(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], open_: list[dict],
+                   backs: "dict[str, str] | None" = None) -> list[tuple[list[str], str]]:
+    """The ways to answer Gate 2, recommended first, each `([the lines to type, in order], what it
+    does)`. A routes every finding that has somewhere to go and ships; B is the blunt one —
+    ship as it stands, or, when a block holds the gate shut, the override that waives and ships;
+    B is dropped when it is A. The last is always the human's own words: the gate stays open.
+    Code, never a model call — the routing is recommendations(), plus one rule of its own: a warn
+    `backs` has seen on an earlier ticket gets a child instead of a waiver. It came back once."""
+    per, backs = dict(recommendations(v, tickets)), backs or {}
+    child_n = int(next_child(v.ticket, tickets).rsplit(".", 1)[1])  # per call: two children in one run are .1 and .2
+    routed, logged, blockers = [], [], []
+    for f in open_:
+        fid = str(f.get("id"))
+        verb, _, target = action_word(per.get(fid, "waive")).partition(" ")
+        if verb == "waive" and backs.get(fid):  # twice is a pattern, not a nit
+            verb = "child"
+        if verb == "child":
+            routed.append((f"child from {fid}", f"{fid} → {v.ticket}.{child_n}"))
+            child_n += 1
+        elif verb == "home":
+            routed.append((f"home {fid} to {target}", f"{fid} → {target}"))
+        elif verb == "rework":
+            blockers.append(fid)
+        else:
+            logged.append(fid)
+    logged_note = f"{and_list(logged)} {'is' if len(logged) == 1 else 'are'} logged open and unfixed." if logged else ""
+    if blockers:
+        a = ([f"reject: rework {', '.join(blockers)}"], f"{v.ticket} goes back to build with {and_list(blockers)} named. Nothing merges.")
+        b = ([f"waive {fid}: <reason>" for fid in blockers] + ["ship"],
+             f"Merges with {and_list(blockers)} unfixed. Your reason goes in the ticket log.")
+    else:
+        high = next((str(f.get("id")) for f in open_ if impact_of(f) == "high"), "")
+        made = ". ".join(x for x in (", ".join(n for _, n in routed), logged_note.rstrip(".")) if x)
+        a = ([line for line, _ in routed] + ["ship"], (made + ". " if made else "") + f"{v.ticket} merges.")
+        n = len(open_)
+        held_by_nobody = (("The finding is" if n == 1 else f"All {COUNT_WORD.get(n, n)} are") + " logged open and unfixed"
+                          + (f", including {high}, the high-impact one." if high else f", and nobody is holding {'it' if n == 1 else 'them'}."))
+        b = (["ship"], "Merges now. " + (held_by_nobody if open_ else "Nothing is open."))
+    c = (["<your own words>"], f"A question, a change to one of these, or `reject: <reason>` to send all of {v.ticket} back to build. "
+                               "Nothing merges until you say so.")
+    return [a, c] if a[0] == b[0] else [a, b, c]
+
+
+def next_block(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], open_: list[dict],
+               human_acs=(), backs: "dict[str, str] | None" = None) -> list[str]:
+    """The end of the recap: the options in a labelled column, the recommended one first,
+    then the one line that says how to answer. Nothing follows it."""
+    opts = answer_options(v, tickets, open_, backs)
+    labels = ["A (recommended)", "B", "C"] if len(opts) == 3 else ["A (recommended)", "C"]
+    out = []
+    if human_acs:
+        out += [f"First check {', '.join(aid for aid, _ in map(human_ac, human_acs))} on the phone — a ship confirms it.", ""]
+    out += [f"NEXT — {COUNT_WORD.get(len(opts), len(opts))} ways to answer:", ""]
+    pad = " " * COLUMN
+    for label, (lines, note) in zip(labels, opts):
+        out.append(f"  {label:<{COLUMN - 2}}{lines[0]}")
+        out += [pad + line for line in lines[1:]]
+        out += [pad + line for line in textwrap.wrap(note, BODY_WIDTH - COLUMN, break_on_hyphens=False)]
+        out.append("")
+    return out + ["Type one option's lines, in order, one line at a time."]
 
 
 def changed_line(changed: "dict | None") -> str:
@@ -289,40 +420,45 @@ def changed_line(changed: "dict | None") -> str:
     return f"Changed: {len(files)} files +{added}/−{removed}" + (f" — {shown}" if shown else "")
 
 
-RESULT_MAX_LINES = 12
-
-
 def result_lines(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], cost_usd: float | None,
                  seconds: float, page: str, *, summary: dict | None = None, changed: dict | None = None,
-                 charter: dict | None = None, human_acs=(), costs: dict | None = None) -> list[str]:
+                 charter: dict | None = None, human_acs=(), costs: dict | None = None, root: Path | None = None) -> list[str]:
     """The end of a run as the skill prints it and traces/runs/<id>.result stores it, at most
-    RESULT_MAX_LINES lines, no dollar amounts (E19, E24, E27, E28, E30, E31–E34):
+    RESULT_MAX_LINES lines of text, no dollar amounts (E19, E24, E27, E28, E30, E31–E34):
       <id> · SHIP|REJECT · build m:ss · verdict m:ss · <in>K in / <out>K out
       Built: <one sentence from summary.json>
-      Findings (N)  then  F# <file:line> — <text>   (the tail folded when long)
+      FINDINGS (N) — <what blocks the ship; what is high impact>
+      F1  high  <file:line>   then the consequence: who is blocked and from what
       Charter: <names> held · <names> — touched, not judged
-      Human: <AC id> — <text>        (one per human AC)
       Changed: N files +A/−B — <up to 6 file names>
       Page: <path>
-      <blank>
-      Next: type → <words>   |   Next: check <AC id> on the phone, then type → <words>
-    Pure code from verdict.json, summary.json and the dicts the runner hands over; the actions
-    are recommendations(), never a model call. `cost_usd` and `seconds` are kept for callers;
-    `costs` carries build_s and verdict_s."""
-    per, words = gate2_words(v, tickets)
-    open_ = [f for f in v.findings if v.is_open(f) and f.get("severity") in ("block", "warn")]
+      NEXT — <n> ways to answer: the options in a column, recommended first, then how to answer
+    Pure code from verdict.json, summary.json and the dicts the runner hands over; the options
+    are answer_options(), never a model call. `root` (the working tree) only buys the second
+    sighting line; without it the block is the same minus that. `cost_usd` and `seconds` are kept
+    for callers; `costs` carries build_s and verdict_s."""
+    open_ = open_findings(v)
     c = costs or {}
     head = f"{v.ticket} · {v.decision.upper()} · build {mmss(c.get('build_s'))} · verdict {mmss(c.get('verdict_s'))} · {token_words(v.meta.tokens if v.meta else None)}"
     built = str((summary or {}).get("built") or "").strip() if not (summary or {}).get("error") else ""
     sentence = re.split(r"(?<=[.!?])\s", built, maxsplit=1)[0] if built else "no summary"
     humans = [f"Human: {aid} — {text}" for aid, text in map(human_ac, human_acs)]
-    tail = [charter_line(charter), *humans, changed_line(changed), f"Page: {page}", "", next_line(words, human_acs)]  # the blank sets Next: apart
-    findings = [finding_line(str(f.get("id")), str(f.get("text", "")), finding_file(str(f.get("text", "")))) for f in open_]
-    budget = RESULT_MAX_LINES - 3 - (len(tail) - 1)  # header, Built, Findings (N); the blank line is not counted
-    if len(findings) > budget and budget >= 1:
-        findings = findings[:budget - 1] + [f"… {len(findings) - budget + 1} more on the page"]
-    return [head, f"Built: {sentence}", f"Findings ({len(open_)})", *findings, *tail]
-
+    backs = {str(f.get("id")): seen_before(root, v.ticket, f) for f in open_}
+    tail = [charter_line(charter), *humans, changed_line(changed), f"Page: {page}", "", *next_block(v, tickets, open_, human_acs, backs)]
+    body = [head, "", f"Built: {sentence}", "", findings_heading(open_)]
+    if not open_:
+        return [*body, "", *tail]
+    blocks = [finding_block(f, finding_file(str(f.get("text", ""))), backs.get(str(f.get("id")), "")) for f in open_]
+    room = RESULT_MAX_LINES - len([line for line in (*body, *tail) if line]) - 2  # the two rules
+    shown: list[str] = []
+    for i, block in enumerate(blocks):
+        left = len(blocks) - i
+        if len(block) + (1 if left > 1 else 0) > room:
+            shown.append(f"… {left} more on the page")
+            break
+        shown += ([""] if shown else []) + block
+        room -= len(block)
+    return [*body, RULE, *shown, RULE, "", *tail]
 
 # --- page -------------------------------------------------------------------------------------
 def seat_line(v: schemas.Verdict) -> str:
