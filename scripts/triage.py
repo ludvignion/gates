@@ -45,13 +45,21 @@ def _package_hit(body: str) -> str:
     return m.group(0) if m else ""
 
 
+def _reach_check(n: int, label: str, doc: schemas.Charter, doc_name: str, paths: tuple[str, ...]) -> schemas.TriageCheck:
+    """Check `n` over a charter-shaped doc. A doc that does not exist can't confirm it misses
+    every path, so an unset (present=False) doc fires whenever a path is named at all — the
+    same conservative default `route()` already uses for a brief naming no path (full)."""
+    if not doc.present:
+        return schemas.TriageCheck(n, label, bool(paths), f"{doc_name} missing" if paths else "")
+    hits = doc.reachable(paths)
+    return schemas.TriageCheck(n, label, bool(hits), ", ".join(hits))
+
+
 def route(brief_text: str, charter: schemas.Charter, interfaces: schemas.Charter) -> schemas.Triage:
     """The route for one brief: check 1 (charter), check 2 (interfaces), check 3 (package, URL
     or env var named), check 4 (`partner_facing: true` in the brief's own frontmatter)."""
     fm, body = _fm.parse(brief_text)
     paths = named_paths(body)
-    charter_hits = charter.reachable(paths)
-    interface_hits = interfaces.reachable(paths)
     package_hit = _package_hit(body)
     url_m = URL_RE.search(body)
     env_m = ENV_VAR_RE.search(body)
@@ -59,8 +67,8 @@ def route(brief_text: str, charter: schemas.Charter, interfaces: schemas.Charter
     partner_facing = str(fm.get("partner_facing", "")).strip().lower() == "true"
 
     checks = (
-        schemas.TriageCheck(1, "charter glob", bool(charter_hits), ", ".join(charter_hits)),
-        schemas.TriageCheck(2, "interface glob", bool(interface_hits), ", ".join(interface_hits)),
+        _reach_check(1, "charter glob", charter, "charter.md", paths),
+        _reach_check(2, "interface glob", interfaces, "interfaces.md", paths),
         schemas.TriageCheck(3, "package, URL or env var", bool(check3_detail), check3_detail),
         schemas.TriageCheck(4, "partner-facing", partner_facing, "partner_facing: true" if partner_facing else ""),
     )
@@ -80,8 +88,8 @@ def main(argv: list[str]) -> int:
     brief_path = root / a.brief
     charter_path = root / CHARTER
     interfaces_path = root / INTERFACES
-    charter = schemas.Charter.parse(charter_path.read_text(encoding="utf-8")) if charter_path.exists() else schemas.Charter()
-    interfaces = schemas.Charter.parse(interfaces_path.read_text(encoding="utf-8")) if interfaces_path.exists() else schemas.Charter()
+    charter = schemas.Charter.parse(charter_path.read_text(encoding="utf-8")) if charter_path.exists() else schemas.Charter.missing()
+    interfaces = schemas.Charter.parse(interfaces_path.read_text(encoding="utf-8")) if interfaces_path.exists() else schemas.Charter.missing()
     triage = route(brief_path.read_text(encoding="utf-8"), charter, interfaces)
     print(triage.render(), end="")
     return 0

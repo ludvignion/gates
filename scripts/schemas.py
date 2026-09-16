@@ -224,9 +224,16 @@ class CharterItem:
 @dataclass(frozen=True)
 class Charter:
     """``docs/domain-pack/charter.md``: numbered ``## <n>. <title>`` items, each with an
-    ``Applies to: <glob>[, <glob>...]`` line that says which paths it can reach."""
+    ``Applies to: <glob>[, <glob>...]`` line that says which paths it can reach. ``present``
+    is False only for a file that does not exist — never conflate that with a real, empty
+    file (`Charter()`), whose zero items are confirmed rather than unknown (triage.py)."""
 
     items: tuple[CharterItem, ...] = ()
+    present: bool = True
+
+    @classmethod
+    def missing(cls) -> "Charter":
+        return cls(items=(), present=False)
 
     @classmethod
     def parse(cls, body: str) -> "Charter":
