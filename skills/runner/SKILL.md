@@ -71,34 +71,64 @@ ticket's own lines appear verbatim in between.
 
 ## The result
 On a ticket's `done` line print `traces/runs/<id>.result` verbatim, and then the turn ends.
-The runner wrote it from `verdict.json`, `summary.json`, the packet and the Gate 2 page's
-computed recommendation; nothing in it comes from this session. Its exact shape, at most 12
-lines, no dollar amounts:
+The runner wrote it from `verdict.json`, `summary.json`, the packet and its own routing;
+nothing in it comes from this session. Its exact shape, at most 40 lines of text, no dollar
+amounts:
 
     <id> · SHIP|REJECT · build m:ss · verdict m:ss · <in>K in / <out>K out
+
     Built: <one sentence from summary.json>
-    Findings (N)
-    F1 src/app/extract.py:36 — <finding text>
-    F2 tests/test_page.py:118 — <text>
-    F3 — <text>
+
+    FINDINGS (N) — none block the ship; one is high impact
+    ──────────────────────────────────────────────────────
+    F1  high  src/app/extract.py:36
+        <what a person cannot do if this is left unfixed, up to three sentences>
+
+    F2  medium  tests/test_page.py:118
+        <same>
+        Second sighting: 1.4 F2 flagged the same file.
+    ──────────────────────────────────────────────────────
+
     Charter: <item names> held · <item names> — touched, not judged
     Human: AC-7 — <full AC text>
     Changed: 3 files +120/−8 — src/app/extract.py, tests/test_extract.py, docs/usage.md
     Page: <path of the Gate 2 page>
 
-    Next: type → ship, child from F1, home F2 to 2.3, waive F3
+    First check AC-7 on the phone — a ship confirms it.
+
+    NEXT — three ways to answer:
+
+      A (recommended)    child from F1
+                         home F2 to 2.3
+                         ship
+                         F1 → 2.2.1, F2 → 2.3. F3 is logged open and unfixed. 2.2 merges.
+
+      B                  ship
+                         Merges now. All three are logged open and unfixed, including F1, the
+                         high-impact one.
+
+      C                  <your own words>
+                         A question, a change to one of these, or `reject: <reason>` to send
+                         all of 2.2 back to build. Nothing merges until you say so.
+
+    Type one option's lines, in order, one line at a time.
 
 Line by line: build and verdict wall time and the verdict call's tokens; what was built, one
-sentence; one line per open finding in verdict order with `file:line` when the finding names
-one; the charter line by item name — the touched items the reviewer held, and those it neither
-held nor cited (touched, not judged: never findings, never waivable; `Charter: none touched`
-when the diff reaches no charter item); one `Human:` line per AC tagged `(human)`, which no
-test can verify; the files changed against the base branch (up to six names); the page path;
-and, after one blank line, the last line, `Next: type → <the Gate 2 words, ship first>` — or, with a human AC,
-`Next: check AC-7 on the phone, then type → <words>` — built by the runner, never by this
+sentence; the findings heading, saying what stands between the human and a ship and whether any
+of it is high impact; one block per open finding, worst blast radius first — its id, its impact,
+the `file:line` when it names one, and the verdict's `consequence`: who is blocked and from
+what, never the code path, and a `Second sighting:` line when an earlier ticket's verdict
+already named that file; the charter line by item name — the touched items the reviewer held,
+and those it neither held nor cited (touched, not judged: never findings, never waivable;
+`Charter: none touched` when the diff reaches no charter item); one `Human:` line per AC tagged
+`(human)`, which no test can verify, and the line asking for it before a ship; the files changed
+against the base branch (up to six names); the page path; and the options — A the recommended
+sequence, B the blunt alternative (`ship` as it stands, or, when a block holds the gate shut,
+the waiver that merges anyway), C the human's own words. B is dropped when it is A. Each option
+is a list of Gate 2 lines typed in order, one at a time, built by the runner, never by this
 session. When there are more findings than fit, the list folds into `… N more on the page`.
 
-Nothing after the block. The `Next:` line is the whole instruction: no "Gate 2 open", no
+Nothing after the block. The `NEXT` options are the whole instruction: no "Gate 2 open", no
 list of the verbs, no recap, no question. The human's next message is the Gate 2 line.
 
 A `done error <reason>` line (ci red, retry cap, needs context, permission denied, nothing to
@@ -106,9 +136,9 @@ judge, packet too big, num_turns) has no verdict: print that line and whatever r
 runner left, then stop; the human decides.
 
 ## Gate 2
-In this session, in the same words the result recommends. The human reads the page and says one
-of the lines below; each is exactly one command, `--who` set to `git config user.name` when it
-is set. Print the command's output and nothing more. A non-zero exit is the board's refusal,
+In this session, in the same words the result's options carry. The human types one option's
+lines, one at a time — each is exactly one command, `--who` set to `git config user.name` when
+it is set. Print the command's output and nothing more. A non-zero exit is the board's refusal,
 quoted as printed; never work around it.
 
 | The human says | The session runs |
@@ -119,13 +149,13 @@ quoted as printed; never work around it.
 | `home F# to <target>` | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py home <id> F# <target> --who <name>` |
 | `waive F#: <reason>` | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py waive <id> F# <reason> --who <name>` |
 
-The human answers with the recommended words or changes one. `ship` merges the ticket branch
+The human answers with option A's lines, another option's, or their own. `ship` merges the ticket branch
 into base, pushes, deletes the branch and closes the gate; it is also the human's confirmation
 of every `human:` line in the result — the board logs each as confirmed by `--who`. `reject`
 sends the ticket back to `in_progress` and leaves the branch checked out;
 `/gates:runner <id>` again is the retry. `child`, `home` and `waive` leave the gate
-open: the human says the next line. Words that match none of the five are a question back to
-the human, not an action.
+open: the human says the next line. Words that match none of the five are option C — a question
+back to the human, answered in this session, never an action on the board.
 
 ## A plan
 The runner walks the plan's tickets in `depends_on` order by itself, one ticket at a time, and
@@ -161,7 +191,7 @@ The session's last line is one of these, and nothing follows it:
   runner's message and stop. Only the human's `override` word unlocks the session stamp.
 - Guess at Gate 2. No human line, no command.
 - Add any line after the result block: no restating the verbs, no recap of your own, no
-  "Gate 2 open". The block's `Next:` line ends the turn (E31).
+  "Gate 2 open". The block's last line ends the turn (E31).
 - Print a menu. One hand-off line, from the table above.
 
 Next: the one hand-off line from the table above, verbatim, as the session's last line.

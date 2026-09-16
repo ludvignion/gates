@@ -24,6 +24,18 @@ worth a human's eye. No `note`s: what holds goes into `held` as its label (`AC-3
 `home` set. `text` is at most 20 words, terse, `file:line` where it applies. `repro` is a
 command or null.
 
+`impact` and `consequence` are the same finding told to the person who decides whether to merge.
+`impact` is `high`, `medium` or `low` — the blast radius, not the gate: `severity` says whether
+this stops the ship, `impact` says what it costs someone if it does not. A `low` block and a
+`high` warn are both ordinary.
+`consequence` is at most three sentences and says who is blocked and what they cannot do, in
+words someone who has not read the diff can act on. Never the code path, never the fix, never a
+restatement of `text`. A finding whose consequence you cannot name is a `held` label or nothing.
+
+  bad:  "migration state is inconsistent"
+  good: "Someone setting up their first project cannot retry after a network failure: the second
+         run refuses, and nothing tells them a hidden marker file is the reason."
+
 Copy the mechanical findings from the packet verbatim (ids `C1..`); yours are `F1..`. Carry
 previous blocks forward with their ids. A waiver is a `### [human]` Log entry already in the
 packet: put its timestamp in `waived_by`, do not restate it. A section the seat withholds is
@@ -37,7 +49,9 @@ not evidence of anything: judge what the packet shows.
    {"id": "F1", "severity": "block|warn", "status": "open|resolved",
     "ac": "AC-3", "charter": null, "home": null, "spawn_child": false,
     "covered_by": null, "repro": "one command or null", "waived_by": null,
-    "text": "≤20 words: what breaks, file:line."}
+    "text": "≤20 words: what breaks, file:line.",
+    "impact": "high|medium|low",
+    "consequence": "≤3 sentences: who is blocked, and what they cannot do."}
  ],
  "ci": {"green": true, "mutation_score": null}}
 ```
