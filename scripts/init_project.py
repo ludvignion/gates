@@ -168,7 +168,10 @@ def run_issues(root: Path, repo: str) -> int:
     try:
         tickets.ensure_labels(repo)
         mapping, changed_plans = migrate_tickets.migrate(root, repo)
-        tickets.sync(root)
+        proc = subprocess.run(["make", "sync"], cwd=root, capture_output=True, text=True,
+                              env={**os.environ, "PLUGIN": str(PLUGIN_ROOT)})
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout).strip())
     except RuntimeError as e:
         print(f"refused: {e}; marker and .gitignore are written but nothing is committed — re-run to retry", file=sys.stderr)
         return 1
