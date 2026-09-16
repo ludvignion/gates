@@ -12,7 +12,8 @@
 - `.issues` — opts this project into GitHub Issues for tickets: `owner/repo`, written by
   `init --issues owner/repo`. Present: `tickets/` above is a read-only mirror `make sync` writes
   from the repo's `ticket`-labelled Issues, git-ignored, never edited by hand. Absent (the
-  default): tickets are the files above, as today.
+  default): tickets are the files above, as today. A `gh` failure partway through opting in
+  leaves this file uncommitted, not truly present yet — re-run `init --issues` to retry.
 
 Subfolders, not a flat directory: the scripts search `kanban/` recursively, so nesting is free
 and `ls kanban/` stays readable as briefs accumulate.
