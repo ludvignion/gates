@@ -1,0 +1,8 @@
+{
+ "built": null,
+ "review": null,
+ "model": "haiku",
+ "inputs_sha": "cddc88d996867bd01fe3fc9a221d92d01f400685dbe73e53773d5fd0d1f9abe4",
+ "cost_usd": null,
+ "error": "summary call failed: exit 1"
+}

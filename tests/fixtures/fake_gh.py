@@ -52,6 +52,17 @@ def main() -> int:
     issues = data.setdefault("issues", [])
     if argv[:2] == ["label", "create"]:
         return 0
+    if argv[:2] == ["auth", "status"]:
+        if data.get("auth_fail"):
+            print("gh: not logged in (simulated)", file=sys.stderr)
+            return 1
+        return 0
+    if argv[:1] == ["api"] and len(argv) > 1 and argv[1].startswith("repos/") and argv[1].count("/") == 2:
+        if data.get("repo_fail"):
+            print("gh: repos lookup failed (simulated)", file=sys.stderr)
+            return 1
+        print(json.dumps({"has_issues": data.get("has_issues", True)}))
+        return 0
     if argv[:2] == ["issue", "list"]:
         if data.get("fail_list"):
             print("gh: issue list failed (simulated)", file=sys.stderr)

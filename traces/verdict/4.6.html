@@ -1,0 +1,34 @@
+<!doctype html><meta charset=utf-8><title>Verdict 4.6</title>
+<style>body{font-family:system-ui;max-width:1000px;margin:2rem auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.3rem .6rem;text-align:left}
+.hero{font-size:2rem;padding:1rem;color:#fff;background:#3cb371}
+li.block{background:#fdd}li.warn{background:#ffe9c7}
+li{margin:.3rem 0;padding:.2rem .4rem;list-style:none}ul{padding-left:0}
+.meta{color:#666;font-size:.85rem}.invalid{color:#c0392b;font-weight:bold}td.no{background:#fdd}details{margin:.4rem 0}
+section.top{background:#f6f6f6;padding:.6rem 1rem;border-radius:8px;margin:.6rem 0}pre{white-space:pre-wrap;font-size:.85rem}</style>
+<div class=hero>SHIP — 4.6</div>
+<p class=meta>Seat: claude · packet seat · cost $0.4085 · tokens in/out 2/7346 · 92 s · untraced (OPIK_URL_OVERRIDE unset)</p>
+<p>CI: green · mutation: None</p>
+
+<section class=top><h2>What was built</h2><p><i>summary unavailable: summary call failed: exit 1</i></p><pre>### [build] 2026-09-15 18:00 — close-out
+- scripts/migrate_tickets.py: migrate() (plus _order, _issue_body, _split_entry, _rewrite_plans, _title): AC-2 — every file ticket becomes one issue in depends_on order, same body shape, done/superseded created closed, Log entries as comments in order, plan Slices rewritten to #&lt;number&gt;, files removed
+- scripts/init_project.py: preflight_issues(), run_issues(), --issues CLI flag: AC-1 — gh auth/issues-enabled preflight refuses naming what&#x27;s missing and writes nothing; on success the marker, labels, .gitignore, migration and first sync land in one commit
+- tests/fixtures/fake_gh.py: auth status and api repos/&lt;owner&gt;/&lt;repo&gt; handlers: AC-1 — stub the preflight&#x27;s two gh calls
+- tests/test_migrate_tickets.py, tests/test_init_issues.py, tests/test_init_project.py (IssuesOptInUpdateTest, IssuesDocsTest): AC-1, AC-2, AC-3, AC-4
+- README.md, CHANGELOG.md, templates/project/kanban/README.md: AC-4 — opt-in, the marker, make sync, the migration</pre><pre>CHANGELOG.md                       |  16 ++++
+ README.md                          |  26 +++++-
+ scripts/init_project.py            |  58 ++++++++++++
+ scripts/migrate_tickets.py         | 117 ++++++++++++++++++++++++
+ templates/project/kanban/README.md |   4 +
+ tests/test_init_issues.py          | 147 +++++++++++++++++++++++++++++++
+ tests/test_init_project.py         |  42 +++++++++
+ tests/test_migrate_tickets.py      | 176 +++++++++++++++++++++++++++++++++++++
+ 8 files changed, 585 insertions(+), 1 deletion(-)
+2 files excluded (lock, fixture, kanban)</pre></section>
+<section class=top><h2>What the reviewer said</h2><p><b>Ship.</b> Held: attack-1, attack-2, attack-3, attack-4, AC-4, charter-1. No open block. 4 warns: F1 gh failure mid-migrate leaves marker, labels, gitignore written, no commit; re-run refuses. init_project.py:158-165; F2 AC-3 names Makefile, CI, .env.example; test asserts only settings.json. tests/test_init_project.py:190; F3 prints &quot;make sync: OK&quot; but calls tickets.sync in-process, never make. init_project.py:166,175; F4 done/superseded issues created open, closed after comments; AC says created closed. migrate_tickets.py:111.</p></section>
+<section class=top><h2>Recommended action</h2><ul><li><b>F1</b> home to 4.6.1</li><li><b>F2</b> home to 4.6.1</li><li><b>F3</b> home to 4.6.2</li><li><b>F4</b> waive</li></ul></section>
+
+<p class=meta>Held: attack-1, attack-2, attack-3, attack-4, AC-4, charter-1</p>
+<h2>Blocks (0)</h2><ul><li>none</li></ul>
+<h2>Warnings (4)</h2><ul><li class=warn><b>F1</b> <code>AC-1</code> gh failure mid-migrate leaves marker, labels, gitignore written, no commit; re-run refuses. init_project.py:158-165 → child ticket<div class=meta>home 4.6.1</div></li><li class=warn><b>F2</b> <code>AC-3</code> AC-3 names Makefile, CI, .env.example; test asserts only settings.json. tests/test_init_project.py:190<div class=meta>repro <code>python3 -m unittest tests.test_init_project.IssuesOptInUpdateTest</code></div></li><li class=warn><b>F3</b> <code>AC-1</code> prints &quot;make sync: OK&quot; but calls tickets.sync in-process, never make. init_project.py:166,175 → child ticket<div class=meta>home 4.6.2</div></li><li class=warn><b>F4</b> <code>AC-2</code> done/superseded issues created open, closed after comments; AC says created closed. migrate_tickets.py:111</li></ul>
+
+<h2>Quality</h2><table><tr><th>File</th><th>1 SRP</th><th>2 AC-trace</th><th>3 YAGNI</th><th>4 rule-of-3</th><th>5 ISP</th><th>6 DIP</th></tr></table>

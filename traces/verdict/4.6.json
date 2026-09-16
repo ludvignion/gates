@@ -1,0 +1,113 @@
+{
+ "ticket": "4.6",
+ "decision": "ship",
+ "held": [
+  "attack-1",
+  "attack-2",
+  "attack-3",
+  "attack-4",
+  "AC-4",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": "4.6.1",
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "gh failure mid-migrate leaves marker, labels, gitignore written, no commit; re-run refuses. init_project.py:158-165"
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-3",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "python3 -m unittest tests.test_init_project.IssuesOptInUpdateTest",
+   "waived_by": null,
+   "text": "AC-3 names Makefile, CI, .env.example; test asserts only settings.json. tests/test_init_project.py:190"
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": "4.6.2",
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "prints \"make sync: OK\" but calls tickets.sync in-process, never make. init_project.py:166,175"
+  },
+  {
+   "id": "F4",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-2",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "done/superseded issues created open, closed after comments; AC says created closed. migrate_tickets.py:111"
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.3",
+  "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
+  "packet_sha": "8554a4a83aefc48b5469f7bfe51b706608d068eeded29bf0abc95e8910f1286e",
+  "cost_usd": 0.40845450000000005,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 20874,
+   "cache_read_input_tokens": 3051,
+   "output_tokens": 7346,
+   "output_tokens_details": {
+    "thinking_tokens": 6705
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 20874,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 7346,
+     "cache_read_input_tokens": 3051,
+     "cache_creation_input_tokens": 20874,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 20874
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 92.30306965899945,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
