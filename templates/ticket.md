@@ -2,6 +2,7 @@
 id: <n>.<m>
 parent: <n>
 status: ready            # ready | in_progress | in_review | done
+lane: full                # light | full — plan 5: how far triage narrowed the brief
 depends_on: []
 writes: []               # paths the build may touch; enforced by hook if set
 ---
