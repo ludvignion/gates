@@ -8,10 +8,12 @@ call: `label create`, `issue list --label ticket --state <s> --json number`, `is
 (closed-issue edit history) and `api repos/<repo>/issues/<n>/timeline` (reopen events, paginated
 by `per_page`/`page` fields, default page size 30 as real GitHub). Issue data comes from
 $FAKE_GH_DATA (a JSON file: {"issues": [...], "fail_view": [<number>, ...], "fail_list": true,
-"auth_fail": true, "repo_fail": true, "has_issues": false}); a number in `fail_view` makes that
-issue's `issue view` call fail, `fail_list` makes every `issue list` call fail, `auth_fail` makes
-`auth status` fail, `repo_fail` makes the repo lookup fail, `has_issues: false` reports Issues
-disabled, as `gh` does on a network or auth error or a repo setting. An issue may carry
+"auth_fail": true, "repo_fail": true, "has_issues": false, "fail_create_after": <n>}); a number in
+`fail_view` makes that issue's `issue view` call fail, `fail_list` makes every `issue list` call
+fail, `auth_fail` makes `auth status` fail, `repo_fail` makes the repo lookup fail, `has_issues:
+false` reports Issues disabled, as `gh` does on a network or auth error or a repo setting.
+`fail_create_after: <n>` fails every `issue create` once `n` issues already exist, simulating a
+`gh` failure partway through a migration (ticket 4.6.1). An issue may carry
 `"closedAt"`, `"body_edits"` (a list of ISO timestamps, becoming `userContentEdits` nodes) and
 `"timeline"` (a list of `{"event": ...}` dicts) for the GitHub-history rule's tests. A write
 (comment, edit, close, create) rewrites $FAKE_GH_DATA so a later call in the same test sees it,
@@ -145,6 +147,10 @@ def main() -> int:
         print(json.dumps(timeline[start:start + per_page]))
         return 0
     if argv[:2] == ["issue", "create"]:
+        fail_after = data.get("fail_create_after")
+        if fail_after is not None and len(issues) >= fail_after:
+            print("gh: issue create failed (simulated)", file=sys.stderr)
+            return 1
         number = max((i["number"] for i in issues), default=0) + 1
         labels = [n for i, n in enumerate(argv) if argv[i - 1] == "--label"]
         issues.append({"number": number, "title": _flag(argv, "--title"), "body": _flag(argv, "--body"),
