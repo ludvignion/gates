@@ -1,0 +1,8 @@
+{
+ "built": "Implements triage routing: brief checks decide light vs full. Light skips plan page; full stamps lane and runs grill. Code: triage checks (91 LOC), schemas (35 LOC), kanban door (30 LOC), SKILL rule 9, lane field.",
+ "review": "Reject. AC-2, AC-3 held. Block C1 (.claude/settings.json): written outside review; merger can't see permission changes. Block F1 (scripts/triage.py:83): missing charter silently routes light; checks 1-2 skip. Warns: F2 (GitHub issues missing lane: full), F3 (overwrites lose history), F4 (ignores plan number), F5 (over-fires on ALL_CAPS/URLs).",
+ "model": "haiku",
+ "inputs_sha": "fac4041c175b3d117b7dbfea48bbed4d38b2f9fdcd3bb59ed6dd2fde71541d90",
+ "cost_usd": 0.049623,
+ "error": null
+}
