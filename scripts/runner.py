@@ -379,27 +379,34 @@ def clean_tree(cwd: Path) -> bool:
     return subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=cwd, capture_output=True, text=True).stdout.strip() == ""
 
 
-def head_subject(cwd: Path) -> str:
-    return subprocess.run(["git", "log", "-1", "--format=%s"], cwd=cwd, capture_output=True, text=True).stdout.strip()
+def head_sha(cwd: Path) -> str:
+    """The commit `HEAD` names right now. Read once per tool result and passed to the readers
+    below, so the subject and the status count describe the same commit (E33)."""
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=cwd, capture_output=True, text=True).stdout.strip() or "HEAD"
 
 
-def status_marks(cwd: Path, tid: str) -> int:
-    """How many ``### [build] … — status:`` lines the committed ticket (HEAD) carries."""
+def head_subject(cwd: Path, rev: str = "HEAD") -> str:
+    return subprocess.run(["git", "log", "-1", "--format=%s", rev], cwd=cwd, capture_output=True, text=True).stdout.strip()
+
+
+def status_marks(cwd: Path, tid: str, rev: str = "HEAD") -> int:
+    """How many ``### [build] … — status:`` lines the ticket committed at `rev` carries."""
     ticket = kanban_ops.find_ticket(cwd, tid)
     if ticket is None:
         return 0
     rel = ticket.relative_to(cwd).as_posix()
-    committed = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=cwd, capture_output=True, text=True).stdout
+    committed = subprocess.run(["git", "show", f"{rev}:{rel}"], cwd=cwd, capture_output=True, text=True).stdout
     return len(STATUS_RE.findall(committed))
 
 
-def closed_out(cwd: Path, tid: str, before: int = 0) -> bool:
-    """The build reached its close-out: the committed ticket (HEAD) carries a status line it did
+def closed_out(cwd: Path, tid: str, before: int = 0, rev: str = "HEAD") -> bool:
+    """The build reached its close-out: the ticket committed at `rev` carries a status line it did
     not carry when the session started (`before`; a retry's Log already holds the first build's
     close-out, and 0.11.2 read that as an orbit on the builder's first tool call). Committed
     state only: the builder's next command may already be running while the runner reads the
-    previous result, so the working tree is never consulted here."""
-    return status_marks(cwd, tid) > before
+    previous result, so the working tree is never consulted here. `rev` is the caller's snapshot
+    — resolving `HEAD` here again would reopen the window this closes (E33)."""
+    return status_marks(cwd, tid, rev) > before
 
 
 BOARD_TICK = 10.0  # seconds between board renders while the build streams (the page refreshes every 5 s)
@@ -423,6 +430,8 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
     last_tick = last_beat = t0
     last_line, last_at = "", time.strftime("%H:%M:%S")
     before = status_marks(cwd, tid)  # a retry starts with the previous close-out in the Log
+    start_sha = head_sha(cwd)  # what the branch pointed at before the builder made any commit (E33)
+    closeout_sha = ""  # the commit the close-out was read from; the build's own commits end here
     proc = subprocess.Popen(build_cmd(tid, model), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     report: dict = {}
     orbit: list[str] = []
@@ -431,15 +440,41 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
     texts: list[str] = []
 
     def after_tool() -> None:
-        nonlocal done
-        subject = head_subject(cwd)
+        """One snapshot of HEAD, two readers. Resolving `HEAD` separately for the subject and for
+        the status count let the builder's next commit land between the two calls: the runner read
+        the feat commit's subject and the close-out's status line from different commits, called
+        the build done a step early, and terminated the session on the close-out call itself —
+        logging a correct build's own close-out as an orbit after it (E33)."""
+        nonlocal done, closeout_sha
+        rev = head_sha(cwd)
+        subject = head_subject(cwd, rev)
         for mark, prefix in (("tests-commit", f"test({tid})"), ("feat-commit", f"feat({tid})")):
             if subject.startswith(prefix) and mark not in seen:
                 seen.add(mark)
                 phase(mark)
-        if not done and closed_out(cwd, tid, before):
+        if not done and closed_out(cwd, tid, before, rev):
             done = True
+            closeout_sha = rev
             phase(f"build {attempt} close-out")
+
+    def wrote_a_session_commit(call: str) -> bool:
+        """This call is one of the build's own, read late — not an orbit after the close-out.
+
+        git moves at wall-clock speed while the runner reads the stream behind it, so by the time
+        the runner is on result N the builder may already have run N+1 and N+2. `done` then flips
+        early and the build's own remaining calls arrive looking like orbits after a close-out they
+        in fact produced (E33). Nothing in git can say where the stream is, and nothing in the
+        stream can say what git holds — the commit subjects the builder wrote are the one thing in
+        both. A call that writes one belongs to the build; a real orbit (`cat …`, `ls …`) writes
+        none.
+
+        Bounded at the close-out commit, not at HEAD: a builder that commits *after* its close-out
+        is doing exactly what the orbit exists to catch, and its subject is not in this range."""
+        if not closeout_sha:
+            return False
+        subjects = subprocess.run(["git", "log", "--format=%s", f"{start_sha}..{closeout_sha}"],
+                                  cwd=cwd, capture_output=True, text=True).stdout.splitlines()
+        return any(subject.strip() and subject.strip() in call for subject in subjects)
 
     def under_phase(text: str) -> None:
         nonlocal last_line, last_at
@@ -456,6 +491,26 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
 
     reader = threading.Thread(target=pump, daemon=True)
     reader.start()
+
+    def drain_envelope() -> None:
+        """The session was terminated on an orbit, but everything it had already written is still
+        in the pipe — including the result envelope, which carries the permission denials, the
+        turn count and the cost. Breaking out of the loop dropped all of it unread (E33)."""
+        nonlocal report
+        while True:
+            try:
+                pending = lines.get(timeout=STREAM_WAIT)
+            except queue.Empty:
+                return
+            if pending is None:
+                return
+            try:
+                ev = json.loads(pending.strip())
+            except (json.JSONDecodeError, AttributeError):
+                continue
+            if ev.get("type") == "result":
+                report = ev
+                return
     while True:
         try:
             raw = lines.get(timeout=STREAM_WAIT)
@@ -487,6 +542,9 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
                         under_phase(t)
                 elif block.get("type") == "tool_use":
                     call = tool_line(block)
+                    if done and wrote_a_session_commit(call):
+                        under_phase(call)
+                        continue
                     if done:
                         orbit.append(call)
                         out.write(f"  ! orbit after close-out: {call} — session terminated\n")
@@ -494,6 +552,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
                         break
                     under_phase(call)
             if done and orbit:
+                drain_envelope()
                 break
         elif kind == "user":
             after_tool()

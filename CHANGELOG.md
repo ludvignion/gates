@@ -42,6 +42,28 @@ in order.
 - `scripts/runner.py` — hands `result_lines` the tree, for that second sighting.
 - Verdicts written without the fields keep the old one-line form; nothing needs re-running.
 
+A correct build is no longer killed for an orbit it did not make. git moves at wall-clock speed
+while the runner reads the build session's stream behind it, so by the time the runner is on tool
+result N the builder may already have run N+1 and N+2. The close-out was read from whatever `HEAD`
+happened to be at that instant: it flipped `done` a step or more early, and the build's own
+remaining calls — the close-out commit itself among them — arrived looking like orbits after a
+close-out they had in fact produced. The session was terminated on one of them, `orbit after
+close-out` was logged on the ticket as a runner finding, and the loop broke before the result
+envelope was read, dropping the permission denials, the turn count and the cost with it. Under
+load it took whichever test asserted on anything at or after the close-out; 0.11.4 moved `green`
+into the close-out step to dodge one instance of it (E32, E33).
+
+- `scripts/runner.py` — `head_sha` is read once per tool result and passed to `head_subject` and
+  `status_marks`, so the subject and the status count describe the same commit rather than two
+  resolutions of `HEAD` with a commit landing between them. `wrote_a_session_commit` spares a call
+  the orbit when its text writes one of the commit subjects in `start_sha..closeout_sha`: nothing
+  in git can say where the stream is and nothing in the stream can say what git holds, and those
+  subjects are the one thing in both. The range ends at the close-out commit, so a builder that
+  keeps committing after it is still an orbit. `drain_envelope` reads the terminated session's
+  output to the end of its result envelope instead of breaking on the spot.
+- `tests/test_runner.py` — `test_a_commit_after_the_close_out_is_still_an_orbit` pins that bound.
+  Twelve sequential and six concurrent copies of the runner suite pass; no assertion relaxed.
+
 ## 0.11.4 — 2026-09-15
 
 A flaky runner self-test. `test_red_ci_after_build_retries_with_a_second_build` made CI red in a
