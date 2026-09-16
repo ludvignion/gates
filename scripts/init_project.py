@@ -141,8 +141,12 @@ def run_issues(root: Path, repo: str) -> int:
     """`init --issues <owner/repo>` (plan 4 AC-13/AC-14, this ticket AC-1/AC-2): on a clean
     preflight, write the marker, create the labels, git-ignore `kanban/tickets/`, migrate every
     file ticket to an issue and run the first sync — one commit, named after what's missing when
-    the preflight refuses, and nothing written in that case."""
-    if (root / "kanban" / ".issues").exists():
+    the preflight refuses, and nothing written in that case. A project isn't opted in until that
+    commit lands: a `gh` failure partway through labels/migrate/sync leaves the marker and
+    `.gitignore` edit sitting uncommitted, and the next `init --issues` call resumes rather than
+    refusing (4.6.1 AC-1) — refusing is only for a marker that's actually committed."""
+    marker = root / "kanban" / ".issues"
+    if marker.exists() and not git(root, "status", "--porcelain", "--", str(marker.relative_to(root))).stdout:
         print("refused: kanban/.issues already exists; this project already opted in", file=sys.stderr)
         return 1
     if missing := preflight_issues(repo):
@@ -155,15 +159,19 @@ def run_issues(root: Path, repo: str) -> int:
 
     ticket_paths = [p for p, _, _ in _fm.tickets(root / "kanban")]
     (root / "kanban").mkdir(parents=True, exist_ok=True)
-    (root / "kanban" / ".issues").write_text(repo + "\n", encoding="utf-8")
-    tickets.ensure_labels(repo)
+    marker.write_text(repo + "\n", encoding="utf-8")
     gitignore = root / ".gitignore"
     lines = gitignore.read_text(encoding="utf-8").splitlines() if gitignore.exists() else []
     if "kanban/tickets/" not in lines:
         lines.append("kanban/tickets/")
         gitignore.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    mapping, changed_plans = migrate_tickets.migrate(root, repo)
-    tickets.sync(root)
+    try:
+        tickets.ensure_labels(repo)
+        mapping, changed_plans = migrate_tickets.migrate(root, repo)
+        tickets.sync(root)
+    except RuntimeError as e:
+        print(f"refused: {e}; marker and .gitignore are written but nothing is committed — re-run to retry", file=sys.stderr)
+        return 1
     message = f"chore: opt in to kanban/.issues ({repo})"
     if mapping:
         listing = ", ".join(f"{old} → #{new}" for old, new in sorted(mapping, key=lambda t: [int(x) for x in t[0].split(".")]))

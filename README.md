@@ -77,7 +77,9 @@ names the repo, the `ticket` and five status labels exist, `kanban/tickets/` is 
 `kanban/tickets/` is migrated to one issue each — `done` and `superseded` ones created closed,
 every Log entry one comment in order — the commit message lists old id → new number, and
 `make sync` runs once. `init --update` keeps the marker untouched; only the template-owned files
-(Makefile, CI workflow, `.env.example`, `.gitignore`) are diffed and written.
+(Makefile, CI workflow, `.env.example`, `.gitignore`) are diffed and written. A `gh` failure
+partway through leaves the marker and `.gitignore` edit uncommitted; re-run to retry — it isn't
+treated as "already opted in" until the commit lands.
 
 `make sync` (`scripts/tickets.py sync`) mirrors `kanban/.issues`' repo's `ticket`-labelled Issues
 into `kanban/tickets/<number>.<slug>.md`; a no-op without the marker.

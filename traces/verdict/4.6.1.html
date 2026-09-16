@@ -1,0 +1,20 @@
+<!doctype html><meta charset=utf-8><title>Verdict 4.6.1</title>
+<style>body{font-family:system-ui;max-width:1000px;margin:2rem auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.3rem .6rem;text-align:left}
+.hero{font-size:2rem;padding:1rem;color:#fff;background:#3cb371}
+li.block{background:#fdd}li.warn{background:#ffe9c7}
+li{margin:.3rem 0;padding:.2rem .4rem;list-style:none}ul{padding-left:0}
+.meta{color:#666;font-size:.85rem}.invalid{color:#c0392b;font-weight:bold}td.no{background:#fdd}details{margin:.4rem 0}
+section.top{background:#f6f6f6;padding:.6rem 1rem;border-radius:8px;margin:.6rem 0}pre{white-space:pre-wrap;font-size:.85rem}</style>
+<div class=hero>SHIP — 4.6.1</div>
+<p class=meta>Seat: claude · packet seat · cost $0.2502 · tokens in/out 2/4517 · 63 s · untraced (OPIK_URL_OVERRIDE unset)</p>
+<p>CI: green · mutation: None</p>
+
+<section class=top><h2>What was built</h2><p>init_project.py catches gh failures mid-migrate and retries via try/except. Marker checks committed status (git status) not filesystem. Tests cover refusal and recovery; docs cover resume behavior.</p></section>
+<section class=top><h2>What the reviewer said</h2><p>Ship. Held: AC-1, charter-1, attack-1 through 4. F1 warns: mid-migrate retry risks duplication if test fails before first create. F2 warns: committed-but-edited marker skips refusal, allows re-migration. CI green.</p><p><b>Ship.</b> Held: AC-1, charter-1, attack-1, attack-2, attack-3, attack-4. No open block. 2 warns: F1 mid-migrate retry may duplicate issues; test fails before first create, migrate dedupe not in packet. tests/test_init_issues.py:149; F2 committed-but-edited marker makes status non-empty; refusal skipped, opted-in project re-migrates. init_project.py:146.</p></section>
+<section class=top><h2>Recommended action</h2><ul><li><b>F1</b> home to 4.6.2</li><li><b>F2</b> waive</li></ul></section>
+<section class=top><h2>Human checks</h2><ul><li>☐ AC-3: Given &lt;state&gt;, a person confirms &lt;outcome&gt;  # confirmed at Gate 2, no test names it</li></ul></section>
+<p class=meta>Held: AC-1, charter-1, attack-1, attack-2, attack-3, attack-4</p>
+<h2>Blocks (0)</h2><ul><li>none</li></ul>
+<h2>Warnings (2)</h2><ul><li class=warn><b>F1</b> <code>AC-1</code> mid-migrate retry may duplicate issues; test fails before first create, migrate dedupe not in packet. tests/test_init_issues.py:149</li><li class=warn><b>F2</b> <code>—</code> committed-but-edited marker makes status non-empty; refusal skipped, opted-in project re-migrates. init_project.py:146</li></ul>
+
+<h2>Quality</h2><table><tr><th>File</th><th>1 SRP</th><th>2 AC-trace</th><th>3 YAGNI</th><th>4 rule-of-3</th><th>5 ISP</th><th>6 DIP</th></tr></table>

@@ -9,12 +9,18 @@ the `kanban/.issues` marker, creates the `ticket` and five status labels, git-ig
 closed, every Log entry one comment in order, `## Slices` rewritten to the new numbers) in one
 commit listing old id → new number, and runs `make sync` once — or refuses, naming what's
 missing, and writes nothing. `init --update` on an opted-in project keeps the marker and still
-lands the template's Makefile, CI and `.env.example` changes.
+lands the template's Makefile, CI and `.env.example` changes. A `gh` failure partway through
+labels/migrate/sync leaves the marker and `.gitignore` edit uncommitted; the next `init --issues`
+call resumes instead of refusing forever, since nothing is truly opted in until the commit lands
+(4.6.1).
 
 - `scripts/migrate_tickets.py` — the migration: dependency order, body shape, Log-to-comments,
   closed-on-creation, `## Slices` rewrite, one commit.
-- `scripts/init_project.py` — `--issues owner/repo`: the preflight and the opt-in write path.
-- `tests/fixtures/fake_gh.py` — `auth status` and `api repos/<owner>/<repo>` for the preflight.
+- `scripts/init_project.py` — `--issues owner/repo`: the preflight and the opt-in write path;
+  "already opted in" now checks the marker is committed, not merely present, and a `gh` failure
+  mid-migrate is reported instead of crashing with a raw traceback (4.6.1).
+- `tests/fixtures/fake_gh.py` — `auth status` and `api repos/<owner>/<repo>` for the preflight,
+  `fail_create_after` for a `gh issue create` failure partway through migration.
 
 Gate 2 reads as a decision, not a defect list. Every finding now carries what it costs a person
 — `impact` (high/medium/low, the blast radius, never `severity`, which is only the gate's own

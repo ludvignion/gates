@@ -1,6 +1,8 @@
 """scripts/init_project.py's `init --issues <owner/repo>` (plan 4 AC-13 first half / ticket 4.6
-AC-1, AC-2): preflight, marker, labels, git-ignore, migration, first sync, one commit. `gh`
-stubbed by tests/fixtures/fake_gh.py, as in test_tickets_sync.py and test_migrate_tickets.py."""
+AC-1, AC-2): preflight, marker, labels, git-ignore, migration, first sync, one commit. A `gh`
+failure partway through leaves the marker and `.gitignore` edit uncommitted, so a plain marker
+check would refuse every retry forever; the fix and its tests are ticket 4.6.1 AC-1. `gh` stubbed
+by tests/fixtures/fake_gh.py, as in test_tickets_sync.py and test_migrate_tickets.py."""
 import json
 import os
 import shutil
@@ -137,10 +139,30 @@ class InitIssuesTest(unittest.TestCase):
 
     def test_refuses_when_already_opted_in(self):
         (self.root / "kanban" / ".issues").write_text("ludvignion/gates\n", encoding="utf-8")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "opt in")
         proc = self._run()
         self.assertEqual(proc.returncode, 1)
         self.assertIn("already opted in", proc.stderr)
         self.assertFalse(self.gh_log.exists())
+
+    def test_resumes_after_a_gh_failure_mid_migrate_instead_of_refusing(self):
+        self.gh_data.write_text(json.dumps({"issues": [], "fail_create_after": 0}))
+        proc = self._run()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("gh issue create", proc.stderr)
+        self.assertEqual((self.root / "kanban" / ".issues").read_text().strip(), "ludvignion/gates")
+        self.assertIn("kanban/tickets/", (self.root / ".gitignore").read_text().splitlines())
+        self.assertNotEqual(git(self.root, "status", "--short"), "")  # nothing committed
+        self.assertTrue((self.root / "kanban" / "tickets" / "4.1.first-slice.md").exists())
+
+        data = json.loads(self.gh_data.read_text())
+        del data["fail_create_after"]
+        self.gh_data.write_text(json.dumps(data))
+        proc = self._run()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(git(self.root, "status", "--short"), "")
+        self.assertEqual(len(json.loads(self.gh_data.read_text())["issues"]), 1)
 
 
 if __name__ == "__main__":
