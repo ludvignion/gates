@@ -1,100 +1,74 @@
 {
  "ticket": "5.1",
- "decision": "reject",
+ "decision": "ship",
  "held": [
+  "AC-1",
   "AC-2",
-  "AC-3"
+  "AC-3",
+  "AC-4",
+  "AC-5",
+  "charter-1"
  ],
  "findings": [
   {
    "id": "C1",
    "severity": "block",
-   "status": "open",
-   "ac": "writes:",
+   "status": "resolved",
+   "ac": null,
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": "git diff --name-only main...HEAD",
    "waived_by": null,
-   "text": "Written outside writes: .claude/settings.json",
-   "impact": "medium",
-   "consequence": "A file nobody reviewed under this ticket changed the session's own permissions. Whoever merges cannot tell from the ticket what that file now allows."
+   "text": "Written outside writes: .claude/settings.json \u2014 no longer in the diff.",
+   "impact": "low",
+   "consequence": "Nobody is blocked: the branch now touches only declared paths, so a reviewer reading writes: sees the true scope."
   },
   {
    "id": "F1",
    "severity": "block",
-   "status": "open",
+   "status": "resolved",
    "ac": null,
    "charter": "charter-1",
    "home": null,
    "spawn_child": false,
-   "covered_by": null,
+   "covered_by": "tests/test_triage.py::CliTest::test_main_missing_domain_pack_routes_full_not_silently_light",
    "repro": "python3 -m unittest tests.test_triage.CliTest.test_main_missing_domain_pack_still_runs",
    "waived_by": null,
-   "text": "Missing charter.md silently becomes empty Charter; checks 1-2 never fire. scripts/triage.py:83",
+   "text": "Missing charter now routes full via Charter.missing(); checks 1-2 fire. scripts/triage.py:60",
    "impact": "high",
-   "consequence": "A project without a domain pack gets every brief routed light: no plan page, no Gate 1. The person running the grill sees an ordinary light route and is never told the charter file was absent."
+   "consequence": "A project without a domain pack no longer gets silently routed to the light lane. Work that should have been grilled in full is no longer waved through on absent evidence."
   },
   {
    "id": "F2",
    "severity": "warn",
    "status": "open",
-   "ac": "AC-4",
+   "ac": null,
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "Rule 9 issues-mode frontmatter list omits lane: full. skills/grill/SKILL.md:132",
+   "text": "File mode overwrites an existing ticket, no exists check. scripts/kanban_ops.py:183",
    "impact": "medium",
-   "consequence": "Teams opted into GitHub issues get full-lane tickets with no lane field. Anyone reporting on lanes later cannot tell those tickets from light ones."
+   "consequence": "Anyone re-running the grill on a brief that already has tickets loses that ticket's Log and Findings. Nothing tells them a file was replaced rather than created."
   },
   {
    "id": "F3",
    "severity": "warn",
    "status": "open",
-   "ac": "AC-5",
-   "charter": "charter-1",
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "File mode overwrites an existing ticket without refusing. scripts/kanban_ops.py:182",
-   "impact": "medium",
-   "consequence": "Re-running the grill on a plan silently replaces ticket files that already exist, losing their Findings and Log. The person re-running gets no warning that review history was discarded."
-  },
-  {
-   "id": "F4",
-   "severity": "warn",
-   "status": "open",
-   "ac": "AC-5",
+   "ac": null,
    "charter": null,
-   "home": null,
+   "home": "5.3",
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "File mode ignores <n>; body's id: alone picks the path, unchecked. scripts/kanban_ops.py:182",
+   "text": "partner_facing brief key undocumented; templates/brief.md unchanged. scripts/triage.py:57",
    "impact": "low",
-   "consequence": "A body whose id disagrees with the plan number on the command line files the ticket under the other plan. Whoever runs the grill sees success and has to notice the misfiled ticket themselves."
-  },
-  {
-   "id": "F5",
-   "severity": "warn",
-   "status": "open",
-   "ac": "AC-1",
-   "charter": null,
-   "home": null,
-   "spawn_child": false,
-   "covered_by": null,
-   "repro": null,
-   "waived_by": null,
-   "text": "Check 3 fires on any ALL_CAPS token or URL, including doc links. scripts/triage.py:25",
-   "impact": "low",
-   "consequence": "A brief that cites a documentation link or names a code constant routes full. The author pays for the whole grill on a change triage was supposed to narrow."
+   "consequence": "Someone writing a brief for partner-facing work has no way to learn the flag exists. Their brief routes light when it should route full, and no output mentions the flag."
   }
  ],
  "ci": {
@@ -106,15 +80,15 @@
   "vendor": "claude",
   "plugin_version": "0.11.8",
   "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
-  "packet_sha": "03c702c7e5eb459f0900ddca290dd8bbef06dc695e79d7cd4b3f4afcecb9b0d3",
-  "cost_usd": 0.5432049999999999,
+  "packet_sha": "f1f506ad08853a8d21e377fd526e5337060e4c3aa493872e675c47d56bdbe13d",
+  "cost_usd": 0.3632705,
   "tokens": {
    "input_tokens": 2,
-   "cache_creation_input_tokens": 22420,
-   "cache_read_input_tokens": 0,
-   "output_tokens": 12232,
+   "cache_creation_input_tokens": 20454,
+   "cache_read_input_tokens": 3051,
+   "output_tokens": 5729,
    "output_tokens_details": {
-    "thinking_tokens": 10963
+    "thinking_tokens": 4802
    },
    "server_tool_use": {
     "web_search_requests": 0,
@@ -122,26 +96,26 @@
    },
    "service_tier": "standard",
    "cache_creation": {
-    "ephemeral_1h_input_tokens": 22420,
+    "ephemeral_1h_input_tokens": 20454,
     "ephemeral_5m_input_tokens": 0
    },
    "inference_geo": "not_available",
    "iterations": [
     {
      "input_tokens": 2,
-     "output_tokens": 12232,
-     "cache_read_input_tokens": 0,
-     "cache_creation_input_tokens": 22420,
+     "output_tokens": 5729,
+     "cache_read_input_tokens": 3051,
+     "cache_creation_input_tokens": 20454,
      "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
-      "ephemeral_1h_input_tokens": 22420
+      "ephemeral_1h_input_tokens": 20454
      },
      "type": "message"
     }
    ],
    "speed": "standard"
   },
-  "seconds": 156.2897602699959,
+  "seconds": 74.49207916299929,
   "opik": "untraced (OPIK_URL_OVERRIDE unset)"
  }
 }
