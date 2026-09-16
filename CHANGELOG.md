@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.5 — 2026-09-16
 
 Tickets can live in GitHub Issues instead of files (plan 4). A project opts in with one command:
 `init --issues owner/repo` checks `gh auth status` and that the repo has Issues enabled, writes
