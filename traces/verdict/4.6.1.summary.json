@@ -1,0 +1,8 @@
+{
+ "built": "init_project.py catches gh failures mid-migrate and retries via try/except. Marker checks committed status (git status) not filesystem. Tests cover refusal and recovery; docs cover resume behavior.",
+ "review": "Ship. Held: AC-1, charter-1, attack-1 through 4. F1 warns: mid-migrate retry risks duplication if test fails before first create. F2 warns: committed-but-edited marker skips refusal, allows re-migration. CI green.",
+ "model": "haiku",
+ "inputs_sha": "e40279e133eb1cea622f12af6b60ac290f988d75fc1b285837a52653fd8cb0cd",
+ "cost_usd": 0.04941199999999999,
+ "error": null
+}
