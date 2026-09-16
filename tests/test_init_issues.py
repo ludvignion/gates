@@ -2,7 +2,11 @@
 AC-1, AC-2): preflight, marker, labels, git-ignore, migration, first sync, one commit. A `gh`
 failure partway through leaves the marker and `.gitignore` edit uncommitted, so a plain marker
 check would refuse every retry forever; the fix and its tests are ticket 4.6.1 AC-1. `gh` stubbed
-by tests/fixtures/fake_gh.py, as in test_tickets_sync.py and test_migrate_tickets.py."""
+by tests/fixtures/fake_gh.py, as in test_tickets_sync.py and test_migrate_tickets.py.
+
+The first sync runs as `make sync`, not `tickets.sync` in-process (ticket 4.6.2 AC-1, resolving
+4.6 F3): the fixture project's Makefile touches a sentinel so the tests can tell the real target
+ran, and a `gh` failure at that stage refuses the same way a failure during migrate does."""
 import json
 import os
 import shutil
@@ -71,7 +75,15 @@ class InitIssuesTest(unittest.TestCase):
         (self.root / "kanban" / "plans").mkdir(parents=True)
         (self.root / "kanban" / "tickets" / "4.1.first-slice.md").write_text(TICKET, encoding="utf-8")
         (self.root / "kanban" / "plans" / "4.plan.md").write_text(PLAN, encoding="utf-8")
-        (self.root / ".gitignore").write_text("kanban/.active\n", encoding="utf-8")
+        (self.root / ".gitignore").write_text("kanban/.active\nsync.marker\n", encoding="utf-8")
+        (self.root / "Makefile").write_text(
+            "PLUGIN ?= .\n"
+            "SCRIPTS := $(PLUGIN)/scripts\n"
+            "sync:\n"
+            "\t@touch sync.marker\n"
+            "\tpython3 $(SCRIPTS)/tickets.py sync\n",
+            encoding="utf-8",
+        )
         git(self.root, "add", "-A")
         git(self.root, "commit", "-q", "-m", "seed")
 
@@ -163,6 +175,29 @@ class InitIssuesTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(git(self.root, "status", "--short"), "")
         self.assertEqual(len(json.loads(self.gh_data.read_text())["issues"]), 1)
+
+    def test_first_sync_runs_make_sync_not_tickets_sync_in_process(self):
+        proc = self._run()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertTrue((self.root / "sync.marker").exists())  # only the Makefile's `sync` target writes this
+        self.assertIn("make sync: OK", proc.stdout)
+
+    def test_refuses_when_make_sync_fails(self):
+        # A `## Log` entry makes migrate replay it via `tickets.log`, which itself calls
+        # `gh issue view`; strip it so `fail_view` hits only sync's own call, after migrate
+        # (create, replay, unlink) has cleanly finished — proving the refusal comes from
+        # `make sync` itself, not from an earlier step.
+        no_log_ticket = TICKET.split("## Log (append-only)")[0] + "## Log (append-only)\n"
+        (self.root / "kanban" / "tickets" / "4.1.first-slice.md").write_text(no_log_ticket, encoding="utf-8")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "drop log entry for this test")
+
+        proc = self._run({"fail_view": [1]})  # migrate succeeds (issue #1 created); sync's own gh call fails
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("gh issue view 1", proc.stderr)
+        self.assertIn("re-run to retry", proc.stderr)
+        self.assertEqual((self.root / "kanban" / ".issues").read_text().strip(), "ludvignion/gates")
+        self.assertNotEqual(git(self.root, "status", "--short"), "")  # nothing committed
 
 
 if __name__ == "__main__":
