@@ -1,0 +1,132 @@
+{
+ "ticket": "5.3",
+ "decision": "ship",
+ "held": [
+  "AC-2",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "C1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": "5.3.1",
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "medium",
+   "consequence": "Whoever ships 5.2 carries an unanswered review finding into main. The next person reading 5.2's Log sees no record of it being judged or waived."
+  },
+  {
+   "id": "F1",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": "5.3.2",
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "brief_seconds returns 0.0 when brief missing or git fails, scripts/runner.py:655",
+   "impact": "medium",
+   "consequence": "Someone reading traces/lanes.jsonl to compare lane speed cannot tell a real fast ship from a failed measurement: both read 0.0 seconds. Nothing in the file or on stdout says the brief was never found."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-1",
+   "charter": null,
+   "home": "5.3.3",
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "human_touches is Log.waivers() count; one-waive fixture cannot show non-waive human entries counted, scripts/runner.py:674",
+   "impact": "medium",
+   "consequence": "Anyone judging whether the light lane cut human involvement may read a touch count that omits human Log entries other than waives. The packet does not show Log.waivers(), so the number's meaning is unverified."
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-3",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "Docs tests assert bare lowercase substrings over the whole file; charter/package match text elsewhere, tests/test_runner.py LightLaneDocsTest",
+   "impact": "low",
+   "consequence": "The docs guard can stay green after someone deletes the light-lane section from README.md, because the words it looks for occur elsewhere in the file. A newcomer would then find no description of the lane."
+  },
+  {
+   "id": "F4",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-2",
+   "charter": null,
+   "home": "5.3.4",
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "Only the write is guarded; find_ticket, Log.parse, light_diff_lines run outside the try, scripts/runner.py:670",
+   "impact": "medium",
+   "consequence": "A run that reached ship can still end in a crash if the ticket's Log does not parse, since measurement now happens on the ship path. The packet shows no test for that case."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.10",
+  "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
+  "packet_sha": "05cb988d5a10a80c98f2eacf1eeadaaf1523ffca246331f672ba5754da775b19",
+  "cost_usd": 0.33503,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 16416,
+   "cache_read_input_tokens": 5672,
+   "output_tokens": 6325,
+   "output_tokens_details": {
+    "thinking_tokens": 5158
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 16416,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 6325,
+     "cache_read_input_tokens": 5672,
+     "cache_creation_input_tokens": 16416,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 16416
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 85.01576505199773,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
