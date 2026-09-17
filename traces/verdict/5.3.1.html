@@ -1,0 +1,20 @@
+<!doctype html><meta charset=utf-8><title>Verdict 5.3.1</title>
+<style>body{font-family:system-ui;max-width:1000px;margin:2rem auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.3rem .6rem;text-align:left}
+.hero{font-size:2rem;padding:1rem;color:#fff;background:#3cb371}
+li.block{background:#fdd}li.warn{background:#ffe9c7}
+li{margin:.3rem 0;padding:.2rem .4rem;list-style:none}ul{padding-left:0}
+.meta{color:#666;font-size:.85rem}.invalid{color:#c0392b;font-weight:bold}td.no{background:#fdd}details{margin:.4rem 0}
+section.top{background:#f6f6f6;padding:.6rem 1rem;border-radius:8px;margin:.6rem 0}pre{white-space:pre-wrap;font-size:.85rem}</style>
+<div class=hero>SHIP — 5.3.1</div>
+<p class=meta>Seat: claude · packet seat · cost $0.1455 · tokens in/out 2/2228 · 33 s · untraced (OPIK_URL_OVERRIDE unset)</p>
+<p>CI: green · mutation: None</p>
+
+<section class=top><h2>What was built</h2><p>Test coverage added for AC-1 in grill skill to verify all four required stages are present: pinned tree, questions, plan page, Gate 1. Test confirms that dropping any stage causes failure. No implementation changes needed; all four stages were already specified in skills/grill/SKILL.md.</p></section>
+<section class=top><h2>What the reviewer said</h2><p>Ship. AC-1 and writes-scope held. Test coverage validates the four-stage route requirement; implementation was already correct. One warning (C1): finding from ticket 5.2 homed here but unaddressed in 5.2&#x27;s log—audit trail in 5.2 needs a resolution note, though the test weakness closes with this branch. CI green.</p><p><b>Ship.</b> Held: AC-1, writes-scope. No open block. 1 warn: C1 kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126.</p></section>
+<section class=top><h2>Recommended action</h2><ul><li><b>C1</b> home to 5.3.2</li></ul></section>
+<section class=top><h2>Human checks</h2><ul><li>☐ AC-3: Given &lt;state&gt;, a person confirms &lt;outcome&gt;  # confirmed at Gate 2, no test names it</li></ul></section>
+<p class=meta>Held: AC-1, writes-scope</p>
+<h2>Blocks (0)</h2><ul><li>none</li></ul>
+<h2>Warnings (1)</h2><ul><li class=warn><b>C1</b> <code>—</code> <code>low impact</code> kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126<p>Anyone auditing ticket 5.2 from the board sees a finding with no resolution recorded against it, and cannot tell from 5.2 alone that the work moved here. The test weakness itself is closed by this branch.</p><div class=meta>waived 2026-09-17 16:51</div></li></ul>
+
+<h2>Quality</h2><table><tr><th>File</th><th>1 SRP</th><th>2 AC-trace</th><th>3 YAGNI</th><th>4 rule-of-3</th><th>5 ISP</th><th>6 DIP</th></tr></table>
