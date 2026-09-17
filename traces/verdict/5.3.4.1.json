@@ -1,0 +1,222 @@
+{
+ "ticket": "5.3.4.1",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "git failure raises CalledProcessError, not OSError/ValueError; now escapes, scripts/runner.py:691",
+   "impact": "medium",
+   "consequence": "If a git call inside the lane record fails on a real machine, the person shipping a light ticket may see the run die at the end instead of a one-line note. The work is already merged at that point, so they must re-run or clean up by hand. The new test only exercises OSError, so this path is untested."
+  },
+  {
+   "id": "C1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Anyone auditing the board sees a closed ticket carrying an open finding. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C2",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, re-reported against an earlier ticket. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C3",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, re-reported against an earlier ticket. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C4",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, nested one level deeper. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C5",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, re-reported against an earlier ticket. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C6",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, nested one level deeper. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C7",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, nested one level deeper. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C8",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, nested three levels deep. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C9",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.3.1.kanban-tickets-5-2.md: ticket 5.3.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, re-reported against 5.3.1. Nobody is blocked on this branch."
+  },
+  {
+   "id": "C10",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.3.1.kanban-tickets-5-2.md: ticket 5.3.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Same stale board finding, nested three levels deep. Nobody is blocked on this branch."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.10",
+  "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
+  "packet_sha": "1d337310f601faca9d35ca662d860dc694bf2fe6ea3e3091f91b516d3e672a2f",
+  "cost_usd": 0.257013,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 12777,
+   "cache_read_input_tokens": 5672,
+   "output_tokens": 4766,
+   "output_tokens_details": {
+    "thinking_tokens": 1086
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 12777,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 4766,
+     "cache_read_input_tokens": 5672,
+     "cache_creation_input_tokens": 12777,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 12777
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 47.89325008499145,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
