@@ -673,19 +673,20 @@ def brief_seconds(repo: Path, n: str, now: float | None = None) -> float:
 def record_lane_end(repo: Path, tree: Path, tid: str, base: str, budget_fired: bool, count: int | None = None) -> None:
     """AC-1: one `traces/lanes.jsonl` line for a `lane: light` ticket's end, by ship or over
     budget. `tree` still holds the ticket's Log at this point (read before a worktree removal or
-    a merge). AC-2: a write failure is printed, never raised — this is measurement, not a gate.
+    a merge). AC-2: nothing here — reading the ticket, computing the diff, or the write itself —
+    is ever raised into the caller; each is printed instead. This is measurement, not a gate.
     `touches` is every `[human]` Log entry, not only waivers (5.3.3): the brief's "one touch"
     counts any board action a human took on the ticket."""
-    path = kanban_ops.find_ticket(tree, tid)
-    touches = len(schemas.Log.parse(_fm.read(path)[1]).human_entries()) if path else 0
-    changed = count if count is not None else light_diff_lines(tree, tid, base)
-    record = schemas.LaneRecord(tid, "light", brief_seconds(repo, tid.split(".")[0]), touches, changed, budget_fired)
-    out = repo / "traces" / "lanes.jsonl"
     try:
+        path = kanban_ops.find_ticket(tree, tid)
+        touches = len(schemas.Log.parse(_fm.read(path)[1]).human_entries()) if path else 0
+        changed = count if count is not None else light_diff_lines(tree, tid, base)
+        record = schemas.LaneRecord(tid, "light", brief_seconds(repo, tid.split(".")[0]), touches, changed, budget_fired)
+        out = repo / "traces" / "lanes.jsonl"
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("a", encoding="utf-8") as f:
             f.write(record.line() + "\n")
-    except OSError as e:  # measurement, not a gate: never blocks a ship or a budget stop
+    except Exception as e:  # measurement, not a gate: never blocks a ship or a budget stop
         print(f"[runner] lane record not written: {e}")
 
 
