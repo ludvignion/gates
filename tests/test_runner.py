@@ -942,6 +942,12 @@ class BriefSecondsTest(unittest.TestCase):
     def test_no_brief_on_disk_gives_zero(self):
         self.assertEqual(runner.brief_seconds(self.tmp, "9", now=time.time()), 0.0)
 
+    def test_git_failure_gives_zero(self):
+        """ticket 5.3.2 F1 AC-1: a brief on disk but `git log` itself erroring (missing binary,
+        broken repo) — not just a clean nonzero exit — still returns 0.0."""
+        with mock.patch("runner.subprocess.run", side_effect=OSError("git not found")):
+            self.assertEqual(runner.brief_seconds(self.tmp, "5", now=time.time()), 0.0)
+
 
 class LaneRecordTest(unittest.TestCase):
     """ticket 5.3 AC-1, AC-2: schemas.LaneRecord and runner.record_lane_end — append-only, and a
