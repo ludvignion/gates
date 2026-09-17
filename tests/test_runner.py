@@ -390,8 +390,10 @@ def state_phases(path: Path) -> list[str]:
     return out
 
 
-class RunnerBuildSeatTest(unittest.TestCase):
-    """The build seat: streamed session, close-out enforcement, in-place branch, phases, override."""
+class BuildSeatFixture:
+    """setUp/tearDown and the small helpers a headless /build run needs; no test methods of its
+    own, so a subclass that changes the fixture (RunnerLightLaneTest) never inherits a test
+    written against the plain one."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -435,6 +437,10 @@ class RunnerBuildSeatTest(unittest.TestCase):
 
     def _subjects(self, ref: str = "ticket/1.1") -> list[str]:
         return subprocess.run(["git", "log", f"main..{ref}", "--format=%s"], cwd=self.repo, capture_output=True, text=True).stdout.split("\n")
+
+
+class RunnerBuildSeatTest(BuildSeatFixture, unittest.TestCase):
+    """The build seat: streamed session, close-out enforcement, in-place branch, phases, override."""
 
     def test_build_cmd_is_headless_streamed_and_unrestricted(self):
         """The seat runs unrestricted in the worktree it was given (E34): no allowlist to
@@ -844,7 +850,7 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertIn("! orbit after close-out:", out.getvalue())
 
 
-class RunnerLightLaneTest(RunnerBuildSeatTest):
+class RunnerLightLaneTest(BuildSeatFixture, unittest.TestCase):
     """plan 5 AC-6, AC-7, AC-8 (ticket 5.2): the lane: light diff budget after feat-commit."""
 
     def setUp(self):
@@ -869,11 +875,9 @@ class RunnerLightLaneTest(RunnerBuildSeatTest):
         self.scenario.write_text(json.dumps(closeout_steps(feat_body=OVER_BUDGET_FEAT_BODY)))
         rc, out = self._main()
         self.assertEqual(rc, 2, out)
-        self.assertNotIn("] ci", out)  # stopped before ci: no verdict seat either
-        self.assertNotIn("] verdict", out)
         self.assertIn("[runner] light over budget:", out); self.assertIn("/gates:grill 1", out)
         state = state_phases(self.repo / "traces/runs/1.1.state")
-        self.assertEqual(state[:-1], ["worktree", "ci-pre", "build 1", "tests-commit", "feat-commit", "build 1 close-out"])
+        self.assertEqual(state[:-1], ["worktree", "ci-pre", "build 1", "tests-commit", "feat-commit", "build 1 close-out"])  # stopped before ci: no verdict seat either
         m = re.match(r"^done error light over budget (\d+)/150$", state[-1])
         self.assertIsNotNone(m, state[-1])
         self.assertGreater(int(m.group(1)), 150)
