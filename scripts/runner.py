@@ -655,12 +655,15 @@ def light_diff_lines(cwd: Path, tid: str, base: str) -> int:
 def brief_seconds(repo: Path, n: str, now: float | None = None) -> float:
     """Seconds from the brief's first commit to `now` (default: this instant) — plan 5 AC-9's
     "wall clock from brief to ship". 0.0 without a committed `kanban/briefs/<n>-*.md` (a fixture
-    or test repo with no brief on disk)."""
+    or test repo with no brief on disk), and 0.0 if the `git log` call itself errors (5.3 F1)."""
     briefs = sorted((repo / "kanban" / "briefs").glob(f"{n}-*.md"))
     if not briefs:
         return 0.0
-    out = subprocess.run(["git", "log", "--follow", "--diff-filter=A", "--format=%at", "--",
-                         str(briefs[0].relative_to(repo))], cwd=repo, capture_output=True, text=True).stdout
+    try:
+        out = subprocess.run(["git", "log", "--follow", "--diff-filter=A", "--format=%at", "--",
+                             str(briefs[0].relative_to(repo))], cwd=repo, capture_output=True, text=True).stdout
+    except OSError:
+        return 0.0
     lines = [l for l in out.splitlines() if l.strip()]
     if not lines:
         return 0.0
