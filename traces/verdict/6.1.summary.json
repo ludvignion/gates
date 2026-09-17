@@ -1,0 +1,8 @@
+{
+ "built": "Adds typed action/why fields to verdict rendering and validation logic, with tests covering the new scripts. Updates prompt shape and fixture data to match. Refines how the verdict rail processes and reports overridden findings.",
+ "review": "REJECT. Blocking flaw (F1): `action: ship` on a block-level finding passes the verb check, allowing a seat to clear its own block\u2014the rail's core guarantee fails. F2-F4 warn: legacy waiver reasons run 60+ words per finding, null reasons leave no audit trail, and test assertions are loose on count and page link. Charter findings C1-C10 unaddressed; AC-1, AC-3, AC-4, AC-5, AC-6, AC-7, charter-1 held.",
+ "model": "haiku",
+ "inputs_sha": "34a2320dce07db395cd49b469ebed18db517ba69fd9e5aadf223ae77ae24260b",
+ "cost_usd": 0.033620300000000006,
+ "error": null
+}
