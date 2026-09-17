@@ -851,7 +851,8 @@ class RunnerBuildSeatTest(BuildSeatFixture, unittest.TestCase):
 
 
 class RunnerLightLaneTest(BuildSeatFixture, unittest.TestCase):
-    """plan 5 AC-6, AC-7, AC-8 (ticket 5.2): the lane: light diff budget after feat-commit."""
+    """plan 5 AC-6, AC-7, AC-8 (ticket 5.2): the lane: light diff budget after feat-commit.
+    Also ticket 5.3 AC-1: the traces/lanes.jsonl line each ending writes."""
 
     def setUp(self):
         super().setUp()
@@ -868,6 +869,23 @@ class RunnerLightLaneTest(BuildSeatFixture, unittest.TestCase):
         self.assertTrue((self.repo / "traces/verdict/1.1.json").exists())
         self.assertTrue((self.repo / "traces/runs/1.1.result").exists())
 
+    def test_ship_appends_one_lane_record(self):
+        """ticket 5.3 AC-1: reaching ship for a `lane: light` ticket appends one
+        `traces/lanes.jsonl` line — ticket, lane, seconds, human touches, changed lines, and
+        `budget_fired: false`. The fixture ticket carries one `[human]` waive entry already, so
+        that is the human-touch count; no brief file on disk, so seconds is 0.0 (plan 5 AC-9)."""
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        lines = (self.repo / "traces/lanes.jsonl").read_text().splitlines()
+        self.assertEqual(len(lines), 1)
+        record = schemas.LaneRecord.load(lines[0])
+        self.assertEqual(record.ticket, "1.1")
+        self.assertEqual(record.lane, "light")
+        self.assertEqual(record.seconds, 0.0)
+        self.assertEqual(record.human_touches, 1)
+        self.assertEqual(record.changed_lines, runner.light_diff_lines(self.repo, "1.1", "main"))
+        self.assertFalse(record.budget_fired)
+
     def test_over_budget_stops_deletes_branch_and_supersedes(self):
         """AC-2: over LIGHT_BUDGET_LINES right after feat-commit, the runner stops before ci —
         no verdict seat — deletes ticket/1.1, and supersedes the ticket on main with a Log entry
@@ -881,6 +899,8 @@ class RunnerLightLaneTest(BuildSeatFixture, unittest.TestCase):
         m = re.match(r"^done error light over budget (\d+)/150$", state[-1])
         self.assertIsNotNone(m, state[-1])
         self.assertGreater(int(m.group(1)), 150)
+        record = schemas.LaneRecord.load((self.repo / "traces/lanes.jsonl").read_text().splitlines()[-1])
+        self.assertEqual((record.ticket, record.lane, record.changed_lines, record.budget_fired), ("1.1", "light", int(m.group(1)), True))
         self.assertEqual(subprocess.run(["git", "branch", "--list", "ticket/1.1"], cwd=self.repo, capture_output=True, text=True).stdout.strip(), "")
         self.assertFalse((self.repo / ".worktrees" / "1.1").exists())
         self.assertEqual(self._branch(), "main")
@@ -891,6 +911,121 @@ class RunnerLightLaneTest(BuildSeatFixture, unittest.TestCase):
                          "docs(1.1): superseded — light over budget")
         self.assertFalse((self.repo / "traces/verdict/1.1.json").exists())
         self.assertFalse((self.repo / "traces/runs/1.1.result").exists())
+
+
+class BriefSecondsTest(unittest.TestCase):
+    """ticket 5.3 AC-1: runner.brief_seconds — the wall clock from a brief's first commit."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        git(self.tmp, "init", "-q", "-b", "main")
+        (self.tmp / "kanban/briefs").mkdir(parents=True)
+        (self.tmp / "kanban/briefs/5-light-lane.md").write_text("# 5 A small brief\n")
+        env = dict(os.environ, GIT_AUTHOR_DATE="@1577836800 +0000", GIT_COMMITTER_DATE="@1577836800 +0000")
+        subprocess.run(["git", *GIT_ID, "add", "-A"], cwd=self.tmp, check=True)
+        subprocess.run(["git", *GIT_ID, "commit", "-q", "-m", "brief 5"], cwd=self.tmp, env=env, check=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_seconds_since_the_briefs_first_commit(self):
+        self.assertAlmostEqual(runner.brief_seconds(self.tmp, "5", now=1577836800.0 + 3600), 3600.0, delta=1)
+
+    def test_a_later_edit_to_the_brief_does_not_move_the_start(self):
+        """AC-1 counts from the brief's first commit, not its last: `--diff-filter=A` only."""
+        (self.tmp / "kanban/briefs/5-light-lane.md").write_text("# 5 A small brief, edited\n")
+        subprocess.run(["git", *GIT_ID, "add", "-A"], cwd=self.tmp, check=True)
+        env = dict(os.environ, GIT_AUTHOR_DATE="@1577840400 +0000", GIT_COMMITTER_DATE="@1577840400 +0000")
+        subprocess.run(["git", *GIT_ID, "commit", "-q", "-m", "brief 5 edit"], cwd=self.tmp, env=env, check=True)
+        self.assertAlmostEqual(runner.brief_seconds(self.tmp, "5", now=1577836800.0 + 3600), 3600.0, delta=1)
+
+    def test_no_brief_on_disk_gives_zero(self):
+        self.assertEqual(runner.brief_seconds(self.tmp, "9", now=time.time()), 0.0)
+
+
+class LaneRecordTest(unittest.TestCase):
+    """ticket 5.3 AC-1, AC-2: schemas.LaneRecord and runner.record_lane_end — append-only, and a
+    write failure never stops a run."""
+
+    LINES = [
+        ("1.1", "light", 0.0, 0, 4, False), ("2.7", "light", 12.5, 3, 400, True),
+        ("10.2", "light", 9999.9, 1, 1, False),
+    ]
+
+    def test_line_and_load_round_trip(self):
+        """AC-1: the record loads through the schema, for every combination the field written."""
+        for ticket, lane, seconds, touches, changed, fired in self.LINES:
+            with self.subTest(ticket=ticket):
+                record = schemas.LaneRecord(ticket, lane, seconds, touches, changed, fired)
+                loaded = schemas.LaneRecord.load(record.line())
+                self.assertEqual(loaded, record)
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.repo = self.tmp / "proj"
+        for rel, text in {"kanban/tickets/1.1.tracer-bullet.md": TICKET}.items():
+            (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / rel).write_text(text)
+        git(self.repo, "init", "-q", "-b", "main"); git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "base")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_record_lane_end_is_append_only(self):
+        """AC-2: two ends each add one line; neither is rewritten."""
+        runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=False, count=4)
+        runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=True, count=200)
+        lines = (self.repo / "traces/lanes.jsonl").read_text().splitlines()
+        self.assertEqual(len(lines), 2)
+        first, second = (schemas.LaneRecord.load(l) for l in lines)
+        self.assertEqual((first.changed_lines, first.budget_fired), (4, False))
+        self.assertEqual((second.changed_lines, second.budget_fired), (200, True))
+
+    def test_human_touches_counts_human_log_entries(self):
+        """AC-1: TICKET's fixture Log carries one `[human]` entry (a waive) — the touch count."""
+        runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=False, count=1)
+        record = schemas.LaneRecord.load((self.repo / "traces/lanes.jsonl").read_text().splitlines()[0])
+        self.assertEqual(record.human_touches, 1)
+
+    def test_malformed_existing_file_does_not_block_a_new_record(self):
+        """AC-2: a line already there that is not JSON is left alone; the write still appends."""
+        lanes = self.repo / "traces" / "lanes.jsonl"
+        lanes.parent.mkdir(parents=True, exist_ok=True)
+        lanes.write_text("not json at all\n")
+        runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=False, count=1)
+        lines = lanes.read_text().splitlines()
+        self.assertEqual(lines[0], "not json at all")
+        self.assertEqual(schemas.LaneRecord.load(lines[1]).ticket, "1.1")
+
+    def test_write_failure_is_printed_not_raised(self):
+        """AC-2: traces/lanes.jsonl unwritable (a directory sits where the file should be) prints
+        a message and returns — never raises into the caller (a build or a budget stop)."""
+        (self.repo / "traces").mkdir(parents=True)
+        (self.repo / "traces" / "lanes.jsonl").mkdir()
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=False, count=1)
+        self.assertIn("[runner] lane record not written:", out.getvalue())
+
+
+class LightLaneDocsTest(unittest.TestCase):
+    """ticket 5.3 AC-3 (plan 5 AC-10): README.md and docs/architecture.md name the light lane,
+    its four triage checks, and the 150-line budget."""
+
+    def test_readme_names_the_light_lane_checks_and_budget(self):
+        text = (REPO / "README.md").read_text(encoding="utf-8")
+        self.assertIn("light", text.lower())
+        self.assertIn("150", text)
+        for check in ("charter", "interface", "package", "partner"):
+            self.assertIn(check, text.lower())
+
+    def test_architecture_doc_names_the_light_lane_checks_and_budget(self):
+        path = REPO / "docs" / "architecture.md"
+        self.assertTrue(path.exists(), "docs/architecture.md must exist and name the light lane")
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("light", text.lower())
+        self.assertIn("150", text)
+        for check in ("charter", "interface", "package", "partner"):
+            self.assertIn(check, text.lower())
 
 
 class ResultLinesTest(unittest.TestCase):
