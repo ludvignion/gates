@@ -1,0 +1,8 @@
+{
+ "built": "Fix wraps git log subprocess in try/except for OSError, returning 0.0 on failure instead of crash. Brief seconds survives broken git environments. Two files changed, 12 insertions, 3 deletions with test added.",
+ "review": "Ship. Holds AC-1, charter-1. C1 (test incomplete, medium impact) in tests/test_grill_skill.py:126. C2 (duplication, low) spans closed tickets, F1 (unlogged error, low) at scripts/runner.py:663. CI green.",
+ "model": "haiku",
+ "inputs_sha": "0fee0096cb6fbf3973b3dc1a085c3a229e64a79ab53a920091af7cfee0d409af",
+ "cost_usd": 0.035113000000000005,
+ "error": null
+}

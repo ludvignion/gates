@@ -1,0 +1,102 @@
+{
+ "ticket": "5.3.2",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "C1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "medium",
+   "consequence": "Anyone trusting the board to close out findings gets a done ticket carrying an unanswered one. The grill skill's prompt shape stays half-pinned, so a later edit can drop the tree, questions or plan page without a test noticing."
+  },
+  {
+   "id": "C2",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "The same open finding is now homed twice across closed tickets, so whoever reads the board cannot tell where it is owed. Closing one leaves the other looking live."
+  },
+  {
+   "id": "F1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "0.0 on git error is indistinguishable from no brief; nothing logged. scripts/runner.py:663",
+   "impact": "low",
+   "consequence": "Someone reading plan 5's wall-clock number cannot tell a real zero from a broken git in the build environment. A run on a box without git reports clean timings instead of flagging its own setup."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.10",
+  "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
+  "packet_sha": "f80b4dc9bc25e024a12d3203b579f09551890d43127bbbe95a044bd4cb5d4938",
+  "cost_usd": 0.17495300000000003,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 9190,
+   "cache_read_input_tokens": 5672,
+   "output_tokens": 3035,
+   "output_tokens_details": {
+    "thinking_tokens": 2162
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 9190,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 3035,
+     "cache_read_input_tokens": 5672,
+     "cache_creation_input_tokens": 9190,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 9190
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 44.651764996000566,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
