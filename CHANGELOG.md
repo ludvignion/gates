@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.11.9 — 2026-09-17
+
+A light lane for small briefs. Every brief used to pay for the full grill — a design tree, a
+round of questions, a plan page and Gate 1 — even when it named two files and changed nothing a
+partner or another system could see. `scripts/triage.py` now decides, before the grill spends a
+token, whether a brief needs that treatment.
+
+- `scripts/triage.py` (new) — `triage.py <brief>` prints the route (`light` or `full`), the
+  paths the brief names, and, for a `full` route, the check that fired. Four checks: does a
+  named path reach a `docs/domain-pack/charter.md` glob; does one reach a
+  `docs/domain-pack/interfaces.md` glob; does the brief name a package manifest, an install
+  command, a URL or an env var; is its frontmatter `partner_facing: true`. Any one true routes
+  `full`, as does a brief naming no path at all — a light ticket still needs a `writes:` scope
+  for `hooks/guard_writes.py`. A pure function of the brief and the two domain-pack docs: no
+  model call, no network call.
+- `scripts/schemas.py` — `Triage` and `TriageCheck` carry the route and its reason, and
+  `Charter.missing()` distinguishes a domain-pack doc that does not exist from a real, empty
+  one. A missing doc can no longer confirm that a path misses every glob, so it fires its check
+  whenever a path is named, and the brief routes `full`.
+- `skills/grill/SKILL.md` — a `## Triage` section ahead of the rules. On `light` the grill
+  writes one ticket in a single tool-less turn, with the ACs taken from the brief's own words,
+  and hands off to `/gates:runner <n>.1`; no plan page, no Gate 1. On `full` it continues at
+  rule 1 as before. Rule 9 now routes both lanes through `kanban_ops.py new`.
+- `scripts/kanban_ops.py` — `new` is the one door for creating a ticket in either lane. Without
+  `kanban/.issues` it writes `kanban/tickets/<id>.<slug>.md` from the body file, which must
+  carry `id:` in its frontmatter, and returns the id; with the marker it creates the issue as
+  before.
+- `templates/ticket.md` — new `lane:` field (`light | full`), recording how far triage narrowed
+  the brief.
+- `docs/domain-pack/interfaces.md` (new) — the glob list check 2 reads, in the charter's own
+  shape. No items yet in this repository.
+
+Known, logged, not fixed in this release: the grill skill's full lane has no test pinning its
+plan page and Gate 1 step (ticket 5.2), and `scripts/triage.py` raises a traceback rather than
+one line when the brief file does not exist (ticket 5.1.1).
+
+Consuming projects (project-template): no action. Pin `v0.11.9`.
+
 ## 0.11.8 — 2026-09-16
 
 `init --issues` printed `make sync: OK` but never ran make: `run_issues` called
