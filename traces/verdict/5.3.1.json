@@ -1,0 +1,72 @@
+{
+ "ticket": "5.3.1",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "writes-scope"
+ ],
+ "findings": [
+  {
+   "id": "C1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": "5.3.2",
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": "2026-09-17 16:51",
+   "text": "kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Anyone auditing ticket 5.2 from the board sees a finding with no resolution recorded against it, and cannot tell from 5.2 alone that the work moved here. The test weakness itself is closed by this branch."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.10",
+  "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
+  "packet_sha": "87fdb4d14aaaf7ec0347c8caa0670131d6642a3d4e6effd5f03f205cbc89d042",
+  "cost_usd": 0.14550999999999997,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 8331,
+   "cache_read_input_tokens": 5672,
+   "output_tokens": 2228,
+   "output_tokens_details": {
+    "thinking_tokens": 1862
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 8331,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 2228,
+     "cache_read_input_tokens": 5672,
+     "cache_creation_input_tokens": 8331,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 8331
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 32.79952967299323,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}

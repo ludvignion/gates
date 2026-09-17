@@ -126,10 +126,15 @@ class GrillSkillTextTest(unittest.TestCase):
 
     def test_full_route_continues_as_today_and_stamps_lane_full(self):
         """plan 5 AC-4: a full-routed brief runs the tree, questions, plan page, Gate 1 as
-        before; every ticket it writes carries lane: full."""
+        before; every ticket it writes carries lane: full. (5.3.1: pin the four stages by
+        name, not just the word "full", so a route that drops one of them still fails.)"""
         triage = schemas.section(SKILL.read_text(encoding="utf-8"), "Triage")
         self.assertIn("full", triage)
         self.assertIn("lane: full", triage)
+        self.assertIn("tree", triage)
+        self.assertIn("questions", triage)
+        self.assertIn("plan page", triage)
+        self.assertIn("Gate 1", triage)
 
     def test_rule_9_is_the_one_door_for_both_lanes(self):
         """plan 5 AC-5: file mode writes the ticket through kanban_ops.py new too, never
