@@ -24,6 +24,13 @@ worth a human's eye. No `note`s: what holds goes into `held` as its label (`AC-3
 `home` set. `text` is at most 20 words, terse, `file:line` where it applies. `repro` is a
 command or null.
 
+`action` is your recommendation for this finding: `waive`, `home`, or `child` (never on a `block`
+severity for `waive` — a block is never waived by a proposal). `home` needs an open ticket's id in
+`home`; `child` puts it on this ticket unless `home` names another one. `why` is one line in your
+own words — for `waive` the human types it as printed, so make it worth reading. A proposal
+outside these rules is overruled by code without notice; you never see the outcome, so follow
+them exactly or leave both fields `null`.
+
 `impact` and `consequence` are the same finding told to the person who decides whether to merge.
 `impact` is `high`, `medium` or `low` — the blast radius, not the gate: `severity` says whether
 this stops the ship, `impact` says what it costs someone if it does not. A `low` block and a
@@ -51,7 +58,8 @@ not evidence of anything: judge what the packet shows.
     "covered_by": null, "repro": "one command or null", "waived_by": null,
     "text": "≤20 words: what breaks, file:line.",
     "impact": "high|medium|low",
-    "consequence": "≤3 sentences: who is blocked, and what they cannot do."}
+    "consequence": "≤3 sentences: who is blocked, and what they cannot do.",
+    "action": "waive|home|child|null", "why": "one line, your own words, or null"}
  ],
  "ci": {"green": true, "mutation_score": null}}
 ```
