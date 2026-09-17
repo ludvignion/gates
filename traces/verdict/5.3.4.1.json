@@ -16,7 +16,7 @@
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
-   "waived_by": null,
+   "waived_by": "ludvignion 2026-09-17 19:46",
    "text": "git failure raises CalledProcessError, not OSError/ValueError; now escapes, scripts/runner.py:691",
    "impact": "medium",
    "consequence": "If a git call inside the lane record fails on a real machine, the person shipping a light ticket may see the run die at the end instead of a one-line note. The work is already merged at that point, so they must re-run or clean up by hand. The new test only exercises OSError, so this path is untested."
