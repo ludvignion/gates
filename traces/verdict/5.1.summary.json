@@ -1,0 +1,8 @@
+{
+ "built": "Missing charter or interfaces files now detected and route projects to full lane, firing checks 1\u20132 instead of silently passing light checks. Charter.present() vs Charter.missing() in schemas.py distinguish real empty files from missing ones. Tests verify missing-domain-pack routing and grill skill full-lane flow.",
+ "review": "Ship\u2014held AC-1, AC-2, AC-3, AC-5, charter-1. C1 resolved (settings.json removed). F1 resolved (missing charter routes full via triage.py, checks 1\u20132 fire). Open: F2 test_grill_skill missing plan page and Gate 1, F3 triage.py traceback on missing brief file. CI green.",
+ "model": "haiku",
+ "inputs_sha": "4674be8f1e1b658985a77b2a3169c09ec94577bf4d3b2055d2d1340003f65a6f",
+ "cost_usd": 0.0603613,
+ "error": null
+}

@@ -202,10 +202,23 @@ class KanbanOpsNewTest(unittest.TestCase):
 
         self.assertEqual(kanban_ops.plan_order(self.root, "9"), ["1", "2"])
 
-    def test_new_refuses_without_the_marker(self):
+    def test_new_writes_the_ticket_file_without_the_marker(self):
+        """plan 5 AC-5: no kanban/.issues → `new` is the one door that writes the ticket file,
+        at the id the body's own frontmatter carries."""
         plain = self.tmp / "plain"
         (plain / "kanban" / "tickets").mkdir(parents=True)
         body = self.tmp / "slice.md"
+        body.write_text("---\nid: 3.1\nparent: 3\nlane: light\ndepends_on: []\nwrites: []\n---\n\n## Outcome\nx\n")
+        out = kanban_ops.new(plain, "3", "a-slug", str(body))
+        self.assertEqual(out, "3.1")
+        written = plain / "kanban" / "tickets" / "3.1.a-slug.md"
+        self.assertTrue(written.exists())
+        self.assertIn("lane: light", written.read_text())
+
+    def test_new_without_the_marker_refuses_with_no_id_in_the_body(self):
+        plain = self.tmp / "plain-no-id"
+        (plain / "kanban" / "tickets").mkdir(parents=True)
+        body = self.tmp / "slice-no-id.md"
         body.write_text("---\nparent: 3\ndepends_on: []\nwrites: []\n---\n\n## Outcome\nx\n")
         with self.assertRaises(ValueError):
             kanban_ops.new(plain, "3", "slug", str(body))

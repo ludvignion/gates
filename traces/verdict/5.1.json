@@ -1,0 +1,120 @@
+{
+ "ticket": "5.1",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "AC-2",
+  "AC-3",
+  "AC-5",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "C1",
+   "severity": "block",
+   "status": "resolved",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "git diff --name-only main...HEAD",
+   "waived_by": null,
+   "text": "Written outside writes: .claude/settings.json \u2014 no longer in the diff.",
+   "impact": "low",
+   "consequence": "Nobody is blocked: the out-of-scope file is gone from the branch."
+  },
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "resolved",
+   "ac": null,
+   "charter": "charter-1",
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "python3 -m unittest tests.test_triage.CliTest.test_main_missing_domain_pack_still_runs",
+   "waived_by": null,
+   "text": "Missing charter now routes full via Charter.missing(); checks 1-2 fire. scripts/triage.py:60",
+   "impact": "low",
+   "consequence": "Nobody is blocked: a project without a domain pack now gets the full lane instead of a silent light route."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-4",
+   "charter": null,
+   "home": "5.2",
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": "python3 -m unittest tests.test_grill_skill.GrillSkillTextTest.test_full_route_continues_as_today_and_stamps_lane_full",
+   "waived_by": null,
+   "text": "AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "medium",
+   "consequence": "Whoever later edits the grill skill gets no warning if the full lane quietly loses its plan page or Gate 1 step. The suite stays green while the review gate for big briefs disappears."
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": "charter-1",
+   "home": "5.1.1",
+   "spawn_child": true,
+   "covered_by": null,
+   "repro": "python3 scripts/triage.py kanban/briefs/does-not-exist.md",
+   "waived_by": null,
+   "text": "Missing brief file raises a traceback, not a one-line refusal. scripts/triage.py:92",
+   "impact": "low",
+   "consequence": "Someone who mistypes a brief number gets a Python stack trace instead of one line naming the file. They cannot tell whether their argument was wrong or triage itself is broken."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.8",
+  "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
+  "packet_sha": "cc4e3925552674951692d495b70176967b7eddb4e26c0b7a88ae881912d3a4aa",
+  "cost_usd": 0.602855,
+  "tokens": {
+   "input_tokens": 6,
+   "cache_creation_input_tokens": 43967,
+   "cache_read_input_tokens": 26560,
+   "output_tokens": 5436,
+   "output_tokens_details": {
+    "thinking_tokens": 4468
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 43967,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 5431,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 23509,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 23509
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 248.0730316179979,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}

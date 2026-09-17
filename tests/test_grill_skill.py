@@ -110,6 +110,39 @@ class GrillSkillTextTest(unittest.TestCase):
         self.assertIn("backend: runner | workflow | session", routing)
         self.assertIn("session only when the human overrides to it", routing)
 
+    def test_triage_runs_first_and_a_light_brief_short_circuits(self):
+        """plan 5 AC-1, AC-3: triage.py runs before the tree; a light brief gets one ticket,
+        no plan page, no Gate 1, and the session's last line names the runner for that ticket."""
+        body = SKILL.read_text(encoding="utf-8")
+        triage = schemas.section(body, "Triage")
+        self.assertIn("scripts/triage.py", triage)
+        self.assertIn("light", triage)
+        self.assertIn("No plan page", triage)
+        self.assertIn("no Gate 1", triage)
+        self.assertIn("lane: light", triage)
+        self.assertIn("kanban_ops.py new <n> <slug> --body-file <path>", triage)
+        self.assertIn("`Next: /gates:runner <n>.1`", triage)
+        self.assertIn("tool-less", triage)
+
+    def test_full_route_continues_as_today_and_stamps_lane_full(self):
+        """plan 5 AC-4: a full-routed brief runs the tree, questions, plan page, Gate 1 as
+        before; every ticket it writes carries lane: full."""
+        triage = schemas.section(SKILL.read_text(encoding="utf-8"), "Triage")
+        self.assertIn("full", triage)
+        self.assertIn("lane: full", triage)
+
+    def test_rule_9_is_the_one_door_for_both_lanes(self):
+        """plan 5 AC-5: file mode writes the ticket through kanban_ops.py new too, never
+        directly; the id comes from the body's own frontmatter."""
+        rules = schemas.section(SKILL.read_text(encoding="utf-8"), "Rules")
+        self.assertIn("kanban_ops.py new <n> <slug> --body-file <path>", rules)
+        self.assertIn("one door for every ticket", rules)
+        self.assertIn("id: <n>.<m>", rules)
+
+    def test_ticket_template_carries_a_lane_field(self):
+        template = (REPO / "templates" / "ticket.md").read_text(encoding="utf-8")
+        self.assertIn("lane: full", template)
+
 
 if __name__ == "__main__":
     unittest.main()

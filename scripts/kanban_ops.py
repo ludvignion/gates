@@ -160,19 +160,29 @@ def commit(root: Path, paths: list[str], message: str, force: bool = False) -> s
 
 
 def new(root: Path, n: str, slug: str, body_file: str) -> str:
-    """`kanban_ops.py new <plan> <slug> --body-file <path>`: one new `ticket`+`ready` issue for
-    plan `n`'s slice, opted-in projects only (grill rule 9, plan 4 AC-1). The body file is the
-    ticket's frontmatter (`parent:`, `depends_on:`, `writes:`) and sections, as the grill wrote
-    them; `slug` is the issue title. Returns `#<number>`."""
+    """`kanban_ops.py new <plan> <slug> --body-file <path>`: the one door that creates a ticket
+    for plan `n`'s slice, either lane (grill rule 9, plan 5 AC-5). Opted into `kanban/.issues`:
+    creates a `ticket`+`ready` issue from the body file's frontmatter and sections (`parent:`,
+    `depends_on:`, `writes:`) and returns `#<number>`. Otherwise: the body file is the full
+    ticket, `id:` frontmatter included (grill assigns it, dependency order); writes
+    `kanban/tickets/<id>.<slug>.md` and returns `<id>`."""
+    import _fm  # local import, as in override_plan
     import tickets  # local import, as in log_ticket
 
-    repo = tickets.marker(root)
-    if not repo:
-        raise ValueError("kanban_ops.py new needs kanban/.issues; write the ticket file directly otherwise")
     body = Path(body_file).read_text(encoding="utf-8")
-    number = tickets.create_issue(repo, slug, body)
-    tickets.sync(root)
-    return f"#{number}"
+    repo = tickets.marker(root)
+    if repo:
+        number = tickets.create_issue(repo, slug, body)
+        tickets.sync(root)
+        return f"#{number}"
+    fm, _ = _fm.parse(body)
+    tid = str(fm.get("id", "")).strip()
+    if not tid:
+        raise ValueError("kanban_ops.py new (file mode) needs id: in the body file's frontmatter")
+    path = root / "kanban" / "tickets" / f"{tid}.{slug}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return tid
 
 
 def plan_order(root: Path, n: str) -> list[str]:
