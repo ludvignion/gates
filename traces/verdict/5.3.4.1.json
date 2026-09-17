@@ -61,7 +61,7 @@
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
-   "waived_by": null,
+   "waived_by": "ludvignion 2026-09-17 19:46",
    "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
    "consequence": "Same stale board finding, re-reported against an earlier ticket. Nobody is blocked on this branch."
