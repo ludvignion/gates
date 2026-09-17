@@ -45,7 +45,7 @@
    "status": "open",
    "ac": "AC-4",
    "charter": null,
-   "home": null,
+   "home": "5.2",
    "spawn_child": false,
    "covered_by": null,
    "repro": "python3 -m unittest tests.test_grill_skill.GrillSkillTextTest.test_full_route_continues_as_today_and_stamps_lane_full",
