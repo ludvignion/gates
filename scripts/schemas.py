@@ -428,7 +428,10 @@ class Log:
     def findings(self, own_id: str) -> tuple[Finding, ...]:
         return tuple(f for e in self.entries if (f := Finding.from_entry(e, own_id)))
 
-    def waivers(self) -> tuple[LogEntry, ...]:
+    def human_entries(self) -> tuple[LogEntry, ...]:
+        """Every ``[human]`` Log entry — one per board action (approve, ship, reject, waive,
+        child, home): not only waivers, so this is also 5.3's human-touch count, not a waiver
+        count (5.3 F2)."""
         return tuple(e for e in self.entries if e.role == "human")
 
     def closeouts(self) -> tuple[LogEntry, ...]:
@@ -439,11 +442,11 @@ class Log:
 
     def waived_ids(self) -> set[str]:
         """Finding ids (``F1``, ``C2``) named anywhere in a ``[human]`` entry."""
-        return {i for e in self.waivers() for i in _ID_TOKEN_RE.findall(e.text)}
+        return {i for e in self.human_entries() for i in _ID_TOKEN_RE.findall(e.text)}
 
     def addresses(self, title: str) -> bool:
-        """A ``[human]`` waiver or a build close-out names the finding."""
-        return any(e.names(title) for e in self.waivers() + self.closeouts())
+        """A ``[human]`` entry or a build close-out names the finding."""
+        return any(e.names(title) for e in self.human_entries() + self.closeouts())
 
     def mentions(self, needle: str) -> bool:
         return any(e.names(needle) for e in self.entries)
