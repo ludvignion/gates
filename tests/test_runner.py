@@ -1029,7 +1029,7 @@ class LaneRecordTest(unittest.TestCase):
     def test_find_ticket_failure_is_printed_not_raised(self):
         """5.3 F4 AC-1: find_ticket raising (e.g. an issue-mode `gh` call erroring) is guarded
         the same as the write — printed, never raised into the caller."""
-        with mock.patch("runner.kanban_ops.find_ticket", side_effect=RuntimeError("gh unreachable")), \
+        with mock.patch("runner.kanban_ops.find_ticket", side_effect=OSError("gh unreachable")), \
              contextlib.redirect_stdout(io.StringIO()) as out:
             runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=False, count=1)
         self.assertIn("[runner] lane record not written:", out.getvalue())
@@ -1046,10 +1046,19 @@ class LaneRecordTest(unittest.TestCase):
     def test_light_diff_lines_failure_is_printed_not_raised(self):
         """5.3 F4 AC-1: light_diff_lines raising (e.g. `git diff` failing) is guarded too — count
         left unpassed so the function must compute it itself."""
-        with mock.patch("runner.light_diff_lines", side_effect=RuntimeError("git diff failed")), \
+        with mock.patch("runner.light_diff_lines", side_effect=OSError("git diff failed")), \
              contextlib.redirect_stdout(io.StringIO()) as out:
             runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=False)
         self.assertIn("[runner] lane record not written:", out.getvalue())
+        self.assertFalse((self.repo / "traces/lanes.jsonl").exists())
+
+    def test_programming_error_is_not_swallowed(self):
+        """5.3.4 F1 AC-1: a bug in the guarded code (e.g. a bad attribute access, not an I/O or
+        parsing failure) is not measurement noise — it must raise into the caller, same as
+        anywhere else, instead of being printed and hidden."""
+        with mock.patch("runner.kanban_ops.find_ticket", side_effect=TypeError("bad argument")):
+            with self.assertRaises(TypeError):
+                runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=False, count=1)
         self.assertFalse((self.repo / "traces/lanes.jsonl").exists())
 
 

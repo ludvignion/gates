@@ -1,0 +1,8 @@
+{
+ "built": "Narrows record_lane_end except to (OSError, ValueError), updates docstring. Test coverage expanded. AC-1 satisfied.",
+ "review": "Ship. Held AC-1 and charter-1. F1 at scripts/runner.py:691: CalledProcessError escapes when git fails\u2014work merged but close dies instead of logging, needs re-run or cleanup, untested. C1-C10: stale board findings in closed tickets; low impact, nobody blocked.",
+ "model": "haiku",
+ "inputs_sha": "1fd45abc67c4246e2f84db8ef4a6c566b6aac02031dcc1d0d63798f143e12152",
+ "cost_usd": 0.036219999999999995,
+ "error": null
+}
