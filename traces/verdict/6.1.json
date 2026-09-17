@@ -1,8 +1,9 @@
 {
  "ticket": "6.1",
- "decision": "reject",
+ "decision": "ship",
  "held": [
   "AC-1",
+  "AC-2",
   "AC-3",
   "AC-4",
   "AC-5",
@@ -14,17 +15,17 @@
   {
    "id": "F1",
    "severity": "block",
-   "status": "open",
+   "status": "resolved",
    "ac": "AC-2",
    "charter": null,
    "home": null,
    "spawn_child": false,
-   "covered_by": null,
+   "covered_by": "tests/test_verdict_scripts.py::test_ship_on_a_block_is_refused",
    "repro": "python -c \"import sys;sys.path.insert(0,'scripts');import schemas,verdict_checks,render_verdict as r;T=[('1.1','in_review',[])];v=schemas.Verdict.from_dict({'ticket':'1.1','decision':'reject','ci':{'green':True},'findings':[{'id':'F1','severity':'block','status':'open','ac':'AC-1','action':'ship','why':'nah','text':'t'}]});v,_=verdict_checks.validate(v,'packet',None,T);print(r.answer_options(v,T,r.open_findings(v))[0])\"",
    "waived_by": null,
-   "text": "`action: ship` on a block passes the verb check, prints a waive line. scripts/verdict_checks.py:188",
-   "impact": "high",
-   "consequence": "A reviewer who types the recommended answer at Gate 2 can merge a ticket whose blocking finding was never fixed, with nothing saying anything was overruled. The one guarantee the rail exists for \u2014 that a seat cannot clear its own block \u2014 does not hold for every wording a seat may use, and `ship` is the wording the surrounding prompt makes most likely."
+   "text": "`action: ship` now refused, falls back to rework. scripts/verdict_checks.py:188",
+   "impact": "medium",
+   "consequence": "No longer reachable: a seat proposing ship on a block can no longer turn it into a waiver line at Gate 2."
   },
   {
    "id": "F2",
@@ -37,9 +38,9 @@
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "Legacy findings print `waive F#: <finding text>`; carried C-texts run 60+ words. scripts/render_verdict.py:383",
-   "impact": "medium",
-   "consequence": "Whoever answers Gate 2 must reproduce a waiver reason that can run to sixty words of mechanical text, once per carried-over finding. On a ticket carrying ten of them the recommended option is too long to work through by hand."
+   "text": "Refusal reason says ship is not a Gate 2 verb; it is. scripts/verdict_checks.py:189",
+   "impact": "low",
+   "consequence": "Whoever reads the verdict page is told ship is not a Gate 2 verb, when it is one of the five lines they can type there. They may doubt the rail, or doubt the verb list itself."
   },
   {
    "id": "F3",
@@ -52,24 +53,24 @@
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "`action: waive` with `why: null` prints `waive F1: ` \u2014 empty reason, not refused. scripts/render_verdict.py:370",
+   "text": "`action: waive` with `why: null` passes the rail, prints empty reason. scripts/render_verdict.py:383",
    "impact": "medium",
-   "consequence": "The ticket log records a waiver with no reason at all. Anyone reading that ticket later cannot tell why the finding was let go, or by whose argument."
+   "consequence": "The person at Gate 2 is handed a waiver line with nothing after the colon and types it as printed. Whoever reads that ticket log later finds a finding waived with no reason recorded."
   },
   {
    "id": "F4",
    "severity": "warn",
    "status": "open",
-   "ac": null,
+   "ac": "AC-4",
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
    "waived_by": null,
-   "text": "AC-5 test asserts substring 'refused' only; count and page path unpinned. tests/test_verdict_scripts.py",
-   "impact": "low",
-   "consequence": "If the count or the link to the page later drops out of the result block, nothing fails. The person deciding the merge would see that something was overruled but not how much, or where to read why."
+   "text": "Option A now appends child/waive lines after `reject:`; packet shows no Gate 2 evidence. scripts/render_verdict.py:385",
+   "impact": "medium",
+   "consequence": "If Gate 2 stops at the reject line, the person answering types routing that never lands and the findings stay unrouted. Nothing in the packet shows which way Gate 2 takes a reject followed by more lines."
   },
   {
    "id": "C1",
@@ -211,15 +212,15 @@
   "vendor": "claude",
   "plugin_version": "0.11.10",
   "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
-  "packet_sha": "14b1c2562c393b80efda66605f729db639a56cf60add4638c4243a4b7ec4dc74",
-  "cost_usd": 0.753818,
+  "packet_sha": "1e8f33d6bcff8299abc0cf1129c10571066b9af4be80640e89a6b4484cecb4d8",
+  "cost_usd": 0.597847,
   "tokens": {
    "input_tokens": 2,
-   "cache_creation_input_tokens": 26974,
-   "cache_read_input_tokens": 3044,
-   "output_tokens": 18642,
+   "cache_creation_input_tokens": 25161,
+   "cache_read_input_tokens": 5672,
+   "output_tokens": 13050,
    "output_tokens_details": {
-    "thinking_tokens": 14335
+    "thinking_tokens": 8722
    },
    "server_tool_use": {
     "web_search_requests": 0,
@@ -227,26 +228,26 @@
    },
    "service_tier": "standard",
    "cache_creation": {
-    "ephemeral_1h_input_tokens": 26974,
+    "ephemeral_1h_input_tokens": 25161,
     "ephemeral_5m_input_tokens": 0
    },
    "inference_geo": "not_available",
    "iterations": [
     {
      "input_tokens": 2,
-     "output_tokens": 18642,
-     "cache_read_input_tokens": 3044,
-     "cache_creation_input_tokens": 26974,
+     "output_tokens": 13050,
+     "cache_read_input_tokens": 5672,
+     "cache_creation_input_tokens": 25161,
      "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
-      "ephemeral_1h_input_tokens": 26974
+      "ephemeral_1h_input_tokens": 25161
      },
      "type": "message"
     }
    ],
    "speed": "standard"
   },
-  "seconds": 227.62485433100665,
+  "seconds": 158.6998909959948,
   "opik": "untraced (OPIK_URL_OVERRIDE unset)"
  }
 }
