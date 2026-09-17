@@ -993,6 +993,20 @@ class LaneRecordTest(unittest.TestCase):
         record = schemas.LaneRecord.load((self.repo / "traces/lanes.jsonl").read_text().splitlines()[0])
         self.assertEqual(record.human_touches, 1)
 
+    def test_human_touches_counts_non_waive_human_entries_too(self):
+        """5.3.3 AC-1: a [human] Log entry that is not a waive — e.g. a ship — is still a human
+        touch. The one-waive TICKET fixture alone can't show this: F2 from 5.3 flagged that a
+        second, non-waive [human] entry gives the same count as an equivalent number of waives."""
+        ticket = TICKET.replace(
+            "### [build] 2026-09-02 12:00 — close-out",
+            "### [human] 2026-09-02 11:30 — ship by ludvignion (gate 2, from the board)\n"
+            "### [build] 2026-09-02 12:00 — close-out",
+        )
+        (self.repo / "kanban/tickets/1.1.tracer-bullet.md").write_text(ticket)
+        runner.record_lane_end(self.repo, self.repo, "1.1", "main", budget_fired=False, count=1)
+        record = schemas.LaneRecord.load((self.repo / "traces/lanes.jsonl").read_text().splitlines()[0])
+        self.assertEqual(record.human_touches, 2)
+
     def test_malformed_existing_file_does_not_block_a_new_record(self):
         """AC-2: a line already there that is not JSON is left alone; the write still appends."""
         lanes = self.repo / "traces" / "lanes.jsonl"

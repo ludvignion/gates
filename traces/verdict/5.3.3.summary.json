@@ -1,0 +1,8 @@
+{
+ "built": "Renamed waivers() to human_entries() in schemas for clarity\u2014returns same tuple of [human] entries. Updated runner to call renamed method. Added test: non-waive entries (ships) count as touches, closing fixture blind spot.",
+ "review": "Ship. AC-1 and charter-1 held. Three files changed: name clarity in schemas, caller update in runner, test coverage in test_runner\u2014tight scope. Four warns surface same unaddressed AC-4 grill-skill issue (weak substring assertion) re-homing across finished tickets with nesting duplication. Not blocking this ship but downstream owner must close loop to prevent board readability collapse.",
+ "model": "haiku",
+ "inputs_sha": "8eb47fc927023b49d8eee41e54da3ebb92885fb9b5ccf993bc165c3ba09a1981",
+ "cost_usd": 0.02927,
+ "error": null
+}
