@@ -1,8 +1,8 @@
 {
- "built": "Fixes charter detection to route projects with missing domain packs to full review instead of silently passing. Removes out-of-scope settings file write. Adds 198 lines of triage tests; 458 insertions across 9 files.",
- "review": "Ship. All blocks resolved: missing charter now distinguishes real empty files from absent ones, and triage routes full not light. All 6 acceptance criteria and charter requirement held. F2 warns: file mode overwrites existing tickets without backup check. F3 warns: partner_facing brief key undocumented; deferred to 5.3.",
+ "built": "Missing charter or interfaces files now detected and route projects to full lane, firing checks 1\u20132 instead of silently passing light checks. Charter.present() vs Charter.missing() in schemas.py distinguish real empty files from missing ones. Tests verify missing-domain-pack routing and grill skill full-lane flow.",
+ "review": "Ship\u2014held AC-1, AC-2, AC-3, AC-5, charter-1. C1 resolved (settings.json removed). F1 resolved (missing charter routes full via triage.py, checks 1\u20132 fire). Open: F2 test_grill_skill missing plan page and Gate 1, F3 triage.py traceback on missing brief file. CI green.",
  "model": "haiku",
- "inputs_sha": "9ef44688b5fa331f975b8721aa3843d70b9a60eeefd4a6d2ed5bb00eca42987b",
- "cost_usd": 0.0143539,
+ "inputs_sha": "4674be8f1e1b658985a77b2a3169c09ec94577bf4d3b2055d2d1340003f65a6f",
+ "cost_usd": 0.0603613,
  "error": null
 }
