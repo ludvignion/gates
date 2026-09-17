@@ -300,6 +300,31 @@ class Triage:
         return "\n".join(lines) + "\n"
 
 
+@dataclass(frozen=True)
+class LaneRecord:
+    """One line of ``traces/lanes.jsonl``: a ``lane: light`` ticket's measurements at its end, by
+    ship or over budget (plan 5 AC-9). No board or page renders this file — a human reads it."""
+
+    ticket: str
+    lane: str
+    seconds: float
+    human_touches: int
+    changed_lines: int
+    budget_fired: bool
+
+    def line(self) -> str:
+        return json.dumps({"ticket": self.ticket, "lane": self.lane, "seconds": self.seconds,
+                           "human_touches": self.human_touches, "changed_lines": self.changed_lines,
+                           "budget_fired": self.budget_fired})
+
+    @classmethod
+    def load(cls, line: str) -> "LaneRecord":
+        d = json.loads(line)
+        return cls(ticket=d["ticket"], lane=d["lane"], seconds=d["seconds"],
+                   human_touches=d["human_touches"], changed_lines=d["changed_lines"],
+                   budget_fired=d["budget_fired"])
+
+
 class HumanAc(NamedTuple):
     """An AC only a person can verify (E30): ``- AC-7 (human): <text>``. Confirmed at Gate 2."""
 

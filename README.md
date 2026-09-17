@@ -45,6 +45,18 @@ When a requirement changes later: edit the spec, `make intake` again; `make cove
 with `drift: [<id>] changed since brief <n>` until you review that brief, edit it, and commit it
 together with the new index. `make ci` runs `kanban` (the kanban invariants) and `coverage`.
 
+## Light lane
+
+`/gates:grill <n>` routes a brief through four checks before asking anything: does a named path
+reach a charter `Applies to:` glob, does one reach an interface glob, does the brief name a
+package, a URL or an env var, and is it `partner_facing: true`. All four false, with at least one
+named path, routes the brief `light`: no plan page, no Gate 1, one ticket straight to
+`/gates:runner`. Any one check true, or no path named at all, routes `full` — the grill runs as
+today. A light ticket still gets ci and a verdict, but the runner caps it at **150** changed
+lines after `feat-commit`; over that it stops, deletes the branch, and sends the brief back
+through `/gates:grill <n>` the full way. Every light ticket that ends appends one line to
+`traces/lanes.jsonl` — see `docs/architecture.md`.
+
 ## Update a project
 
 ```

@@ -652,11 +652,44 @@ def light_diff_lines(cwd: Path, tid: str, base: str) -> int:
     return sum(f["added"] + f["removed"] for f in changed["files"])
 
 
+def brief_seconds(repo: Path, n: str, now: float | None = None) -> float:
+    """Seconds from the brief's first commit to `now` (default: this instant) — plan 5 AC-9's
+    "wall clock from brief to ship". 0.0 without a committed `kanban/briefs/<n>-*.md` (a fixture
+    or test repo with no brief on disk)."""
+    briefs = sorted((repo / "kanban" / "briefs").glob(f"{n}-*.md"))
+    if not briefs:
+        return 0.0
+    out = subprocess.run(["git", "log", "--follow", "--diff-filter=A", "--format=%at", "--",
+                         str(briefs[0].relative_to(repo))], cwd=repo, capture_output=True, text=True).stdout
+    lines = [l for l in out.splitlines() if l.strip()]
+    if not lines:
+        return 0.0
+    return (now if now is not None else time.time()) - float(lines[-1])
+
+
+def record_lane_end(repo: Path, tree: Path, tid: str, base: str, budget_fired: bool, count: int | None = None) -> None:
+    """AC-1: one `traces/lanes.jsonl` line for a `lane: light` ticket's end, by ship or over
+    budget. `tree` still holds the ticket's Log at this point (read before a worktree removal or
+    a merge). AC-2: a write failure is printed, never raised — this is measurement, not a gate."""
+    path = kanban_ops.find_ticket(tree, tid)
+    touches = len(schemas.Log.parse(_fm.read(path)[1]).waivers()) if path else 0
+    changed = count if count is not None else light_diff_lines(tree, tid, base)
+    record = schemas.LaneRecord(tid, "light", brief_seconds(repo, tid.split(".")[0]), touches, changed, budget_fired)
+    out = repo / "traces" / "lanes.jsonl"
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("a", encoding="utf-8") as f:
+            f.write(record.line() + "\n")
+    except OSError as e:  # measurement, not a gate: never blocks a ship or a budget stop
+        print(f"[runner] lane record not written: {e}")
+
+
 def stop_light_over_budget(repo: Path, tree: Path, tid: str, base: str, count: int) -> None:
     """AC-2: the branch is discarded, not merged — remove the worktree holding it first (as
     board.ship does before a merge), delete ticket/<id>, then supersede the ticket on `base` with
     a Log entry naming the brief's grill command. The branch and its commits are gone, so the
     write lands on the base branch's own copy of the ticket, the one thing that survives."""
+    record_lane_end(repo, tree, tid, base, budget_fired=True, count=count)
     branch = f"ticket/{tid}"
     if tree != repo and tree.exists():
         sh(["git", "worktree", "remove", "--force", str(tree)], repo)
@@ -1098,6 +1131,8 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
             print(f"[runner] {verdict_eval.record_decision(tree, tid, decision)}")
             v = read_verdict(tree, tid)
             if decision == "ship":
+                if ticket_lane(tree, tid) == "light":
+                    record_lane_end(repo, tree, tid, base_name, budget_fired=False)
                 print(f"[runner] ship — review {tree / 'traces' / 'verdict' / (tid + '.html')}, then say ship")
                 return finish(0, "ship", v)
             if not retryable:
