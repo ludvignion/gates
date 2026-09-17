@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.11.10 — 2026-09-17
+
+The build seat no longer runs under a shell allowlist. An allowlist enumerates what a model
+might type, and every command it did not foresee killed a run headless: `make ci >
+/tmp/ci.log; echo …; tail …` died on `echo` and `tail` after the seat had already written the
+tests, the fix and a green CI. Four runs were lost to that one class. What bounds the seat now
+is the tree it is given, not the list of commands it may type.
+
+- `scripts/runner.py` — the build seat runs with `--dangerously-skip-permissions` and no
+  `--allowedTools`. `--restricted` puts it back under `BUILD_ALLOWED_TOOLS` for anyone who
+  wants the narrower seat; exit 4 (permission denied before the close-out) is only reachable
+  there.
+- `scripts/runner.py` — every run now builds in a worktree under `.worktrees/<id>/`, never the
+  human's own checkout, so an unrestricted seat has nothing of theirs to damage. When the run
+  ends the worktree is removed and `ticket/<id>` is checked out in the main checkout, so the
+  human still lands on what was built with the Gate 2 page in their folder (E16). `--parallel`
+  keeps the worktree and leaves the main checkout where it stood, as before. A main checkout
+  holding the ticket branch is parked on the base branch first — git refuses one branch in two
+  trees, which a retry of the previous run's ticket would have hit.
+- `scripts/runner.py` — the first phase is now `worktree` (`worktree kept` under `--parallel`),
+  replacing `branch`; `fresh` means the ticket branch did not exist before this run, never that
+  the worktree directory is new, so a rerun still skips the baseline CI it already ran.
+- `skills/runner/SKILL.md`, `skills/build/SKILL.md`, `README.md` — the phase list, where the
+  build happens, and the new flags.
+
+Known, logged, not fixed in this release: `kanban_ops.py log` and `status` write the ticket file
+without committing it in file mode, so a build seat that stops at the written close-out leaves
+the runner unable to see one (that is what turned the denial above into a failed run).
+
+Consuming projects (project-template): no action. Pin `v0.11.10`.
+
 ## 0.11.9 — 2026-09-17
 
 A light lane for small briefs. Every brief used to pay for the full grill — a design tree, a

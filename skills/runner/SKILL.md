@@ -58,7 +58,7 @@ tree. A run that writes no new line for many minutes is stuck, not silent: the h
 lands every 30 seconds while the build session streams.
 
 Every state line is `<hh:mm:ss> <+m:ss> <phase> [detail]`. Phases, in the runner's own words:
-`branch · ci-pre · build <n> · build <n> close-out · build <n> skipped · tests-commit ·
+`worktree · ci-pre · build <n> · build <n> close-out · build <n> skipped · tests-commit ·
 feat-commit · ci · verdict · close-out · done <decision>`. Every 30 seconds while the build
 session streams the runner adds a heartbeat line (E25):
 

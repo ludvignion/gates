@@ -48,7 +48,9 @@ class RunSkillTextTest(unittest.TestCase):
             if "python3 " in l and l is not starts[0]:
                 self.assertIn("kanban_ops.py", l, l)
         body = "\n".join(lines)
-        for banned in ("/build", "/verdict", "worktree", "git checkout"):
+        # the ban is on the command, not the word: `worktree` is a phase name the session prints
+        # verbatim from the state file, while `git worktree` would be this session making one.
+        for banned in ("/build", "/verdict", "git worktree", "git checkout"):
             self.assertNotIn(banned, body, banned)
 
     def test_result_format_and_refusals(self):
