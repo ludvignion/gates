@@ -74,7 +74,9 @@ lands in traces/runs/plan-<n>.state: `ticket <id>`, the ticket's phase lines, `g
 
 Exit codes: 0 ship (review the Gate 2 page, then say ship: kanban_ops merges) · 1 red baseline or retry cap ·
 2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) or a refusal
-(done ticket, merged branch, nothing to judge, packet too big, num_turns not 1) ·
+(done ticket, merged branch, nothing to judge, packet too big, num_turns not 1, a lane: light
+ticket over LIGHT_BUDGET_LINES after feat-commit — the branch is deleted and the ticket
+superseded, naming /gates:grill <n>) ·
 3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log) ·
 4 permission denied before the close-out (never retried; only reachable under --restricted — see
 BUILD_ALLOWED_TOOLS and the project's .claude/settings.json allowlist).
@@ -125,6 +127,7 @@ OPIK_ENV = ("OPIK_URL_OVERRIDE",)
 POLL_SECONDS = 5.0  # --plan: how often the ticket file is read while the walk waits at Gate 2
 HEARTBEAT_SECONDS = 30.0  # contract B: a heartbeat line in the state file while the build streams (E25)
 PACKET_TOKEN_CAP = 40000  # contract F: the verdict packet's size in ~tokens (bytes // 4) beyond which no model is called (E28)
+LIGHT_BUDGET_LINES = 150  # plan 5 AC-6, AC-7: a lane: light ticket's insertions+deletions cap after feat-commit
 
 
 class Refusal(Exception):
@@ -633,6 +636,41 @@ def already_built(cwd: Path, tid: str, base: str) -> bool:
             and ("close-out" in subjects or f"chore({tid})" in subjects))
 
 
+def ticket_lane(cwd: Path, tid: str) -> str:
+    """The ticket's `lane:` frontmatter value; "" without the ticket or the field (AC-3: a `full`
+    lane or no lane at all takes no count and adds no phase)."""
+    path = kanban_ops.find_ticket(cwd, tid)
+    return str(_fm.read(path)[0].get("lane") or "") if path else ""
+
+
+def light_diff_lines(cwd: Path, tid: str, base: str) -> int:
+    """Insertions plus deletions for the ticket's `writes:`-scoped, included diff against `base`
+    (a branch name; AC-1) — the same figures write_result's "Changed:" line is built from."""
+    import verdict_prep  # here, not at the top: it imports kanban_ops, as write_result's does
+
+    changed = verdict_prep.changed_vs_base(cwd, base, verdict_prep.ticket_writes(cwd, tid))
+    return sum(f["added"] + f["removed"] for f in changed["files"])
+
+
+def stop_light_over_budget(repo: Path, tree: Path, tid: str, base: str, count: int) -> None:
+    """AC-2: the branch is discarded, not merged — remove the worktree holding it first (as
+    board.ship does before a merge), delete ticket/<id>, then supersede the ticket on `base` with
+    a Log entry naming the brief's grill command. The branch and its commits are gone, so the
+    write lands on the base branch's own copy of the ticket, the one thing that survives."""
+    branch = f"ticket/{tid}"
+    if tree != repo and tree.exists():
+        sh(["git", "worktree", "remove", "--force", str(tree)], repo)
+    if head_branch(repo) == branch:
+        sh(["git", "checkout", "-q", base], repo)
+    sh(["git", "branch", "-D", branch], repo)
+    n = tid.split(".")[0]
+    kanban_ops.status_ticket(repo, tid, "superseded")
+    kanban_ops.log_ticket(repo, tid, "runner",
+                          f"light over budget: {count} lines over the {LIGHT_BUDGET_LINES}-line budget; run /gates:grill {n}")
+    if (path := kanban_ops.find_ticket(repo, tid)) is not None:
+        kanban_ops.commit(repo, [str(path.relative_to(repo))], f"docs({tid}): superseded — light over budget")
+
+
 def call_vendor(cmd: str, cwd: Path, output: Path) -> VendorCall:
     """Run the verdict command once. If it exited 0, did not write `output` itself, and its report
     carries the verdict in `result`, write that. `error` names the failure when there is one."""
@@ -1036,6 +1074,13 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
                 if st == "BLOCKED":
                     print("[runner] build blocked — see ticket Log; human needed")
                     return finish(3, "error blocked")
+            if ticket_lane(tree, tid) == "light":
+                count = light_diff_lines(tree, tid, base_name)
+                if count > LIGHT_BUDGET_LINES:
+                    stop_light_over_budget(repo, tree, tid, base_name, count)
+                    raise Refusal(2, f"error light over budget {count}/{LIGHT_BUDGET_LINES}",
+                                 f"[runner] light over budget: {count} lines (budget {LIGHT_BUDGET_LINES}) — "
+                                 f"superseded, run /gates:grill {tid.split('.')[0]}")
             phases.mark("ci")
             ci_log = repo / "traces" / "runs" / f"{tid}.ci.log"
             green = ci(tree, ci_log)

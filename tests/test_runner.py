@@ -343,20 +343,40 @@ class RunnerSeatTest(unittest.TestCase):
         packet = runner.prep(self.tmp, "1.1", "packet", "main")  # the ticket branch has src changes: a packet
         self.assertEqual(schemas.Packet.load(packet).fm.get("base"), "main")
 
+    def test_ticket_lane_reads_frontmatter_or_empty(self):
+        """AC-3: `lane:` is read verbatim; absent field or ticket gives ""."""
+        self.assertEqual(runner.ticket_lane(self.tmp, "1.1"), "")  # TICKET carries no lane: field
+        ticket = self.tmp / "kanban/tickets/1.1.tracer-bullet.md"
+        ticket.write_text(ticket.read_text().replace('writes: ["src/app/", "tests/"]',
+                                                      'writes: ["src/app/", "tests/"]\nlane: light'))
+        self.assertEqual(runner.ticket_lane(self.tmp, "1.1"), "light")
+        self.assertEqual(runner.ticket_lane(self.tmp, "1.9"), "")  # no ticket at all
+
+    def test_light_diff_lines_counts_writes_scoped_diff_against_base(self):
+        """AC-1: insertions plus deletions over the ticket's writes:-scoped, included diff — the
+        same figures write_result's "Changed:" line uses (E27)."""
+        self.assertEqual(runner.light_diff_lines(self.tmp, "1.1", "main"), 2)  # 1 added + 1 removed
+
 
 FAKE_CLAUDE = REPO / "tests" / "fixtures" / "fake_claude.py"
 GIT_ID = ["-c", "user.email=t@t", "-c", "user.name=t"]
 
 
-def closeout_steps(tid: str = "1.1", ticket_file: str = "kanban/tickets/1.1.tracer-bullet.md", src: str = "src/app/run.py") -> list[dict]:
-    """What a well-behaved build does: the tests-commit, the feat-commit, the close-out (status line, tree clean)."""
+def closeout_steps(tid: str = "1.1", ticket_file: str = "kanban/tickets/1.1.tracer-bullet.md", src: str = "src/app/run.py",
+                   feat_body: str = "printf 'def run(x):\\n    return x + 1\\n' > {src}") -> list[dict]:
+    """What a well-behaved build does: the tests-commit, the feat-commit, the close-out (status
+    line, tree clean). `feat_body` is the feat-commit's own shell command (default: a one-line
+    change); a light-lane budget test overrides it to cross LIGHT_BUDGET_LINES (AC-2)."""
     test_file = f"tests/test_{tid.replace('.', '_')}.py"
     return [
         {"text": "Tests first."},
         {"cmd": f"mkdir -p tests $(dirname {src}) && printf 'def test_run():\\n    \"\"\"AC-1\"\"\"\\n    assert True\\n' > {test_file} && git {' '.join(GIT_ID)} add -A && git {' '.join(GIT_ID)} commit -q -m 'test({tid}): ACs as tests'"},
-        {"cmd": f"printf 'def run(x):\\n    return x + 1\\n' > {src} && git {' '.join(GIT_ID)} add -A && git {' '.join(GIT_ID)} commit -q -m 'feat({tid}): impl'"},
+        {"cmd": f"{feat_body.format(src=src)} && git {' '.join(GIT_ID)} add -A && git {' '.join(GIT_ID)} commit -q -m 'feat({tid}): impl'"},
         {"cmd": f"sed -i 's/^status: .*/status: in_review/' {ticket_file} && printf '### [build] 2026-09-04 10:00 — close-out\\n- {src}: AC-1\\n### [build] 2026-09-04 10:01 — status: DONE\\nbuilt\\n' >> {ticket_file} && git {' '.join(GIT_ID)} add -A && git {' '.join(GIT_ID)} commit -q -m 'chore({tid}): close-out log, status in_review'"},
     ]
+
+
+OVER_BUDGET_FEAT_BODY = "printf 'def run(x):\\n' > {src} && yes '    x = 1' | head -n 200 >> {src} && printf '    return x\\n' >> {src}"
 
 
 def state_phases(path: Path) -> list[str]:
@@ -370,8 +390,10 @@ def state_phases(path: Path) -> list[str]:
     return out
 
 
-class RunnerBuildSeatTest(unittest.TestCase):
-    """The build seat: streamed session, close-out enforcement, in-place branch, phases, override."""
+class BuildSeatFixture:
+    """setUp/tearDown and the small helpers a headless /build run needs; no test methods of its
+    own, so a subclass that changes the fixture (RunnerLightLaneTest) never inherits a test
+    written against the plain one."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -415,6 +437,10 @@ class RunnerBuildSeatTest(unittest.TestCase):
 
     def _subjects(self, ref: str = "ticket/1.1") -> list[str]:
         return subprocess.run(["git", "log", f"main..{ref}", "--format=%s"], cwd=self.repo, capture_output=True, text=True).stdout.split("\n")
+
+
+class RunnerBuildSeatTest(BuildSeatFixture, unittest.TestCase):
+    """The build seat: streamed session, close-out enforcement, in-place branch, phases, override."""
 
     def test_build_cmd_is_headless_streamed_and_unrestricted(self):
         """The seat runs unrestricted in the worktree it was given (E34): no allowlist to
@@ -547,6 +573,23 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertIn("[runner] permission denied after close-out, ignored: WebFetch", out)
         self.assertIn("] verdict", out)
+
+    def test_no_lane_takes_no_budget_count(self):
+        """AC-3: no lane: field at all — the run is byte-identical to today: no count is made."""
+        with mock.patch.object(runner, "light_diff_lines") as spy:
+            rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        spy.assert_not_called()
+
+    def test_full_lane_takes_no_budget_count(self):
+        """AC-3: lane: full — same as no lane: at all, no count is made."""
+        ticket = self.repo / "kanban/tickets/1.1.tracer-bullet.md"
+        ticket.write_text(ticket.read_text().replace('writes: ["src/app/", "tests/"]', 'writes: ["src/app/", "tests/"]\nlane: full'))
+        git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "--amend", "--no-edit")
+        with mock.patch.object(runner, "light_diff_lines") as spy:
+            rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        spy.assert_not_called()
 
     def test_red_ci_after_build_retries_with_a_second_build(self):
         """0.11.2: attempt 2 used to skip the build (in_review with the commits) and rerun CI on the same tree.
@@ -805,6 +848,49 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertEqual(call.closed_out, True)
         self.assertEqual(call.orbit, (f"$ {after}",))
         self.assertIn("! orbit after close-out:", out.getvalue())
+
+
+class RunnerLightLaneTest(BuildSeatFixture, unittest.TestCase):
+    """plan 5 AC-6, AC-7, AC-8 (ticket 5.2): the lane: light diff budget after feat-commit."""
+
+    def setUp(self):
+        super().setUp()
+        ticket = self.repo / "kanban/tickets/1.1.tracer-bullet.md"
+        ticket.write_text(ticket.read_text().replace('writes: ["src/app/", "tests/"]', 'writes: ["src/app/", "tests/"]\nlane: light'))
+        git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "--amend", "--no-edit")
+
+    def test_under_budget_runs_as_today(self):
+        """AC-1, AC-4: a light ticket under the budget reaches Gate 2 like any other ticket —
+        ci and verdict run, the verdict artifacts and result file land as usual."""
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("] ci", out); self.assertIn("] verdict", out); self.assertIn("] done ship", out)
+        self.assertTrue((self.repo / "traces/verdict/1.1.json").exists())
+        self.assertTrue((self.repo / "traces/runs/1.1.result").exists())
+
+    def test_over_budget_stops_deletes_branch_and_supersedes(self):
+        """AC-2: over LIGHT_BUDGET_LINES right after feat-commit, the runner stops before ci —
+        no verdict seat — deletes ticket/1.1, and supersedes the ticket on main with a Log entry
+        naming the grill command, exit 2."""
+        self.scenario.write_text(json.dumps(closeout_steps(feat_body=OVER_BUDGET_FEAT_BODY)))
+        rc, out = self._main()
+        self.assertEqual(rc, 2, out)
+        self.assertIn("[runner] light over budget:", out); self.assertIn("/gates:grill 1", out)
+        state = state_phases(self.repo / "traces/runs/1.1.state")
+        self.assertEqual(state[:-1], ["worktree", "ci-pre", "build 1", "tests-commit", "feat-commit", "build 1 close-out"])  # stopped before ci: no verdict seat either
+        m = re.match(r"^done error light over budget (\d+)/150$", state[-1])
+        self.assertIsNotNone(m, state[-1])
+        self.assertGreater(int(m.group(1)), 150)
+        self.assertEqual(subprocess.run(["git", "branch", "--list", "ticket/1.1"], cwd=self.repo, capture_output=True, text=True).stdout.strip(), "")
+        self.assertFalse((self.repo / ".worktrees" / "1.1").exists())
+        self.assertEqual(self._branch(), "main")
+        ticket = (self.repo / "kanban/tickets/1.1.tracer-bullet.md").read_text()
+        self.assertIn("status: superseded", ticket)
+        self.assertIn("/gates:grill 1", ticket)
+        self.assertEqual(subprocess.run(["git", "log", "-1", "--format=%s"], cwd=self.repo, capture_output=True, text=True).stdout.strip(),
+                         "docs(1.1): superseded — light over budget")
+        self.assertFalse((self.repo / "traces/verdict/1.1.json").exists())
+        self.assertFalse((self.repo / "traces/runs/1.1.result").exists())
 
 
 class ResultLinesTest(unittest.TestCase):

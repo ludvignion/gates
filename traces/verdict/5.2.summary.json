@@ -1,0 +1,8 @@
+{
+ "built": "Implements light-ticket budget checking at 150-line cap via ticket_lane() and light_diff_lines() reading lane and counting insertions plus deletions, with stop_light_over_budget() superseding over-budget tickets on base. Budget check runs after build but before CI, blocking progression for tickets exceeding cap. All ACs held; CI green.",
+ "review": "Ship. All ACs held (AC-1\u2013AC-4, charter-1). Runner.py adds 150-line budget cap with check after build before CI; tests cover with split fixture. Two warns: lane marking could diverge between branch and base (low impact); no plan-walk test for exit-2 light stop (medium impact).",
+ "model": "haiku",
+ "inputs_sha": "e9aebbab0feaee483f6124594118b001a216947d36b56360cdf99f6ce1419145",
+ "cost_usd": 0.037904,
+ "error": null
+}
