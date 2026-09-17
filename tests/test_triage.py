@@ -182,6 +182,14 @@ class CliTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(out.getvalue().splitlines()[0], "light")
 
+    def test_main_missing_brief_refuses_in_one_line_not_a_traceback(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            rc = triage.main(["triage.py", "does-not-exist.md", "--cwd", str(self.tmp)])
+        self.assertEqual(rc, 1)
+        lines = err.getvalue().splitlines()
+        self.assertEqual(len(lines), 1, err.getvalue())
+        self.assertIn("does-not-exist.md", lines[0])
+
     def test_main_missing_domain_pack_routes_full_not_silently_light(self):
         empty_root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, empty_root, ignore_errors=True)
