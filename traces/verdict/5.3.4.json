@@ -31,7 +31,7 @@
    "spawn_child": false,
    "covered_by": null,
    "repro": null,
-   "waived_by": null,
+   "waived_by": "ludvignion 2026-09-17 17:29",
    "text": "kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "medium",
    "consequence": "Whoever owns the grill skill has no record on ticket 5.2 that the AC-4 coverage gap was handled. The thin assertion stays in the suite, so a regression in the tree, questions, plan page or Gate 1 output would ship unnoticed."
