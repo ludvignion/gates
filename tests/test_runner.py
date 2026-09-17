@@ -416,13 +416,23 @@ class RunnerBuildSeatTest(unittest.TestCase):
     def _subjects(self, ref: str = "ticket/1.1") -> list[str]:
         return subprocess.run(["git", "log", f"main..{ref}", "--format=%s"], cwd=self.repo, capture_output=True, text=True).stdout.split("\n")
 
-    def test_build_cmd_is_headless_streamed_with_shell_allowlist(self):
+    def test_build_cmd_is_headless_streamed_and_unrestricted(self):
+        """The seat runs unrestricted in the worktree it was given (E34): no allowlist to
+        enumerate, so no command it did not foresee can end a run that has already built."""
         cmd = runner.build_cmd("1.1", "sonnet")
         self.assertEqual(cmd[:3], ["claude", "-p", "/build 1.1"])
-        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "acceptEdits")
-        self.assertEqual(cmd[cmd.index("--permission-prompts") + 1], "none")
+        self.assertIn("--dangerously-skip-permissions", cmd)
+        self.assertNotIn("--allowedTools", cmd)
+        self.assertNotIn("--permission-prompts", cmd)
         self.assertEqual(cmd[cmd.index("--output-format") + 1], "stream-json"); self.assertIn("--verbose", cmd)
         self.assertIn("ends at the build close-out", cmd[cmd.index("--append-system-prompt") + 1])
+
+    def test_restricted_build_cmd_keeps_the_shell_allowlist(self):
+        """--restricted is the narrower seat, for anyone who wants the allowlist back."""
+        cmd = runner.build_cmd("1.1", "sonnet", restricted=True)
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
+        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "acceptEdits")
+        self.assertEqual(cmd[cmd.index("--permission-prompts") + 1], "none")
         allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
         self.assertEqual(tuple(allowed), runner.BUILD_ALLOWED_TOOLS)
         for tool in ("Bash(make *)", "Bash(uv *)", "Bash(git *)", "Bash(pytest *)"):
@@ -433,10 +443,9 @@ class RunnerBuildSeatTest(unittest.TestCase):
         # self-hosted gates checkout offers, never both.
         self.assertIn("Bash(python3 *kanban_ops.py *)", allowed)
         self.assertFalse([t for t in allowed if t.startswith("Bash(python3 /")])
-        self.assertNotIn("--dangerously-skip-permissions", cmd)
 
-    def test_full_run_in_place_orbit_logged_and_build_skipped_on_rerun(self):
-        """E1, E2, E7, E9, E11 in one run: branch in place, build streamed, orbit after close-out
+    def test_full_run_orbit_logged_and_build_skipped_on_rerun(self):
+        """E1, E2, E7, E9, E11 in one run: the seat's worktree, build streamed, orbit after close-out
         terminated and logged, verdict artifacts committed, board in the main checkout, the
         checkout left on the ticket branch (E16); a second run skips the build; ship from
         kanban_ops merges and returns to main."""
@@ -444,7 +453,7 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.scenario.write_text(json.dumps(steps))
         rc, out = self._main()
         self.assertEqual(rc, 0, out)
-        for ph in ("] branch", "] ci-pre", "] build 1", "] tests-commit", "] feat-commit", "] build 1 close-out", "] ci", "] verdict", "] close-out", "] done ship"):
+        for ph in ("] worktree", "] ci-pre", "] build 1", "] tests-commit", "] feat-commit", "] build 1 close-out", "] ci", "] verdict", "] close-out", "] done ship"):
             self.assertIn(ph, out)
         self.assertLess(out.index("] tests-commit"), out.index("] feat-commit")); self.assertLess(out.index("] feat-commit"), out.index("] build 1 close-out"))
         self.assertIn("  Tests first.", out)  # builder text streamed under the phase line
@@ -462,7 +471,7 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertEqual(subprocess.run(["git", "status", "--porcelain"], cwd=self.repo, capture_output=True, text=True).stdout.strip(), "")
         # contract A: the state file, one line per phase, ending in done
         phases = state_phases(self.repo / "traces/runs/1.1.state")
-        self.assertEqual(phases, ["branch", "ci-pre", "build 1", "tests-commit", "feat-commit", "build 1 close-out", "ci", "verdict", "close-out", "done ship"])
+        self.assertEqual(phases, ["worktree", "ci-pre", "build 1", "tests-commit", "feat-commit", "build 1 close-out", "ci", "verdict", "close-out", "done ship"])
         self.assertEqual((self.repo / "traces/runs/1.1.pid").read_text().strip(), str(os.getpid()))  # contract B: the pid beside the state, left at exit
         # contract C: the result file is what stdout ends with; no summary (--summary-model none), so no sentences
         result = (self.repo / "traces/runs/1.1.result").read_text()
@@ -488,7 +497,7 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertEqual(len(self._calls()), 1)
         self.assertNotIn("stream-json", self._calls()[0])
         self.assertEqual(self._branch(), "ticket/1.1")
-        self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state")[:2], ["branch", "build 1 skipped in_review with tests/feat/close-out commits"])  # a fresh file per run
+        self.assertEqual(state_phases(self.repo / "traces/runs/1.1.state")[:2], ["worktree", "build 1 skipped in_review with tests/feat/close-out commits"])  # a fresh file per run
         # ship from the ticket branch: merged into main, branch gone, main checked out
         import board
 
@@ -604,15 +613,26 @@ class RunnerBuildSeatTest(unittest.TestCase):
         self.assertIn("docs(1.1): verdict reject", out_of("log", "--format=%s", "-8"))
         self.assertEqual(out_of("diff", "--name-only", "HEAD~1", "HEAD").count("kanban/tickets/1.1.tracer-bullet.md"), 1)
 
-    def test_parallel_uses_worktrees_dir(self):
+    def test_parallel_keeps_the_worktree_and_the_main_checkout(self):
         rc, out = self._main("--parallel")
         self.assertEqual(rc, 0, out)
         self.assertTrue((self.repo / ".worktrees" / "1.1" / "kanban").is_dir())
         self.assertIn(".worktrees/", (self.repo / ".git" / "info" / "exclude").read_text())
         self.assertEqual(self._branch(), "main")
-        self.assertIn("] branch worktree", out)
+        self.assertIn("] worktree kept", out)
         self.assertTrue((self.repo / "traces" / "board.html").exists())
         self.assertIn("in_review (1)", (self.repo / "traces" / "board.html").read_text())  # rendered from the worktree's kanban
+
+    def test_the_seat_never_builds_in_the_main_checkout_and_the_tree_is_handed_back(self):
+        """The default: the seat is given .worktrees/<id>, the human is given the branch. The
+        worktree is gone when the run ends, so the next run of the same ticket can take it
+        again (git refuses one branch in two trees), and the human lands on what was built."""
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("] worktree", out)
+        self.assertFalse((self.repo / ".worktrees" / "1.1").exists())
+        self.assertEqual(self._branch(), "ticket/1.1")  # E16: the run hands the branch back
+        self.assertEqual(len(subprocess.run(["git", "worktree", "list"], cwd=self.repo, capture_output=True, text=True).stdout.strip().splitlines()), 1)
 
     def test_dirty_tree_refused(self):
         (self.repo / "Makefile").write_text("ci:\n\ttrue\n")  # a modified tracked file; untracked scratch does not count
@@ -1053,7 +1073,7 @@ class RunnerPlanWalkTest(unittest.TestCase):
         state = self._plan_state()
         self.assertEqual(state[0], "ticket 2.1"); self.assertEqual(state[-1], "done ship 2.1 2.2")
         self.assertLess(state.index("gate2 2.1"), state.index("ticket 2.2"))  # 2.2 waited for 2.1's ship
-        self.assertEqual(state[1:4], ["branch", "ci-pre", "build 1"])  # the ticket's phase lines, verbatim
+        self.assertEqual(state[1:4], ["worktree", "ci-pre", "build 1"])  # the ticket's phase lines, verbatim
         self.assertIn("gate2 2.2", state)
         self.assertEqual(state_phases(self.repo / "traces/runs/2.1.state")[-1], "done ship")
         self.assertEqual(state_phases(self.repo / "traces/runs/2.2.state")[-1], "done ship")

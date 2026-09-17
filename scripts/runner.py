@@ -2,11 +2,11 @@
 """Headless state machine for one ticket, or a plan's tickets in order, run from the main checkout.
 Usage: python runner.py <ticket id> | --plan <n> [--max-retries 2] [--cwd .] [--build-model sonnet]
                         [--verdict-model opus] [--arm blind|packet|repo] [--verdict-cmd "<template>"]
-                        [--summary-model haiku] [--parallel] [--override backend=<x>|scrutiny=<y>]
-                        [--packet-cap 40000]
+                        [--summary-model haiku] [--parallel] [--restricted]
+                        [--override backend=<x>|scrutiny=<y>] [--packet-cap 40000]
 States: branch → ci-pre → build (attempt 1 skipped when in_review with tests/feat/close-out commits; a retry always builds, the verdict's blocks in the ticket Log as its brief) →
 status → ci → verdict → close-out → (ship | block→retry | child→human). Phase names:
-branch|worktree · ci-pre · build <n> · build <n> close-out · build <n> skipped · tests-commit ·
+worktree · ci-pre · build <n> · build <n> close-out · build <n> skipped · tests-commit ·
 feat-commit · ci · verdict · close-out · done <decision>.
 Each state is a `claude -p` call or a shell command; transitions only on objective signals
 (exit codes, build status line in the ticket Log, verdict.json decision and findings).
@@ -24,10 +24,13 @@ lines: build and verdict time with tokens, what was built, one line per open fin
 file:line and its Gate 2 words, the charter line, the human ACs, what changed against the base
 branch, the page path, the recommended words), also printed last on stdout.
 
-Where it builds: branch ticket/<id> checked out in place (the tree must be clean); the run stays
-on ticket/<id> so the human sees what was built and the Gate 2 page in the folder (E16); ship
-from kanban_ops merges and returns to base. With --parallel a worktree under .worktrees/<id>/
-(kept in .git/info/exclude; ship removes it). The base branch is kanban_ops.base_branch (the
+Where it builds: a worktree under .worktrees/<id>/ (kept in .git/info/exclude), never the human's
+own checkout — the seat is handed a tree it can wreck without taking the human's with it. When
+the run ends the worktree is removed and ticket/<id> is checked out in the main checkout, so the
+human still lands on what was built and sees the Gate 2 page in their own folder (E16); ship
+from kanban_ops merges and returns to base. With --parallel the worktree is kept and the main
+checkout is left where it stood, so several tickets can run at once (ship removes it). The main
+checkout must be clean either way. The base branch is kanban_ops.base_branch (the
 plan's `base:`, else main, else master; E21), the one place every base decision is made.
 
 Refused before any branch is created or checked out (E23: a shipped ticket was rebuilt and
@@ -37,7 +40,8 @@ the base (an ancestor with commits of its own). Both print the reason, write `do
 
 The project's .env (KEY=value lines) is loaded first; the environment already set wins (E15).
 
-Build seat: /build streamed, with a shell allowlist and denied prompts. The session ends at the
+Build seat: /build streamed, unrestricted in the worktree it was given (--restricted puts it back
+under the shell allowlist and denied prompts). The session ends at the
 close-out (status line committed): any later tool call is logged on the ticket as
 `orbit after close-out` and the session is terminated; permission denials are fatal only when
 the close-out was not reached. Traced to Opik per attempt: input = ticket + plan ACs, output =
@@ -72,8 +76,8 @@ Exit codes: 0 ship (review the Gate 2 page, then say ship: kanban_ops merges) ·
 2 human gate (blocks all spawn child tickets, or same blocks as previous verdict) or a refusal
 (done ticket, merged branch, nothing to judge, packet too big, num_turns not 1) ·
 3 build reported NEEDS_CONTEXT (grill miss logged) or BLOCKED (see ticket Log) ·
-4 permission denied before the close-out (never retried; see BUILD_ALLOWED_TOOLS and the
-project's .claude/settings.json allowlist).
+4 permission denied before the close-out (never retried; only reachable under --restricted — see
+BUILD_ALLOWED_TOOLS and the project's .claude/settings.json allowlist).
 Run in a container when unattended (see Dockerfile).
 """
 import argparse
@@ -173,30 +177,43 @@ def git_exclude(repo: Path, pattern: str) -> None:
             f.write(pattern + "\n")
 
 
-def workspace(repo: Path, tid: str, parallel: bool) -> tuple[Path, bool]:
-    """Where the ticket is built. Default: branch ticket/<id> checked out in place in the main
-    checkout, and left there (E16). --parallel: a worktree under .worktrees/<id>/ (excluded via
-    .git/info/exclude), kept until ship removes it. Returns (path, fresh). Refuses
-    a dirty tree."""
+def workspace(repo: Path, tid: str, base: str) -> tuple[Path, bool]:
+    """The tree the seat is given: a worktree under .worktrees/<id>/ (excluded via
+    .git/info/exclude), never the main checkout. Returns (path, fresh). Refuses a dirty main
+    checkout. `base` is where the main checkout is parked when it holds the ticket branch
+    itself: git refuses the same branch in two trees, and a retry of a ticket the last run left
+    checked out would die there (E16 hands the branch back at the end of every run)."""
     if not clean_tree(repo):
         raise SystemExit("[runner] the tree is dirty; commit or stash before running a ticket")
     git_exclude(repo, "traces/runs/")  # the state, log and result files: the builder's `git add -A` must not commit them
     git_exclude(repo, ".env")  # the secrets the runner loads: never on a ticket branch
+    git_exclude(repo, ".worktrees/")
     branch = f"ticket/{tid}"
     branch_exists = sh(["git", "rev-parse", "--verify", "-q", branch], repo) == 0
-    if parallel:
-        path = repo / ".worktrees" / tid
-        git_exclude(repo, ".worktrees/")
-        if path.exists():
-            return path, False
+    if head_branch(repo) == branch and sh(["git", "checkout", "-q", base], repo) != 0:
+        raise SystemExit(f"[runner] {branch} is checked out in {repo} and {base} will not check out")
+    path = repo / ".worktrees" / tid
+    if not path.exists():
         cmd = (["git", "worktree", "add", str(path), branch] if branch_exists
                else ["git", "worktree", "add", "-b", branch, str(path), "HEAD"])
         if sh(cmd, repo) != 0:
             raise SystemExit(f"[runner] worktree add failed for {tid}")
-        return path, True
-    if sh(["git", "checkout", "-q", branch] if branch_exists else ["git", "checkout", "-q", "-b", branch], repo) != 0:
-        raise SystemExit(f"[runner] checkout of {branch} failed")
-    return repo, not branch_exists
+    return path, not branch_exists  # fresh is the branch, never the directory: a rerun gets a new worktree over an old branch, and its baseline was checked the first time round
+
+
+def head_branch(cwd: Path) -> str:
+    return subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd, capture_output=True, text=True).stdout.strip()
+
+
+def release_workspace(repo: Path, tree: Path, tid: str) -> None:
+    """The end of a run that is not --parallel: the disposable tree goes, and ticket/<id> is
+    checked out in the human's own checkout, so they land on what was built with the Gate 2 page
+    in their folder (E16). Both steps are best-effort: a run that produced commits must not fail
+    on its own tidy-up, and the branch is what carries the work either way."""
+    if tree == repo or not tree.exists():
+        return
+    sh(["git", "worktree", "remove", "--force", str(tree)], repo)
+    sh(["git", "checkout", "-q", f"ticket/{tid}"], repo)
 
 
 def ticket_base(cwd: Path, base: str) -> str:
@@ -316,11 +333,17 @@ def call_error(returncode: int, output: Path, report: dict | None = None) -> str
 
 
 # --- build seat -----------------------------------------------------------------------------
-# The build session runs headless: nobody answers a permission prompt. acceptEdits covers file
-# writes; Bash needs an explicit allowlist (claude --allowedTools, "Bash(git *)" syntax), and
-# --permission-prompts none turns any remaining prompt into a recorded denial instead of a hang.
-# The project's .claude/settings.json allowlist (project-template) covers the same commands for
-# human sessions; the checkout carries that file, so both apply there.
+# The build session runs headless: nobody answers a permission prompt. By default the seat runs
+# unrestricted in the worktree workspace() gave it — an allowlist enumerates what a model might
+# type, and every command it did not foresee kills a run that had already done the work (E34:
+# `make ci > /tmp/ci.log; echo …; tail …` died on `echo` and `tail`; four runs lost to that one
+# class). What bounds the seat is the tree, not the command list: it never has the human's
+# checkout. --restricted restores the allowlist below for anyone who wants the narrower seat;
+# acceptEdits covers file writes, Bash needs the explicit allowlist (claude --allowedTools,
+# "Bash(git *)" syntax), and --permission-prompts none turns any remaining prompt into a
+# recorded denial instead of a hang. The project's .claude/settings.json allowlist
+# (project-template) covers the same commands for human sessions; the checkout carries that
+# file, so both apply there.
 # The session streams (stream-json): the runner prints the builder's text and tool calls under
 # the phase lines, marks the tests/feat commits as phases, and once the close-out is reached
 # (status line committed) treats any further tool call as orbit: logged on the ticket,
@@ -340,9 +363,11 @@ BUILD_SYSTEM_PROMPT = (
 )
 
 
-def build_cmd(tid: str, model: str) -> list[str]:
-    return ["claude", "-p", f"/build {tid}", "--model", model, "--permission-mode", "acceptEdits",
-            "--permission-prompts", "none", "--allowedTools", ",".join(BUILD_ALLOWED_TOOLS),
+def build_cmd(tid: str, model: str, restricted: bool = False) -> list[str]:
+    seat = (["--permission-mode", "acceptEdits", "--permission-prompts", "none",
+             "--allowedTools", ",".join(BUILD_ALLOWED_TOOLS)] if restricted
+            else ["--dangerously-skip-permissions"])
+    return ["claude", "-p", f"/build {tid}", "--model", model, *seat,
             "--append-system-prompt", BUILD_SYSTEM_PROMPT, "--output-format", "stream-json", "--verbose"]
 
 
@@ -419,7 +444,8 @@ STREAM_WAIT = 1.0  # seconds the streaming loop waits for a builder line before 
 LAST_LINE_CHARS = 80  # contract B: the heartbeat's builder line, at most this long
 
 
-def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 1, tick=None, heartbeat=None) -> BuildCall:
+def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 1, tick=None, heartbeat=None,
+          restricted: bool = False) -> BuildCall:
     """Run one /build session, streamed. `phase(name)` is called with `tests-commit`,
     `feat-commit` and `build <attempt> close-out` as they appear; `tick()` every BOARD_TICK;
     `heartbeat(last_line, last_at)` every HEARTBEAT_SECONDS with the most recent line written
@@ -437,7 +463,7 @@ def build(cwd: Path, tid: str, model: str, phase=None, out=None, attempt: int = 
     before = status_marks(cwd, tid)  # a retry starts with the previous close-out in the Log
     start_sha = head_sha(cwd)  # what the branch pointed at before the builder made any commit (E33)
     closeout_sha = ""  # the commit the close-out was read from; the build's own commits end here
-    proc = subprocess.Popen(build_cmd(tid, model), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(build_cmd(tid, model, restricted), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     report: dict = {}
     orbit: list[str] = []
     seen: set[str] = set()
@@ -956,7 +982,7 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
         refused_state(repo, tid, reason, plan_state)
         return 2
     try:
-        tree, fresh = workspace(repo, tid, a.parallel)
+        tree, fresh = workspace(repo, tid, base_name)
     except SystemExit as e:  # a refusal (dirty tree, checkout failed): the state file says so, never a stale run
         reason = str(e).strip().splitlines()[0] if str(e).strip() else "refused"
         refused_state(repo, tid, reason.removeprefix("[runner] "), plan_state)
@@ -978,7 +1004,7 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
         return code
 
     try:
-        phases.mark("branch worktree" if a.parallel else "branch")
+        phases.mark("worktree kept" if a.parallel else "worktree")
         print(f"  {tree} on ticket/{tid} ({'new' if fresh else 'existing'})")
         base = ticket_base(tree, base_name)
         if fresh:
@@ -992,7 +1018,8 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
                 call = BuildCall(0, (), "", closed_out=True)
             else:
                 phases.mark(f"build {attempt}")
-                call = build(tree, tid, a.build_model, phase=phases.mark, attempt=attempt, tick=phases.board, heartbeat=phases.heartbeat)
+                call = build(tree, tid, a.build_model, phase=phases.mark, attempt=attempt, tick=phases.board,
+                             heartbeat=phases.heartbeat, restricted=a.restricted)
                 build_cost = total_cost(build_cost, call.cost_usd)
                 if call.orbit:
                     log_orbit(tree, tid, call.orbit)
@@ -1048,6 +1075,8 @@ def run_ticket(repo: Path, tid: str, a: argparse.Namespace, client, plan_state: 
             phases.done("error aborted")
         phases.finish()
         phases.board()
+        if not a.parallel:  # last, after the board: it renders from the tree that is about to go
+            release_workspace(repo, tree, tid)
         for line in result:
             print(line)
 
@@ -1168,7 +1197,8 @@ def main() -> int:
     ap.add_argument("--verdict-cmd", default=DEFAULT_VERDICT_CMD, metavar="TEMPLATE", help=VERDICT_CMD_HELP)
     ap.add_argument("--summary-model", default=render_verdict.DEFAULT_SUMMARY_MODEL,
                     help="model for the Gate 2 page's two prose sections (default the cheapest Claude); `none` skips the call")
-    ap.add_argument("--parallel", action="store_true", help="build in a worktree under .worktrees/<id>/ instead of checking the branch out in place")
+    ap.add_argument("--parallel", action="store_true", help="keep the worktree and leave the main checkout where it stands, so several tickets can run at once")
+    ap.add_argument("--restricted", action="store_true", help="run the build seat under the shell allowlist (BUILD_ALLOWED_TOOLS) instead of unrestricted in its worktree; a command the list does not name ends the run")
     ap.add_argument("--override", metavar="FIELD=VALUE", help="backend=<x> or scrutiny=<y>: restamp the ticket's plan, log the router miss, commit; then run")
     ap.add_argument("--packet-cap", type=int, default=PACKET_TOKEN_CAP, metavar="TOKENS",
                     help=f"refuse the verdict call when the packet is over this many ~tokens (bytes/4); default {PACKET_TOKEN_CAP}")

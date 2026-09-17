@@ -88,6 +88,9 @@ def main(argv: list[str]) -> int:
     brief_path = root / a.brief
     charter_path = root / CHARTER
     interfaces_path = root / INTERFACES
+    if not brief_path.exists():
+        print(f"[triage] brief not found: {a.brief}", file=sys.stderr)
+        return 1
     charter = schemas.Charter.parse(charter_path.read_text(encoding="utf-8")) if charter_path.exists() else schemas.Charter.missing()
     interfaces = schemas.Charter.parse(interfaces_path.read_text(encoding="utf-8")) if interfaces_path.exists() else schemas.Charter.missing()
     triage = route(brief_path.read_text(encoding="utf-8"), charter, interfaces)

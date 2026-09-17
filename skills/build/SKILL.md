@@ -19,8 +19,9 @@ the runner, in place or in a worktree), plus ticket `## Log` entries.
    collaborator's comment is there before this session reads the ticket (plan 4 AC-10). A
    project without the marker no-ops at once, with no `gh` call.
 2. **Branch check.** `git rev-parse --abbrev-ref HEAD` must be `ticket/<id>`. If not, stop:
-   `runner.py` checks the branch out (in place by default, under `.worktrees/<id>/` with
-   `--parallel`); by hand it is `git checkout -b ticket/<id>`. Where the branch lives is the
+   `runner.py` builds in a worktree under `.worktrees/<id>/` and hands the branch back to the
+   human's checkout when the run ends (`--parallel` keeps the worktree); by hand it is
+   `git checkout -b ticket/<id>`. Where the branch lives is the
    runner's choice, not yours; never switch branches or touch another checkout.
    Under `scrutiny: light` there is no per-ticket verdict — close-out still applies, and the
    whole branch gets one verdict before ship.
