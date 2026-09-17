@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -14,6 +15,7 @@ from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
+import kanban_ops  # noqa: E402
 import render_verdict  # noqa: E402
 import schemas  # noqa: E402
 import verdict_checks  # noqa: E402
@@ -264,6 +266,127 @@ class VerdictScriptsTest(unittest.TestCase):
         (vd / "1.1.json").write_text(json.dumps({"ticket": "1.1", "decision": decision, "held": [], "findings": findings,
                                                  "ci": {"green": True, "mutation_score": None}, "quality": {"a.py": {"srp": True}}}))
         return vd / "1.1.json"
+
+    def _add_ticket(self, tid: str, status: str = "ready", writes: "list[str] | None" = None) -> None:
+        p = self.tmp / "kanban" / "tickets" / f"{tid}.extra.md"
+        p.write_text(f"---\nid: {tid}\nparent: 1\nstatus: {status}\ndepends_on: []\nwrites: {writes or []}\n---\n"
+                     f"# {tid} extra\n## Log (append-only)\n")
+
+    def test_seat_waive_action_becomes_the_typed_line(self):
+        """AC-1: a legal `action`/`why` on an open finding is option A's line for it, verbatim."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "warn", "status": "open", "action": "waive",
+             "why": "Nobody reads the debug log; low blast radius.", "text": "debug log left in"}], decision="ship")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertNotIn("action_refused", v.findings[0])
+        lines, _ = render_verdict.answer_options(v, render_verdict.tickets_of(self.tmp), render_verdict.open_findings(v))[0]
+        self.assertIn("waive F1: Nobody reads the debug log; low blast radius.", lines)
+
+    def test_seat_home_action_becomes_the_typed_line(self):
+        """AC-1: `action: home` prints `home F# to <target>`, the target the seat named."""
+        self._add_ticket("1.2", status="ready", writes=["src/export/"])
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "warn", "status": "open", "action": "home", "home": "1.2",
+             "why": "belongs with the export slice", "text": "export path unset"}], decision="ship")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertNotIn("action_refused", v.findings[0])
+        lines, _ = render_verdict.answer_options(v, render_verdict.tickets_of(self.tmp), render_verdict.open_findings(v))[0]
+        self.assertIn("home F1 to 1.2", lines)
+
+    def test_seat_child_action_becomes_the_typed_line(self):
+        """AC-1: `action: child` prints `child from F#`."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "action": "child",
+             "why": "needs its own slice", "text": "needs its own slice"}], decision="reject")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        lines, _ = render_verdict.answer_options(v, render_verdict.tickets_of(self.tmp), render_verdict.open_findings(v))[0]
+        self.assertIn("child from F1", lines)
+
+    def test_block_waive_proposal_is_refused(self):
+        """AC-2: a block can never be waived; the rail overrules it and records why."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "action": "waive",
+             "why": "not worth blocking", "text": "wrong output"}], decision="reject")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(v.findings[0]["action_refused"], "a block cannot be waived")
+        lines, _ = render_verdict.answer_options(v, render_verdict.tickets_of(self.tmp), render_verdict.open_findings(v))[0]
+        self.assertIn("reject: rework F1", lines)  # recommendations()' fallback for a block
+
+    def test_illegal_verb_is_refused(self):
+        """AC-3: a verb outside the five Gate 2 verbs is refused."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "warn", "status": "open", "action": "delete",
+             "why": "nah", "text": "meh"}], decision="ship")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(v.findings[0]["action_refused"], "'delete' is not a Gate 2 verb")
+
+    def test_home_target_not_an_open_ticket_is_refused(self):
+        """AC-3: a `home` naming a closed or unknown ticket is refused."""
+        self._add_ticket("1.2", status="done")
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "warn", "status": "open", "action": "home", "home": "1.2",
+             "why": "x", "text": "meh"}], decision="ship")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(v.findings[0]["action_refused"], "home target '1.2' is not an open ticket")
+
+    def test_child_on_another_ticket_is_refused(self):
+        """AC-3: a `child` naming a ticket other than this one is refused."""
+        self._add_ticket("1.2", status="ready")
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "action": "child", "home": "1.2",
+             "why": "x", "text": "wrong"}], decision="reject")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(v.findings[0]["action_refused"], "child target '1.2' is not 1.1")
+
+    def test_refusal_is_reported_once_and_never_when_none(self):
+        """AC-5: refused count in the result block and the page; nothing printed when none refused."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "action": "waive",
+             "why": "skip it", "text": "wrong"}], decision="reject")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        tickets = render_verdict.tickets_of(self.tmp)
+        lines = render_verdict.result_lines(v, tickets, None, 1.0, "traces/verdict/1.1.html")
+        self.assertTrue(any("refused" in l for l in lines))
+        html = vpath.with_suffix(".html").read_text()
+        self.assertIn("refused", html)
+        self.assertIn("skip it", html)
+
+        vpath2 = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "warn", "status": "open", "text": "meh"}], decision="ship")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v2 = schemas.Verdict.load(vpath2)
+        lines2 = render_verdict.result_lines(v2, tickets, None, 1.0, "traces/verdict/1.1.html")
+        self.assertFalse(any("refused" in l for l in lines2))
+        self.assertNotIn("refused", vpath2.with_suffix(".html").read_text())
+
+    def test_legacy_verdict_without_action_uses_recommendations(self):
+        """AC-6: no `action` field at all — every verdict before this ticket — option A is built
+        from recommendations() exactly as today, and nothing says anything was refused."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "warn", "status": "open", "text": "naming in src/app/run.py:3"}], decision="ship")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertNotIn("action_refused", v.findings[0])
+        lines, _ = render_verdict.answer_options(v, render_verdict.tickets_of(self.tmp), render_verdict.open_findings(v))[0]
+        self.assertIn("waive F1: naming in src/app/run.py:3", lines)
+        self.assertFalse(any("refused" in l for l in render_verdict.result_lines(v, render_verdict.tickets_of(self.tmp), None, 1.0, "p")))
+
+    def test_refusal_never_fails_validation_or_the_render(self):
+        """AC-7: the rail never exits non-zero over a refusal; the verdict still renders."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "action": "banana",
+             "why": "x", "text": "wrong"}], decision="reject")
+        violations = render_verdict.main(self.tmp, "1.1", summary_model="none")
+        self.assertEqual(violations, [])
+        self.assertTrue(vpath.with_suffix(".html").exists())
 
     def test_stamp_meta_on_close_out(self):
         vpath = self._verdict_and_packet("repo", [{"id": "F1", "severity": "block", "status": "open", "ac": "AC-2", "text": "x"}])
@@ -715,6 +838,47 @@ class VerdictSchemaTest(unittest.TestCase):
         red, _ = verdict_checks.validate(v.with_findings(v.findings), "blind")
         self.assertEqual(verdict_checks.validate(schemas.Verdict.from_dict({"decision": "reject", "ci": {"green": False}, "findings": [
             {"id": "F1", "severity": "block"}]}), "blind")[0].decision, "reject")
+
+    def test_validate_refuses_illegal_proposals(self):
+        """AC-2, AC-3: validate() takes `tickets` and marks `action_refused` on an illegal proposal;
+        a legal one, or none at all, is untouched."""
+        tickets = [("1.1", "in_review", []), ("1.2", "ready", []), ("1.3", "done", [])]
+        v = schemas.Verdict.from_dict({"ticket": "1.1", "decision": "reject", "ci": {"green": True}, "findings": [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "action": "waive", "why": "x", "text": "t"},
+            {"id": "F2", "severity": "warn", "status": "open", "action": "home", "home": "1.2", "why": "x", "text": "t"},
+            {"id": "F3", "severity": "warn", "status": "open", "action": "home", "home": "1.3", "why": "x", "text": "t"},
+            {"id": "F4", "severity": "warn", "status": "open", "action": "waive", "why": "x", "text": "t"}]})
+        out, violations = verdict_checks.validate(v, "packet", None, tickets)
+        self.assertEqual(violations, [])
+        by = {f["id"]: f for f in out.findings}
+        self.assertEqual(by["F1"]["action_refused"], "a block cannot be waived")
+        self.assertNotIn("action_refused", by["F2"])
+        self.assertEqual(by["F3"]["action_refused"], "home target '1.3' is not an open ticket")
+        self.assertNotIn("action_refused", by["F4"])
+
+
+class Gate2VerbPropertyTest(unittest.TestCase):
+    """AC-4: over every archived verdict, option A names each open finding on exactly one line,
+    and every line it prints opens with one of the five Gate 2 verbs (kanban_ops.GATE2)."""
+
+    def test_every_line_is_a_gate2_verb_and_every_finding_has_one(self):
+        tickets = render_verdict.tickets_of(REPO)
+        checked = 0
+        for path in sorted((REPO / "traces" / "verdict").glob("*.json")):
+            if path.name.endswith(".summary.json") or ".prev." in path.name:
+                continue
+            v = schemas.Verdict.load(path)
+            open_ = render_verdict.open_findings(v)
+            lines, _ = render_verdict.answer_options(v, tickets, open_)[0]
+            for line in lines:
+                verb = line.split(" ", 1)[0].rstrip(":")
+                self.assertIn(verb, kanban_ops.GATE2, f"{path.name}: {line!r}")
+            for f in open_:
+                fid = str(f["id"])
+                named = [l for l in lines if re.search(rf"\b{re.escape(fid)}\b", l)]
+                self.assertEqual(len(named), 1, (path.name, fid, lines))
+            checked += 1
+        self.assertGreater(checked, 0)
 
 
 class TicketFileTest(unittest.TestCase):
