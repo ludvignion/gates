@@ -316,6 +316,17 @@ class VerdictScriptsTest(unittest.TestCase):
         lines, _ = render_verdict.answer_options(v, render_verdict.tickets_of(self.tmp), render_verdict.open_findings(v))[0]
         self.assertIn("reject: rework F1", lines)  # recommendations()' fallback for a block
 
+    def test_ship_on_a_block_is_refused(self):
+        """AC-2/AC-3: `ship` is a Gate 2 verb but never a legal per-finding action, block or not."""
+        vpath = self._verdict_and_packet("packet", [
+            {"id": "F1", "severity": "block", "status": "open", "ac": "AC-1", "action": "ship",
+             "why": "fine as is", "text": "wrong output"}], decision="reject")
+        render_verdict.main(self.tmp, "1.1", summary_model="none")
+        v = schemas.Verdict.load(vpath)
+        self.assertEqual(v.findings[0]["action_refused"], "'ship' is not a Gate 2 verb")
+        lines, _ = render_verdict.answer_options(v, render_verdict.tickets_of(self.tmp), render_verdict.open_findings(v))[0]
+        self.assertNotIn("waive F1: fine as is", lines)
+
     def test_illegal_verb_is_refused(self):
         """AC-3: a verb outside the five Gate 2 verbs is refused."""
         vpath = self._verdict_and_packet("packet", [
