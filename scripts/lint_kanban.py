@@ -122,6 +122,18 @@ def _closed_tickets_git(root: Path, base: str = "HEAD") -> list[str]:
     return out
 
 
+# A lint message pasted back into a ticket Log parses as a finding whose title is that message.
+# The next pass then reports it and embeds the old text, so the string nests one level per run
+# (plan 5's homing chain reached 11 violations from a single real finding). An echo is not a
+# finding: it names no work, and only the original it quotes is actionable.
+LINT_ECHO = " is unaddressed in its Log: "
+
+
+def is_lint_echo(title: str) -> bool:
+    """True when `title` is a lint violation someone recorded as a finding."""
+    return LINT_ECHO in title
+
+
 def finding_homes(root: Path) -> list[str]:
     out = []
     tickets = _fm.tickets(root / "kanban") if (root / "kanban").is_dir() else []
@@ -130,6 +142,8 @@ def finding_homes(root: Path) -> list[str]:
     for tid, (p, fm, log) in by_id.items():
         rel = _rel(root, p)
         for f in log.findings(tid):
+            if is_lint_echo(f.title):
+                continue
             if f.homes:
                 for h in f.homes:
                     if h not in by_id:
