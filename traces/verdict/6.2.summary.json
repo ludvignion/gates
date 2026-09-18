@@ -1,0 +1,8 @@
+{
+ "built": "Adds stance_line function to render_verdict.py that derives the opening sentence of option A from the decision. Updates four pre-existing test assertions in test_runner.py to match the new A-row format. Adds 58 lines of new assertions in test_verdict_scripts.py to cover AC-1, AC-2, and AC-3.",
+ "review": "Reject: AC-2 is blocked\u2014only one contradicting-stance example exists, so future recap changes could flip the verb without detection. AC-1 and AC-3 held. F1 (block, AC-2) and F2 (warn, AC-3: cap assertion ignores blank lines, risking the answer line off-screen) are both open. C1\u2013C10 are noise: plan-5 findings looping through closed tickets. CI green.",
+ "model": "haiku",
+ "inputs_sha": "8c5385eaae0e618693e08cf295336a2218d75e0bcaa04a3d30c71509359975eb",
+ "cost_usd": 0.0335873,
+ "error": null
+}

@@ -1,0 +1,238 @@
+{
+ "ticket": "6.2",
+ "decision": "reject",
+ "held": [
+  "AC-1",
+  "AC-3",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "C1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. A finding parked on a closed ticket stays parked, so whoever revisits plan 5 will find it still waiting."
+  },
+  {
+   "id": "C2",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "C3",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "C4",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "C5",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "C6",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "C7",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "C8",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "C9",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.3.1.kanban-tickets-5-2.md: ticket 5.3.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "C10",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.3.1.kanban-tickets-5-2.md: ticket 5.3.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
+   "impact": "low",
+   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+  },
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "open",
+   "ac": "AC-2",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "AC-2 asks a property over field combinations; only one contradicting-stance example exists. tests/test_verdict_scripts.py:915",
+   "impact": "low",
+   "consequence": "Whoever changes the recap next has no guard telling them a seat-written field must never move the printed verb. A human reading a Gate 2 recap could be told the opposite of the call that was made, and nothing in the suite would have caught it first."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-3",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "Cap assertion counts non-empty lines only; blank lines untested against the 40-line cap. tests/test_verdict_scripts.py:940",
+   "impact": "low",
+   "consequence": "A human reading a crowded verdict could get a block taller than the cap promises, pushing the line that says how to answer off the visible screen. The suite cannot rule that out as written."
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.10",
+  "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
+  "packet_sha": "1d57011f702cb34159d3eb6c13e7d30692990db81cc8fccf5ebd3d123c847622",
+  "cost_usd": 0.34815000000000007,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 15467,
+   "cache_read_input_tokens": 5672,
+   "output_tokens": 7255,
+   "output_tokens_details": {
+    "thinking_tokens": 3262
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 15467,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 7255,
+     "cache_read_input_tokens": 5672,
+     "cache_creation_input_tokens": 15467,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 15467
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 82.41160015700007,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}
