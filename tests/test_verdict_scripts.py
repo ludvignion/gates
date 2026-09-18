@@ -941,6 +941,31 @@ class StanceLineTest(unittest.TestCase):
         lines = render_verdict.result_lines(v, [], None, 1.0, "p")
         self.assertLessEqual(len([l for l in lines if l]), render_verdict.RESULT_MAX_LINES)
 
+    def test_stance_verb_never_disagrees_with_decision_property(self):
+        """AC-2: property over the full field-combination space — `decision`, whether anything
+        is still open, and a range of stance sentences including ones that claim the opposite
+        verb outright — the printed verb always matches what `decision` implies alone."""
+        decisions = ["ship", "reject"]
+        opens = [[], [{"id": "F1", "severity": "warn", "status": "open"}],
+                 [{"id": "F1", "severity": "block", "status": "open"}]]
+        stances = [
+            None, "", "   ",
+            "Ship it, this is all fine.",
+            "Send it back, this needs rework.",
+            "Ship with waivers, two nits remain.",
+            "Reject this outright.",
+        ]
+        for decision in decisions:
+            for open_ in opens:
+                expected_verb = "Send it back." if decision == "reject" else ("Ship with waivers." if open_ else "Ship.")
+                for stance in stances:
+                    v = self._verdict(decision, stance)
+                    line = render_verdict.stance_line(v, open_)
+                    with self.subTest(decision=decision, open_=bool(open_), stance=stance):
+                        sentence = (stance or "").strip()
+                        expected = f"{expected_verb} {sentence}" if sentence else expected_verb
+                        self.assertEqual(line, expected)
+
     def test_stance_is_never_one_of_the_typed_gate2_lines(self):
         """The stance line is prose the human does not type; AC-4 (6.1) keeps holding: every
         line answer_options() returns to type still opens with a Gate 2 verb."""
