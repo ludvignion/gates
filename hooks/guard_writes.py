@@ -45,6 +45,7 @@ def main() -> int:
     except Exception:
         return 0
     cwd = Path(call.get("cwd") or ".").resolve()
+    if not (cwd / "kanban" / ".guards").exists(): return 0  # opt-in (recommended): all three write rules are off unless kanban/.guards exists
     target = (call.get("tool_input") or {}).get("file_path")
     if not target:
         return 0

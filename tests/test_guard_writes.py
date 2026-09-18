@@ -22,9 +22,15 @@ class GuardWritesTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         shutil.copytree(FIXTURE, self.tmp / "kanban")
         self.tickets = self.tmp / "kanban" / "tickets"
+        (self.tmp / "kanban" / ".guards").touch()  # the rules are opt-in; these tests assert the opted-in behaviour
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_without_the_marker_every_rule_is_off(self):
+        """No kanban/.guards: the repo has not opted in, so nothing is blocked."""
+        (self.tmp / "kanban" / ".guards").unlink()
+        self.assertEqual(run_hook(self.tmp, self.tickets / "1.1.tracer-bullet.md").returncode, 0)
 
     def test_done_ticket_is_blocked(self):
         res = run_hook(self.tmp, self.tickets / "1.1.tracer-bullet.md")
