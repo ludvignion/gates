@@ -1,8 +1,8 @@
 {
- "built": "Adds test coverage for AC-2's field-combination property, verifying stance_verb never contradicts decision across two decision types, three open states, and seven stance sentences\u2014resolves finding F1. Also modifies render_verdict.py and test_runner.py. Total diff: 108 lines added, 7 removed.",
- "review": "Ticket 6.2 is rejected. AC-2, AC-3, and charter-1 held through tests. F1 (blocking AC-2) resolved by new property test covering field combinations; F2 (blocking AC-1) remains open\u2014output shape lacks stance field, so reviewers see bare verbs with no reason. Ten low-impact noise warnings about stale homing in closed tickets should be waived.",
+ "built": "Stance field added to verdict output shape so seat can populate it. Test asserts field exists, preventing regression. Fixture hashes updated to match changed prompt text.",
+ "review": "Ship. Blocks F1 and F2 resolved: property test covers both decisions and multiple field states, output shape asks seat for stance. Held AC-1, AC-2, AC-3, charter-1. Warns F3 and F4 open: stance line never wrapped (text overruns column), line-budget test cannot verify RESULT_MAX_LINES; cascading C1-C14 flag unaddressed findings from prior tickets but do not block. CI green.",
  "model": "haiku",
- "inputs_sha": "46675244a24711953222f336e9e25148c21db0e34ab880581fde1df113e7fa3f",
- "cost_usd": 0.067696,
+ "inputs_sha": "0285a91b0a8328bfbc97195fed60a3f55a9dd750ee62515ac7a8a1d0a125e593",
+ "cost_usd": 0.055485299999999994,
  "error": null
 }
