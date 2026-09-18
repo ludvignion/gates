@@ -161,6 +161,14 @@ class FindingHomesTest(unittest.TestCase):
         _append_log(self.done, "### [human] 2026-09-03 — 1.4 finding: stub outputs lack a header — accepted, not a slice")
         self.assertEqual(lint_kanban.finding_homes(self.tmp), [])
 
+    def test_a_recorded_lint_violation_is_not_itself_a_finding(self):
+        """A lint message pasted into a Log used to parse as a finding, so the next pass reported
+        it and embedded the old text — one real finding grew into eleven violations."""
+        echo = ("kanban/tickets/1.1.tracer-bullet.md: ticket 1.1 is done but the finding homed "
+                "here from 1.4 is unaddressed in its Log: stub outputs lack a header")
+        _append_log(self.ready, f"### [verdict] 2026-09-02 — reject\n- warn C1 -: {echo}")
+        self.assertEqual(lint_kanban.finding_homes(self.tmp), [])
+
     def test_open_ticket_with_homed_finding_passes(self):
         _append_log(self.done, "### [build] 2026-09-02 — finding: merge needs the count\nhome: 1.4")
         self.assertEqual(lint_kanban.finding_homes(self.tmp), [])
