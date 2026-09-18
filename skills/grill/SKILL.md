@@ -13,6 +13,31 @@ argument-hint: "<brief number>"
 Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1), then tickets
 `kanban/tickets/<n>.<m>.<slug>.md`, and `traces/grill/<n>.jsonl`.
 
+## Triage
+
+Before building the tree, run
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/triage.py kanban/briefs/<n>-<slug>.md`. Its first line is
+the route: `light` or `full`. Zero tokens — no model call, no network call, a pure function of
+the brief, the charter and the interface globs.
+
+**`light`.** No plan page, no Gate 1. In one tool-less turn — no research tool calls, the ACs
+come straight from the brief's own words — turn the brief's "What I want" into `- AC-<n>`
+(Given/When/Then where the brief supports it, otherwise the sentence as written) and compose the
+full ticket body from `templates/ticket.md`: `id: <n>.1`, `parent: <n>`, `lane: light`,
+`depends_on: []`, `writes:` set to triage's `paths:` line, `status: ready`; `## Outcome` (the
+brief's "What I want"); `## Acceptance criteria`; `## Out of scope`; `## Findings (append-only)`;
+`## Log (append-only)` with `### [grill] <timestamp> — created`. Write it to a scratch file and
+run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py new <n> <slug> --body-file <path>` (rule
+9 — the one door, both lanes). Print nothing else. The session's last line is
+`Next: /gates:runner <n>.1`.
+
+**`full`.** Continue at rule 1, as today: tree, questions, plan page, Gate 1. Every ticket this
+grill writes carries `lane: full` in its frontmatter, alongside `parent:`, `depends_on:` and
+`writes:`.
+
+**No named path at all** routes `full` too — a light ticket still needs a `writes:` scope for
+`hooks/guard_writes.py`.
+
 ## Rules
 
 1. **Build a typed design tree from the brief.** Root = the outcome. Children =
@@ -96,14 +121,18 @@ Input: `kanban/briefs/<n>-<slug>.md`. Output: `kanban/plans/<n>.plan.md` (gate 1
    targets it. If either section is missing, do not ask for it — proceed.
 9. **Then slice.** Vertical slices only — each ticket crosses every layer it touches and is
    demonstrable alone. Declare `depends_on` and `writes`. The first ticket is the tracer bullet.
-   Without `kanban/.issues`: write `kanban/tickets/<n>.<m>.<slug>.md` from `templates/ticket.md`
-   directly, in dependency order, `depends_on` naming the dotted ids.
-   With `kanban/.issues` (opted in): for each slice, in dependency order, write its body
-   (frontmatter `parent: <n>`, `depends_on` naming the prior slices' issue numbers, `writes:`;
-   `## Outcome`, `## Acceptance criteria`, `## Out of scope`) to a scratch file and run
-   `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py new <n> <slug> --body-file <path>`;
-   it creates the issue (`ticket`, `ready` labels) and prints `#<number>`. Once every slice has a
-   number, rewrite the plan's `## Slices` entries to `#<number>` and commit the plan, one commit.
+   For each slice, in dependency order, write its body to a scratch file and run
+   `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_ops.py new <n> <slug> --body-file <path>` — the
+   one door for every ticket, either lane. Without `kanban/.issues`: the body is the full ticket
+   from `templates/ticket.md` — frontmatter `id: <n>.<m>` (dotted, sequential, assigned here),
+   `parent: <n>`, `lane: full`, `depends_on` naming the dotted ids, `writes:`; `## Outcome`,
+   `## Acceptance criteria`, `## Out of scope`, `## Findings (append-only)`, `## Log
+   (append-only)` with `### [grill] <timestamp> — created`; `new` writes
+   `kanban/tickets/<n>.<m>.<slug>.md` and returns `<n>.<m>`. With `kanban/.issues` (opted in): no
+   `id:` — frontmatter `parent: <n>`, `depends_on` naming the prior slices' issue numbers,
+   `writes:`; `## Outcome`, `## Acceptance criteria`, `## Out of scope`; `new` creates the issue
+   (`ticket`, `ready` labels) and prints `#<number>`. Once every slice has a number, rewrite the
+   plan's `## Slices` entries to `#<number>` and commit the plan, one commit.
 10. **Trace.** Append one record per node to `traces/grill/<n>.jsonl`:
    `{"brief": n, "node": "...", "type": "fact|capability|decision|assumption",
 "kind": "functional|technical|null", "resolved_by": "evidence|human|assumption|open",

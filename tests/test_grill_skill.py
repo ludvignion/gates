@@ -117,7 +117,7 @@ class GrillSkillTextTest(unittest.TestCase):
         triage = schemas.section(body, "Triage")
         self.assertIn("scripts/triage.py", triage)
         self.assertIn("light", triage)
-        self.assertIn("no plan page", triage)
+        self.assertIn("No plan page", triage)
         self.assertIn("no Gate 1", triage)
         self.assertIn("lane: light", triage)
         self.assertIn("kanban_ops.py new <n> <slug> --body-file <path>", triage)

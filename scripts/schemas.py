@@ -258,6 +258,41 @@ class Charter:
         return tuple(it.id for it in self.items if it.reaches(paths))
 
 
+# --- Triage (plan 5) ---------------------------------------------------------------------
+# scripts/triage.py's four checks over a brief (AC-1): any one true routes `full`, named for the
+# reader; all false with at least one named path routes `light`; no named path at all routes
+# `full` too — a light ticket still needs a writes: scope for hooks/guard_writes.py.
+class TriageCheck(NamedTuple):
+    """One of the four checks: its number, its label, whether it fired, and the evidence line
+    (the reached glob id, or the package/URL/env var found) — empty when it did not fire."""
+
+    n: int
+    label: str
+    fired: bool
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class Triage:
+    """The route ``scripts/triage.py`` computes for one brief, and why. ``paths`` are the
+    backtick-quoted, slash-bearing paths the brief names — also the light ticket's `writes:`."""
+
+    route: str
+    checks: tuple[TriageCheck, ...] = ()
+    paths: tuple[str, ...] = ()
+
+    def render(self) -> str:
+        lines = [self.route, "paths: " + (", ".join(self.paths) if self.paths else "(none)")]
+        if not self.paths:
+            lines.append("no named path")
+        elif self.route == "full":
+            fired = next(c for c in self.checks if c.fired)
+            lines.append(f"{fired.n}. {fired.label}: yes" + (f" — {fired.detail}" if fired.detail else ""))
+        else:
+            lines.extend(f"{c.n}. {c.label}: no" for c in self.checks)
+        return "\n".join(lines) + "\n"
+
+
 class HumanAc(NamedTuple):
     """An AC only a person can verify (E30): ``- AC-7 (human): <text>``. Confirmed at Gate 2."""
 
