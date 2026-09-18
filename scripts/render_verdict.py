@@ -399,10 +399,21 @@ def answer_options(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]]
     return [a, c] if a[0] == b[0] else [a, b, c]
 
 
+def stance_line(v: schemas.Verdict, open_: list[dict]) -> str:
+    """"Ship.", "Ship with waivers." or "Send it back." — derived from `decision` and whether
+    anything is still open, never from a written field — plus the seat's own sentence from the
+    verdict's top-level `stance`, when it wrote one (plan 6 AC-7, ticket 6.2 AC-1/AC-2). A stance
+    sentence can never move the printed verb: only `decision` does."""
+    verb = "Send it back." if v.decision == "reject" else ("Ship with waivers." if open_ else "Ship.")
+    sentence = str(v.raw.get("stance") or "").strip()
+    return f"{verb} {sentence}" if sentence else verb
+
+
 def next_block(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], open_: list[dict],
                human_acs=(), backs: "dict[str, str] | None" = None) -> list[str]:
     """The end of the recap: the options in a labelled column, the recommended one first,
-    then the one line that says how to answer. Nothing follows it."""
+    then the one line that says how to answer. Nothing follows it. Option A's head is the
+    stance line (ticket 6.2 AC-1); its own typed lines follow, indented like every other line."""
     opts = answer_options(v, tickets, open_, backs)
     labels = ["A (recommended)", "B", "C"] if len(opts) == 3 else ["A (recommended)", "C"]
     out = []
@@ -411,8 +422,12 @@ def next_block(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], op
     out += [f"NEXT — {COUNT_WORD.get(len(opts), len(opts))} ways to answer:", ""]
     pad = " " * COLUMN
     for label, (lines, note) in zip(labels, opts):
-        out.append(f"  {label:<{COLUMN - 2}}{lines[0]}")
-        out += [pad + line for line in lines[1:]]
+        if label.startswith("A "):
+            out.append(f"  {label:<{COLUMN - 2}}{stance_line(v, open_)}")
+            out += [pad + line for line in lines]
+        else:
+            out.append(f"  {label:<{COLUMN - 2}}{lines[0]}")
+            out += [pad + line for line in lines[1:]]
         out += [pad + line for line in textwrap.wrap(note, BODY_WIDTH - COLUMN, break_on_hyphens=False)]
         out.append("")
     return out + ["Type one option's lines, in order, one line at a time."]

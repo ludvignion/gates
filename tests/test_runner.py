@@ -508,7 +508,7 @@ class RunnerBuildSeatTest(BuildSeatFixture, unittest.TestCase):
                                      "Changed: 2 files +4/−1 — src/app/run.py, tests/test_1_1.py",  # E27
                                      "Page: traces/verdict/1.1.html", "",
                                      "NEXT — two ways to answer:", "",
-                                     "  A (recommended)    ship", "                     1.1 merges.", "",
+                                     "  A (recommended)    Ship.", "                     ship", "                     1.1 merges.", "",
                                      "  C                  <your own words>",
                                      "                     A question, a change to one of these, or `reject: <reason>` to send all of 1.1",
                                      "                     back to build. Nothing merges until you say so.", "",
@@ -1144,7 +1144,8 @@ class ResultLinesTest(unittest.TestCase):
             "",
             "NEXT — three ways to answer:",
             "",
-            "  A (recommended)    child from F1",
+            "  A (recommended)    Send it back.",
+            "                     child from F1",
             "                     home F2 to 2.2",
             "                     waive F3: the stage log line lacks the stage name",
             "                     ship",
@@ -1204,7 +1205,8 @@ class ResultLinesTest(unittest.TestCase):
         self.assertEqual(lines[:5], ["2.1 · SHIP · build 0:00 · verdict 0:11 · tokens n/a", "", "Built: no summary", "", "FINDINGS (0) — nothing open"])
         self.assertNotIn(render_verdict.RULE, lines)
         self.assertIn("NEXT — two ways to answer:", lines)  # A is the ship, then C; no blunt B to offer
-        self.assertIn("  A (recommended)    ship", lines)
+        self.assertIn("  A (recommended)    Ship.", lines)
+        self.assertIn(" " * render_verdict.COLUMN + "ship", lines)
         for action, word in (("ship, create child 2.1.1 from F1", "child 2.1.1"), ("rework in place", "rework"), ("home to 2.3", "home 2.3"), ("waive", "waive")):
             self.assertEqual(render_verdict.action_word(action), word)
 
@@ -1233,7 +1235,8 @@ class ResultLinesTest(unittest.TestCase):
             self.assertEqual(render_verdict.seen_before(None, "2.1", f), "")
             lines = render_verdict.result_lines(v, [("2.1", "in_review", ["src/pipeline/export/"])], None, 1, "p", root=root)
             self.assertIn("    Second sighting: 1.9 F2 flagged the same file.", lines)
-            self.assertIn("  A (recommended)    child from F1", lines)  # twice is a pattern, not a nit
+            self.assertIn("  A (recommended)    Ship with waivers.", lines)
+            self.assertIn(" " * render_verdict.COLUMN + "child from F1", lines)  # twice is a pattern, not a nit
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
