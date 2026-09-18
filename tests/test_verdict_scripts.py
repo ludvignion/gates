@@ -892,6 +892,64 @@ class Gate2VerbPropertyTest(unittest.TestCase):
         self.assertGreater(checked, 0)
 
 
+class StanceLineTest(unittest.TestCase):
+    """AC-1, AC-2, AC-3 (6.2): option A opens with one stance line, its verb derived from
+    `decision` alone (and whether anything is still open), its sentence the seat's own words."""
+
+    def _verdict(self, decision, stance=None, findings=()):
+        d = {"ticket": "6.2", "decision": decision, "findings": list(findings)}
+        if stance is not None:
+            d["stance"] = stance
+        return schemas.Verdict.from_dict(d)
+
+    def test_ship_with_nothing_open(self):
+        v = self._verdict("ship", "Everything here is clean.")
+        self.assertEqual(render_verdict.stance_line(v, []), "Ship. Everything here is clean.")
+
+    def test_ship_with_something_open_says_with_waivers(self):
+        v = self._verdict("ship", "Two low-impact nits remain; nothing here blocks it.")
+        open_ = [{"id": "F1", "severity": "warn", "status": "open"}]
+        self.assertEqual(render_verdict.stance_line(v, open_), "Ship with waivers. Two low-impact nits remain; nothing here blocks it.")
+
+    def test_reject_says_send_it_back_whatever_the_seat_wrote(self):
+        """AC-2: a stance sentence claiming ship cannot move the printed verb — only `decision` does."""
+        v = self._verdict("reject", "Ship it, this is all fine.")
+        self.assertEqual(render_verdict.stance_line(v, [{"id": "F1", "severity": "block", "status": "open"}]),
+                          "Send it back. Ship it, this is all fine.")
+
+    def test_no_sentence_prints_the_verb_alone(self):
+        """AC-3: no stance sentence — the field missing entirely, as every verdict written
+        before this ticket has it — still gets a stance line, just the derived verb."""
+        v = self._verdict("ship")
+        self.assertEqual(render_verdict.stance_line(v, []), "Ship.")
+        v2 = schemas.Verdict.from_dict({"ticket": "6.2", "decision": "reject", "findings": []})
+        self.assertEqual(render_verdict.stance_line(v2, []), "Send it back.")
+
+    def test_option_a_opens_with_the_stance_line(self):
+        """AC-1: the stance sits above option A's own typed Gate 2 lines."""
+        v = self._verdict("ship", "One nit remains but it is nobody's blocker.",
+                          findings=[{"id": "F1", "severity": "warn", "status": "open", "text": "a nit"}])
+        lines = render_verdict.result_lines(v, [], None, 1.0, "p")
+        label_i = next(i for i, l in enumerate(lines) if "A (recommended)" in l)
+        self.assertTrue(lines[label_i].rstrip().endswith("Ship with waivers. One nit remains but it is nobody's blocker."))
+        self.assertEqual(lines[label_i + 1].strip(), "waive F1: a nit")
+
+    def test_stance_line_never_breaks_the_line_budget(self):
+        """AC-3: the block still fits RESULT_MAX_LINES with a long stance sentence and many findings."""
+        findings = [{"id": f"F{i}", "severity": "warn", "status": "open", "impact": "low", "text": f"warn {i}"} for i in range(1, 21)]
+        v = self._verdict("ship", "A long sentence explaining the overall call in full detail for the reader here.", findings)
+        lines = render_verdict.result_lines(v, [], None, 1.0, "p")
+        self.assertLessEqual(len([l for l in lines if l]), render_verdict.RESULT_MAX_LINES)
+
+    def test_stance_is_never_one_of_the_typed_gate2_lines(self):
+        """The stance line is prose the human does not type; AC-4 (6.1) keeps holding: every
+        line answer_options() returns to type still opens with a Gate 2 verb."""
+        v = self._verdict("ship", "Ship it.", findings=[{"id": "F1", "severity": "warn", "status": "open", "text": "a nit"}])
+        lines, _ = render_verdict.answer_options(v, [], render_verdict.open_findings(v))[0]
+        for line in lines:
+            self.assertIn(line.split(" ", 1)[0].rstrip(":"), kanban_ops.GATE2)
+
+
 class TicketFileTest(unittest.TestCase):
     def test_find_ticket_ignores_children(self):
         import kanban_ops
