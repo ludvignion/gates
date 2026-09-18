@@ -974,6 +974,14 @@ class StanceLineTest(unittest.TestCase):
         for line in lines:
             self.assertIn(line.split(" ", 1)[0].rstrip(":"), kanban_ops.GATE2)
 
+    def test_prompt_output_shape_asks_seat_for_a_stance_field(self):
+        """AC-1 (6.2, gate 2 F2): the seat's sentence only ever reaches stance_line() if the
+        prompt's Output shape actually asks for a top-level `stance` field — otherwise every
+        real verdict leaves it unset and only hand-built test verdicts exercise it."""
+        prompt = (REPO / "skills" / "verdict" / "verdict-prompt.md").read_text()
+        shape = prompt.split("### Output shape", 1)[1]
+        self.assertIn('"stance"', shape.split("### Never", 1)[0])
+
 
 class TicketFileTest(unittest.TestCase):
     def test_find_ticket_ignores_children(self):
