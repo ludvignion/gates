@@ -1,0 +1,8 @@
+{
+ "built": "Implements verdict checks to refuse ship/reject as per-finding actions; scripts enhance output to type action/why verbatim and give each waived finding its own line. Prompt definition updated and comprehensive tests added, totaling 259 insertions across 5 files.",
+ "review": "Ship approved. All 7 ACs and charter-1 held. Block (resolved in verdict_checks.py): ship now properly refused on blocks. Three open warns in render_verdict.py: message incorrectly labels ship as non-Gate-2, waive with null why prints empty reason, reject line lacks packet evidence for Gate-2 routing. Ten charter warns: homed findings unaddressed across prior completed tickets; test_grill_skill.py:126 assertion incomplete.",
+ "model": "haiku",
+ "inputs_sha": "1c7c09101ea371c89b442e42e0156e4a33324aa7513ce2c5a54d086fc0b09887",
+ "cost_usd": 0.049454,
+ "error": null
+}

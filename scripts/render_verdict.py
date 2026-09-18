@@ -96,8 +96,8 @@ def stamp(root: Path, tid: str, vendor_name: str, cost_usd: float | None = None,
     if not ppath.exists():
         return v, []
     packet = schemas.Packet.load(ppath)
-    v, violations = verdict_checks.validate(v, packet.arm, packet)
     v = replace(v, ticket=packet.ticket or tid)
+    v, violations = verdict_checks.validate(v, packet.arm, packet, tickets_of(root))
     old = v.meta
 
     def keep(new, name):
@@ -352,19 +352,26 @@ def and_list(names) -> str:
 def answer_options(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], open_: list[dict],
                    backs: "dict[str, str] | None" = None) -> list[tuple[list[str], str]]:
     """The ways to answer Gate 2, recommended first, each `([the lines to type, in order], what it
-    does)`. A routes every finding that has somewhere to go and ships; B is the blunt one —
-    ship as it stands, or, when a block holds the gate shut, the override that waives and ships;
-    B is dropped when it is A. The last is always the human's own words: the gate stays open.
-    Code, never a model call — the routing is recommendations(), plus one rule of its own: a warn
-    `backs` has seen on an earlier ticket gets a child instead of a waiver. It came back once."""
+    does)`. A routes every finding that has somewhere to go and ships, one typed line each —
+    `child from F#`, `home F# to <id>` or `waive F#: <why>`, the last never dropped to prose
+    (plan 6 AC-4); B is the blunt one — ship as it stands, or, when a block holds the gate shut,
+    the override that waives and ships; B is dropped when it is A. The last is always the
+    human's own words: the gate stays open. A finding's own `action`/`why` (when legal — not
+    `action_refused`) is typed verbatim; otherwise the line comes from recommendations(), plus
+    one rule of its own: a warn `backs` has seen on an earlier ticket gets a child instead of a
+    waiver. It came back once."""
     per, backs = dict(recommendations(v, tickets)), backs or {}
     child_n = int(next_child(v.ticket, tickets).rsplit(".", 1)[1])  # per call: two children in one run are .1 and .2
-    routed, logged, blockers = [], [], []
+    routed, waived, blockers = [], [], []
     for f in open_:
         fid = str(f.get("id"))
-        verb, _, target = action_word(per.get(fid, "waive")).partition(" ")
-        if verb == "waive" and backs.get(fid):  # twice is a pattern, not a nit
-            verb = "child"
+        if f.get("action") and not f.get("action_refused"):
+            verb, why, target = str(f["action"]), str(f.get("why") or ""), f.get("home")
+        else:
+            verb, _, target = action_word(per.get(fid, "waive")).partition(" ")
+            why = str(f.get("text") or "")
+            if verb == "waive" and backs.get(fid):  # twice is a pattern, not a nit
+                verb = "child"
         if verb == "child":
             routed.append((f"child from {fid}", f"{fid} → {v.ticket}.{child_n}"))
             child_n += 1
@@ -373,16 +380,16 @@ def answer_options(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]]
         elif verb == "rework":
             blockers.append(fid)
         else:
-            logged.append(fid)
-    logged_note = f"{and_list(logged)} {'is' if len(logged) == 1 else 'are'} logged open and unfixed." if logged else ""
+            waived.append(f"waive {fid}: {why}")
     if blockers:
-        a = ([f"reject: rework {', '.join(blockers)}"], f"{v.ticket} goes back to build with {and_list(blockers)} named. Nothing merges.")
-        b = ([f"waive {fid}: <reason>" for fid in blockers] + ["ship"],
+        a = ([f"reject: rework {', '.join(blockers)}"] + [line for line, _ in routed] + waived,
+             f"{v.ticket} goes back to build with {and_list(blockers)} named. Nothing merges.")
+        b = ([f"waive {fid}: <reason>" for fid in blockers] + [line for line, _ in routed] + waived + ["ship"],
              f"Merges with {and_list(blockers)} unfixed. Your reason goes in the ticket log.")
     else:
         high = next((str(f.get("id")) for f in open_ if impact_of(f) == "high"), "")
-        made = ". ".join(x for x in (", ".join(n for _, n in routed), logged_note.rstrip(".")) if x)
-        a = ([line for line, _ in routed] + ["ship"], (made + ". " if made else "") + f"{v.ticket} merges.")
+        made = ", ".join(n for _, n in routed)
+        a = ([line for line, _ in routed] + waived + ["ship"], (made + ". " if made else "") + f"{v.ticket} merges.")
         n = len(open_)
         held_by_nobody = (("The finding is" if n == 1 else f"All {COUNT_WORD.get(n, n)} are") + " logged open and unfixed"
                           + (f", including {high}, the high-impact one." if high else f", and nobody is holding {'it' if n == 1 else 'them'}."))
@@ -432,6 +439,7 @@ def result_lines(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], 
       Charter: <names> held · <names> — touched, not judged
       Changed: N files +A/−B — <up to 6 file names>
       Page: <path>
+      N proposals refused — see <path> (only when at least one open finding's action was refused)
       NEXT — <n> ways to answer: the options in a column, recommended first, then how to answer
     Pure code from verdict.json, summary.json and the dicts the runner hands over; the options
     are answer_options(), never a model call. `root` (the working tree) only buys the second
@@ -444,7 +452,9 @@ def result_lines(v: schemas.Verdict, tickets: list[tuple[str, str, list[str]]], 
     sentence = re.split(r"(?<=[.!?])\s", built, maxsplit=1)[0] if built else "no summary"
     humans = [f"Human: {aid} — {text}" for aid, text in map(human_ac, human_acs)]
     backs = {str(f.get("id")): seen_before(root, v.ticket, f) for f in open_}
-    tail = [charter_line(charter), *humans, changed_line(changed), f"Page: {page}", "", *next_block(v, tickets, open_, human_acs, backs)]
+    refused_n = sum(1 for f in open_ if f.get("action_refused"))
+    refused_line = [f"{refused_n} proposal{'s' if refused_n != 1 else ''} refused — see {page}."] if refused_n else []
+    tail = [charter_line(charter), *humans, changed_line(changed), f"Page: {page}", *refused_line, "", *next_block(v, tickets, open_, human_acs, backs)]
     body = [head, "", f"Built: {sentence}", "", findings_heading(open_)]
     if not open_:
         return [*body, "", *tail]
@@ -530,7 +540,16 @@ def render(root: Path, tid: str, v: schemas.Verdict, violations: list[str], summ
         + "</p>"
     )
     said = (f"<p>{esc(summary['review'])}</p>" if summary.get("review") else "") + said_facts
-    actions_html = "".join(f"<li><b>{esc(fid)}</b> {esc(a)}</li>" for fid, a in actions) or "<li>ship as is</li>"
+    by_id = {str(f.get("id")): f for f in fs}
+
+    def refusal_note(fid: str) -> str:
+        reason = by_id.get(fid, {}).get("action_refused")
+        if not reason:
+            return ""
+        why = by_id[fid].get("why")
+        return f" — proposal refused: {esc(reason)}" + (f" ({esc(why)})" if why else "")
+
+    actions_html = "".join(f"<li><b>{esc(fid)}</b> {esc(a)}{refusal_note(fid)}</li>" for fid, a in actions) or "<li>ship as is</li>"
     out = f"""<!doctype html><meta charset=utf-8><title>Verdict {tid}</title>
 <style>body{{font-family:system-ui;max-width:1000px;margin:2rem auto}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ccc;padding:.3rem .6rem;text-align:left}}
 .hero{{font-size:2rem;padding:1rem;color:#fff;background:{'#3cb371' if ship else '#c0392b'}}}

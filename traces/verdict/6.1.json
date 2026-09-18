@@ -1,0 +1,253 @@
+{
+ "ticket": "6.1",
+ "decision": "ship",
+ "held": [
+  "AC-1",
+  "AC-2",
+  "AC-3",
+  "AC-4",
+  "AC-5",
+  "AC-6",
+  "AC-7",
+  "charter-1"
+ ],
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "block",
+   "status": "resolved",
+   "ac": "AC-2",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": "tests/test_verdict_scripts.py::test_ship_on_a_block_is_refused",
+   "repro": "python -c \"import sys;sys.path.insert(0,'scripts');import schemas,verdict_checks,render_verdict as r;T=[('1.1','in_review',[])];v=schemas.Verdict.from_dict({'ticket':'1.1','decision':'reject','ci':{'green':True},'findings':[{'id':'F1','severity':'block','status':'open','ac':'AC-1','action':'ship','why':'nah','text':'t'}]});v,_=verdict_checks.validate(v,'packet',None,T);print(r.answer_options(v,T,r.open_findings(v))[0])\"",
+   "waived_by": null,
+   "text": "`action: ship` now refused, falls back to rework. scripts/verdict_checks.py:188",
+   "impact": "medium",
+   "consequence": "No longer reachable: a seat proposing ship on a block can no longer turn it into a waiver line at Gate 2."
+  },
+  {
+   "id": "F2",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "Refusal reason says ship is not a Gate 2 verb; it is. scripts/verdict_checks.py:189",
+   "impact": "low",
+   "consequence": "Whoever reads the verdict page is told ship is not a Gate 2 verb, when it is one of the five lines they can type there. They may doubt the rail, or doubt the verb list itself."
+  },
+  {
+   "id": "F3",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "`action: waive` with `why: null` passes the rail, prints empty reason. scripts/render_verdict.py:383",
+   "impact": "medium",
+   "consequence": "The person at Gate 2 is handed a waiver line with nothing after the colon and types it as printed. Whoever reads that ticket log later finds a finding waived with no reason recorded."
+  },
+  {
+   "id": "F4",
+   "severity": "warn",
+   "status": "open",
+   "ac": "AC-4",
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "Option A now appends child/waive lines after `reject:`; packet shows no Gate 2 evidence. scripts/render_verdict.py:385",
+   "impact": "medium",
+   "consequence": "If Gate 2 stops at the reject line, the person answering types routing that never lands and the findings stay unrouted. Nothing in the packet shows which way Gate 2 takes a reject followed by more lines."
+  },
+  {
+   "id": "C1",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C2",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C3",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C4",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C5",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C6",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C7",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C8",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C9",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.3.1.kanban-tickets-5-2.md: ticket 5.3.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  },
+  {
+   "id": "C10",
+   "severity": "warn",
+   "status": "open",
+   "ac": null,
+   "charter": null,
+   "home": null,
+   "spawn_child": false,
+   "covered_by": null,
+   "repro": null,
+   "waived_by": null,
+   "text": "kanban/tickets/5.3.1.kanban-tickets-5-2.md: ticket 5.3.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126"
+  }
+ ],
+ "ci": {
+  "green": true,
+  "mutation_score": null
+ },
+ "meta": {
+  "arm": "packet",
+  "vendor": "claude",
+  "plugin_version": "0.11.10",
+  "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
+  "packet_sha": "1e8f33d6bcff8299abc0cf1129c10571066b9af4be80640e89a6b4484cecb4d8",
+  "cost_usd": 0.597847,
+  "tokens": {
+   "input_tokens": 2,
+   "cache_creation_input_tokens": 25161,
+   "cache_read_input_tokens": 5672,
+   "output_tokens": 13050,
+   "output_tokens_details": {
+    "thinking_tokens": 8722
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 25161,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "not_available",
+   "iterations": [
+    {
+     "input_tokens": 2,
+     "output_tokens": 13050,
+     "cache_read_input_tokens": 5672,
+     "cache_creation_input_tokens": 25161,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 25161
+     },
+     "type": "message"
+    }
+   ],
+   "speed": "standard"
+  },
+  "seconds": 158.6998909959948,
+  "opik": "untraced (OPIK_URL_OVERRIDE unset)"
+ }
+}

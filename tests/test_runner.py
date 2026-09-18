@@ -1146,8 +1146,9 @@ class ResultLinesTest(unittest.TestCase):
             "",
             "  A (recommended)    child from F1",
             "                     home F2 to 2.2",
+            "                     waive F3: the stage log line lacks the stage name",
             "                     ship",
-            "                     F1 → 2.1.1, F2 → 2.2. F3 is logged open and unfixed. 2.1 merges.",
+            "                     F1 → 2.1.1, F2 → 2.2. 2.1 merges.",
             "",
             "  B                  ship",
             "                     Merges now. All three are logged open and unfixed, including F1, the",
@@ -1163,7 +1164,8 @@ class ResultLinesTest(unittest.TestCase):
         self.assertNotIn("/", lines[2])  # Built: no path
         self.assertNotIn("charter-", lines[18])  # E34
         joined = "\n".join(lines)
-        self.assertNotIn("$", joined); self.assertNotIn("Recommended:", joined); self.assertNotIn("waive F", joined)  # no waiver is ever the recommendation here
+        self.assertNotIn("$", joined); self.assertNotIn("Recommended:", joined)
+        self.assertIn("waive F3: the stage log line lacks the stage name", joined)  # AC-4: every open finding gets a typed line
 
     def test_impact_orders_the_findings_and_a_high_warn_is_never_waived(self):
         """Worst blast radius first whatever the verdict order, and a high-impact warn no
@@ -1179,7 +1181,7 @@ class ResultLinesTest(unittest.TestCase):
         self.assertEqual(dict(render_verdict.recommendations(v, self.TICKETS)),
                          {"F1": "waive", "F2": "ship, create child 2.1.1 from F2", "F3": "waive"})
         a, b, c = render_verdict.answer_options(v, self.TICKETS, render_verdict.open_findings(v))
-        self.assertEqual(a, (["child from F2", "ship"], "F2 → 2.1.1. F3 and F1 are logged open and unfixed. 2.1 merges."))
+        self.assertEqual(a, (["child from F2", "waive F3: no impact given", "waive F1: a nit", "ship"], "F2 → 2.1.1. 2.1 merges."))
         self.assertEqual(b[0], ["ship"])
         self.assertIn("including F2, the high-impact one", b[1])
         self.assertEqual(c[0], ["<your own words>"])

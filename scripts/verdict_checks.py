@@ -177,12 +177,38 @@ def charter_report(v: schemas.Verdict, packet: "schemas.Packet | None") -> dict:
             "names": charter_names(packet)}
 
 
-def validate(v: schemas.Verdict, arm: str, packet: "schemas.Packet | None" = None) -> tuple[schemas.Verdict, list[str]]:
+FINDING_VERBS = ("child", "home", "waive")  # `ship`/`reject` are the verdict's own verbs, never one finding's
+
+
+def refusal(f: dict, tid: str, open_ticket_ids: "set[str] | None") -> "str | None":
+    """Why the rail overrules this finding's seat-proposed `action`, or None when it stands: the
+    verb must be one of FINDING_VERBS — `ship` and `reject` are Gate 2 verbs but never a legal
+    per-finding action; a block can never become `waive`; a `home` target must be an open ticket;
+    a `child` is only ever on this ticket (plan 6 AC-2, AC-3)."""
+    action = f.get("action")
+    if not action:
+        return None
+    if action not in FINDING_VERBS:
+        return f"'{action}' is not a Gate 2 verb"
+    if f.get("severity") == "block" and action == "waive":
+        return "a block cannot be waived"
+    if open_ticket_ids is not None and action == "home" and f.get("home") not in open_ticket_ids:
+        return f"home target '{f.get('home')}' is not an open ticket"
+    if action == "child" and f.get("home") and f.get("home") != tid:
+        return f"child target '{f.get('home')}' is not {tid}"
+    return None
+
+
+def validate(v: schemas.Verdict, arm: str, packet: "schemas.Packet | None" = None,
+             tickets: "list[tuple[str, str, list[str]]] | None" = None) -> tuple[schemas.Verdict, list[str]]:
     """The verdict as it should be stored, and the violations found. Blind cannot cite, so its
     uncited blocks become warns (text unchanged); under any other arm they are violations and
     the verdict is returned as written. Every AC the packet showed must be in `held` or cited by
     a finding; the rest become C-warns "unaccounted: <id>" (appended once; a re-run does not
-    duplicate them). Charter items never do: see unaccounted."""
+    duplicate them). Charter items never do: see unaccounted. `tickets` (id, status, writes),
+    when given, also runs the Gate 2 rail: an illegal proposal on an open finding is marked
+    `action_refused` with the reason, never a violation — the render falls back to
+    recommendations() for it (plan 6 AC-2, AC-3, AC-7)."""
     violations: list[str] = []
     uncited = v.uncited_blocks()
     if uncited and arm != "blind":
@@ -192,6 +218,11 @@ def validate(v: schemas.Verdict, arm: str, packet: "schemas.Packet | None" = Non
         v = v.with_findings(tuple({**f, "severity": "warn"} if id(f) in ids else f for f in v.findings))
         # the prompt's rule, applied mechanically after the downgrade: reject iff an open block or CI red
         v = v.with_decision("reject" if v.open_blocks() or v.ci.get("green") is False else "ship")
+    if tickets is not None:
+        open_ids = {t for t, status, _ in tickets if status not in schemas.CLOSED_STATUSES}
+        refused = {id(f): reason for f in v.findings if v.is_open(f) and (reason := refusal(f, v.ticket, open_ids))}
+        if refused:
+            v = v.with_findings(tuple({**f, "action_refused": refused[id(f)]} if id(f) in refused else f for f in v.findings))
     missing = unaccounted(v, packet)
     if missing:
         n = max((int(f["id"][1:]) for f in v.findings if isinstance(f.get("id"), str) and re.fullmatch(r"C\d+", f["id"])), default=0)
