@@ -1,8 +1,8 @@
 {
- "built": "Adds stance_line function to render_verdict.py that derives the opening sentence of option A from the decision. Updates four pre-existing test assertions in test_runner.py to match the new A-row format. Adds 58 lines of new assertions in test_verdict_scripts.py to cover AC-1, AC-2, and AC-3.",
- "review": "Reject: AC-2 is blocked\u2014only one contradicting-stance example exists, so future recap changes could flip the verb without detection. AC-1 and AC-3 held. F1 (block, AC-2) and F2 (warn, AC-3: cap assertion ignores blank lines, risking the answer line off-screen) are both open. C1\u2013C10 are noise: plan-5 findings looping through closed tickets. CI green.",
+ "built": "Adds test coverage for AC-2's field-combination property, verifying stance_verb never contradicts decision across two decision types, three open states, and seven stance sentences\u2014resolves finding F1. Also modifies render_verdict.py and test_runner.py. Total diff: 108 lines added, 7 removed.",
+ "review": "Ticket 6.2 is rejected. AC-2, AC-3, and charter-1 held through tests. F1 (blocking AC-2) resolved by new property test covering field combinations; F2 (blocking AC-1) remains open\u2014output shape lacks stance field, so reviewers see bare verbs with no reason. Ten low-impact noise warnings about stale homing in closed tickets should be waived.",
  "model": "haiku",
- "inputs_sha": "8c5385eaae0e618693e08cf295336a2218d75e0bcaa04a3d30c71509359975eb",
- "cost_usd": 0.0335873,
+ "inputs_sha": "46675244a24711953222f336e9e25148c21db0e34ab880581fde1df113e7fa3f",
+ "cost_usd": 0.067696,
  "error": null
 }

@@ -2,7 +2,7 @@
  "ticket": "6.2",
  "decision": "reject",
  "held": [
-  "AC-1",
+  "AC-2",
   "AC-3",
   "charter-1"
  ],
@@ -20,7 +20,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. A finding parked on a closed ticket stays parked, so whoever revisits plan 5 will find it still waiting."
+   "consequence": "Nobody is blocked today. A finding homed to a closed ticket has no owner, so it sits unread until someone re-reads that ticket's Log by hand."
   },
   {
    "id": "C2",
@@ -35,7 +35,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. This is the same stale homing re-reported through another closed ticket, so the text grows each pass without anyone gaining new information."
   },
   {
    "id": "C3",
@@ -50,7 +50,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. Another echo of the same stale homing; whoever reads Gate 2 has to recognise it as a duplicate before they can act."
   },
   {
    "id": "C4",
@@ -65,7 +65,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. The homing chain is now nesting itself, so the reported text is mostly repetition of earlier entries in this same list."
   },
   {
    "id": "C5",
@@ -80,7 +80,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. Same stale homing again, reached through 5.3.3 this time; no new work is described by it."
   },
   {
    "id": "C6",
@@ -95,7 +95,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. A further nesting of the same closed-ticket homing; it costs reading time at Gate 2 and nothing else."
   },
   {
    "id": "C7",
@@ -110,7 +110,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. Another nested repeat of the same stale homing, carrying no work item a reader could pick up."
   },
   {
    "id": "C8",
@@ -125,7 +125,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. The nesting is now three deep and the entry is almost entirely duplicated text from the entries above it."
   },
   {
    "id": "C9",
@@ -140,7 +140,7 @@
    "waived_by": null,
    "text": "kanban/tickets/5.3.1.kanban-tickets-5-2.md: ticket 5.3.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. The same closed-ticket homing reported once more via 5.3.1; no reader gains an actionable item from it."
   },
   {
    "id": "C10",
@@ -155,37 +155,37 @@
    "waived_by": null,
    "text": "kanban/tickets/5.3.1.kanban-tickets-5-2.md: ticket 5.3.1 is done but the finding homed here from 5.3.3 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.2 is unaddressed in its Log: kanban/tickets/5.1.triage-and-light-ticket.md: ticket 5.1 is done but the finding homed here from 5.3.1 is unaddressed in its Log: kanban/tickets/5.2.budget-stop.md: ticket 5.2 is done but the finding homed here from 5.1 is unaddressed in its Log: AC-4 test asserts only two substrings; tree, questions, plan page, Gate 1 unpinned. tests/test_grill_skill.py:126",
    "impact": "low",
-   "consequence": "Nobody working on 6.2 is blocked. The same plan-5 finding is being re-reported through a chain of closed tickets."
+   "consequence": "Nobody is blocked today. The longest echo of the same stale homing; it crowds the findings list a human has to read before deciding."
   },
   {
    "id": "F1",
    "severity": "block",
-   "status": "open",
+   "status": "resolved",
    "ac": "AC-2",
    "charter": null,
    "home": null,
    "spawn_child": false,
-   "covered_by": null,
+   "covered_by": "tests/test_verdict_scripts.py::StanceLineTest::test_stance_verb_never_disagrees_with_decision_property",
    "repro": null,
    "waived_by": null,
    "text": "AC-2 asks a property over field combinations; only one contradicting-stance example exists. tests/test_verdict_scripts.py:915",
-   "impact": "low",
-   "consequence": "Whoever changes the recap next has no guard telling them a seat-written field must never move the printed verb. A human reading a Gate 2 recap could be told the opposite of the call that was made, and nothing in the suite would have caught it first."
+   "impact": "medium",
+   "consequence": "No longer an obstacle. The reviewer who asked for a property now has one covering both decisions, three open-finding shapes and seven stance sentences, including ones claiming the opposite verb."
   },
   {
    "id": "F2",
-   "severity": "warn",
+   "severity": "block",
    "status": "open",
-   "ac": "AC-3",
+   "ac": "AC-1",
    "charter": null,
    "home": null,
    "spawn_child": false,
    "covered_by": null,
-   "repro": null,
+   "repro": "grep -n stance skills/verdict/verdict-prompt.md",
    "waived_by": null,
-   "text": "Cap assertion counts non-empty lines only; blank lines untested against the 40-line cap. tests/test_verdict_scripts.py:940",
-   "impact": "low",
-   "consequence": "A human reading a crowded verdict could get a block taller than the cap promises, pushing the line that says how to answer off the visible screen. The suite cannot rule that out as written."
+   "text": "Output shape has no `stance` field, so the seat's sentence never prints. skills/verdict/verdict-prompt.md",
+   "impact": "medium",
+   "consequence": "Anyone reading a Gate 2 recap sees a bare verb and no reason for it. The half of this ticket that promised the reviewer's own words in option A cannot happen for any real verdict, only for hand-built test ones."
   }
  ],
  "ci": {
@@ -197,15 +197,15 @@
   "vendor": "claude",
   "plugin_version": "0.11.10",
   "prompt_sha": "a1870f517e5e3f98011be8d46abed0783c582c121d71bb7944c67615a52f4946",
-  "packet_sha": "1d57011f702cb34159d3eb6c13e7d30692990db81cc8fccf5ebd3d123c847622",
-  "cost_usd": 0.34815000000000007,
+  "packet_sha": "6e6737115c16ca627aa9c3abae3d4c70a5be636d439de1b177c2bc7ef831ce75",
+  "cost_usd": 0.383534,
   "tokens": {
    "input_tokens": 2,
-   "cache_creation_input_tokens": 15467,
-   "cache_read_input_tokens": 5672,
-   "output_tokens": 7255,
+   "cache_creation_input_tokens": 18148,
+   "cache_read_input_tokens": 0,
+   "output_tokens": 7692,
    "output_tokens_details": {
-    "thinking_tokens": 3262
+    "thinking_tokens": 3350
    },
    "server_tool_use": {
     "web_search_requests": 0,
@@ -213,26 +213,26 @@
    },
    "service_tier": "standard",
    "cache_creation": {
-    "ephemeral_1h_input_tokens": 15467,
+    "ephemeral_1h_input_tokens": 18148,
     "ephemeral_5m_input_tokens": 0
    },
    "inference_geo": "not_available",
    "iterations": [
     {
      "input_tokens": 2,
-     "output_tokens": 7255,
-     "cache_read_input_tokens": 5672,
-     "cache_creation_input_tokens": 15467,
+     "output_tokens": 7692,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 18148,
      "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
-      "ephemeral_1h_input_tokens": 15467
+      "ephemeral_1h_input_tokens": 18148
      },
      "type": "message"
     }
    ],
    "speed": "standard"
   },
-  "seconds": 82.41160015700007,
+  "seconds": 87.31250761199954,
   "opik": "untraced (OPIK_URL_OVERRIDE unset)"
  }
 }
