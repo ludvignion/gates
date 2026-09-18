@@ -50,7 +50,7 @@ not evidence of anything: judge what the packet shows.
 
 ### Output shape
 ```json
-{"ticket": "<id>", "decision": "ship|reject",
+{"ticket": "<id>", "decision": "ship|reject", "stance": "<one sentence in your own words, or null>",
  "held": ["attack-1", "AC-1", "AC-2", "charter-1"],
  "findings": [
    {"id": "F1", "severity": "block|warn", "status": "open|resolved",
@@ -64,6 +64,7 @@ not evidence of anything: judge what the packet shows.
  "ci": {"green": true, "mutation_score": null}}
 ```
 `decision` is `reject` iff any open `block`, or CI red.
+`stance` is your own one-sentence read of the diff, or null; it never moves `decision` — the verb printed to the human always comes from `decision` alone.
 
 ### Never
 - Fix code. Findings only.

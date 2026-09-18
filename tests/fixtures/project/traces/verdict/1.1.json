@@ -43,7 +43,7 @@
   "vendor": "claude",
   "plugin_version": "0.6.2",
   "prompt_sha": "a704c651bc4d38d23b4841993f5a10ceacc9d4d80e3c5cecbe7e86ba2504d6ce",
-  "packet_sha": "0deca54d6376b72ec8e3bef1cf0b37840afd914bcef56d36d5eb3c0f1cf99a22",
+  "packet_sha": "84a9aae1142fda32024a34ffb1972a0d3f3591effa891154e6b65975665a6672",
   "cost_usd": null,
   "tokens": null
  }
